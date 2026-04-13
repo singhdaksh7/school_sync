@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  SCHOOL_OWNER
+  SCHOOL_ADMIN
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+}
+
+enum AttendanceType {
+  STUDENT
+  TEACHER
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          UserRole  @default(SCHOOL_OWNER)
+  schoolId      String?
+  school        School?   @relation("SchoolAdmins", fields: [schoolId], references: [id])
+  ownedSchool   School?   @relation("SchoolOwner")
+  invitesSent   SchoolInvite[] @relation("InviteSender")
+  attendancesMarked Attendance[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model School {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  address     String?
+  phone       String?
+  email       String?
+  website     String?
+  logoUrl     String?
+  ownerId     String    @unique
+  owner       User      @relation("SchoolOwner", fields: [ownerId], references: [id])
+  admins      User[]    @relation("SchoolAdmins")
+  classes     Class[]
+  teachers    Teacher[]
+  students    Student[]
+  invites     SchoolInvite[]
+  attendances Attendance[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model SchoolInvite {
+  id          String    @id @default(cuid())
+  email       String
+  token       String    @unique @default(cuid())
+  schoolId    String
+  school      School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  invitedById String
+  invitedBy   User      @relation("InviteSender", fields: [invitedById], references: [id])
+  usedAt      DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+}
+
+model Class {
+  id        String    @id @default(cuid())
+  name      String
+  schoolId  String
+  school    School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sections  Section[]
+  createdAt DateTime  @default(now())
+
+  @@unique([name, schoolId])
+}
+
+model Section {
+  id          String    @id @default(cuid())
+  name        String
+  classId     String
+  class       Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  students    Student[]
+  attendances Attendance[]
+  createdAt   DateTime  @default(now())
+
+  @@unique([name, classId])
+}
+
+model Teacher {
+  id          String    @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  subject     String?
+  schoolId    String
+  school      School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  attendances Attendance[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Student {
+  id           String    @id @default(cuid())
+  name         String
+  rollNo       String
+  email        String?
+  phone        String?
+  parentName   String?
+  parentPhone  String?
+  sectionId    String
+  section      Section   @relation(fields: [sectionId], references: [id])
+  schoolId     String
+  school       School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  attendances  Attendance[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([rollNo, schoolId])
+}
+
+model Attendance {
+  id          String           @id @default(cuid())
+  date        DateTime         @db.Date
+  type        AttendanceType
+  status      AttendanceStatus
+  studentId   String?
+  student     Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId   String?
+  teacher     Teacher?         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  sectionId   String?
+  section     Section?         @relation(fields: [sectionId], references: [id])
+  schoolId    String
+  school      School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  markedById  String
+  markedBy    User             @relation(fields: [markedById], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@unique([date, studentId])
+  @@unique([date, teacherId])
+}
