@@ -87,6 +87,11 @@ export default function TeacherTimetablePage() {
               <RefreshCw className="w-4 h-4" /> Arrangements
             </Button>
           </Link>
+          <Link href="/teacher/leaves">
+            <Button variant="outline" size="sm" className="gap-2">
+              <ClipboardCheck className="w-4 h-4" /> My Leaves
+            </Button>
+          </Link>
           <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2 text-gray-500">
             <LogOut className="w-4 h-4" /> Sign Out
           </Button>

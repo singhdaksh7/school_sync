@@ -2,12 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { ClipboardList, Plus, Check, X, Trash2, Users, GraduationCap, CalendarDays, ChevronDown, ChevronUp } from "lucide-react";
+import { ClipboardList, Check, X, Trash2, CalendarDays, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { format, differenceInCalendarDays } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -28,15 +25,10 @@ interface LeaveRequest {
   fromDate: string;
   toDate: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
-  student: { name: string; rollNo: string; section: { name: string; class: { name: string } } } | null;
   teacher: { name: string; subject: string | null } | null;
   reviewedBy: { name: string } | null;
 }
 
-interface Student { id: string; name: string; rollNo: string; section: { name: string; class: { name: string } } }
-interface Teacher { id: string; name: string; subject: string | null }
-
-type EntityTab = "STUDENT" | "TEACHER";
 type StatusTab = "PENDING" | "APPROVED" | "REJECTED";
 
 const STATUS_CONFIG = {
@@ -50,18 +42,11 @@ export default function LeavesPage() {
   const schoolSlug = params.schoolSlug as string;
   const [schoolId, setSchoolId] = useState("");
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
-  const [entityTab, setEntityTab] = useState<EntityTab>("STUDENT");
   const [statusTab, setStatusTab] = useState<StatusTab>("PENDING");
 
   const [arrangements, setArrangements] = useState<Record<string, Arrangement[]>>({});
   const [expandedLeave, setExpandedLeave] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ type: "STUDENT" as EntityTab, studentId: "", teacherId: "", reason: "", fromDate: "", toDate: "" });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     fetch(`/api/school-by-slug/${schoolSlug}`).then((r) => r.json()).then((d) => {
@@ -72,42 +57,10 @@ export default function LeavesPage() {
 
   const fetchAll = useCallback(async (sid: string) => {
     setLoading(true);
-    const [leavesRes, studRes, teachRes] = await Promise.all([
-      fetch(`/api/schools/${sid}/leaves`),
-      fetch(`/api/schools/${sid}/students`),
-      fetch(`/api/schools/${sid}/teachers`),
-    ]);
-    setLeaves(await leavesRes.json());
-    setStudents(await studRes.json());
-    setTeachers(await teachRes.json());
+    const res = await fetch(`/api/schools/${sid}/leaves?type=TEACHER`);
+    setLeaves(await res.json());
     setLoading(false);
   }, []);
-
-  async function save() {
-    const target = form.type === "STUDENT" ? form.studentId : form.teacherId;
-    if (!target || !form.reason.trim() || !form.fromDate || !form.toDate) {
-      setError("All fields are required"); return;
-    }
-    if (form.toDate < form.fromDate) { setError("To date must be after from date"); return; }
-    setSaving(true); setError("");
-    const res = await fetch(`/api/schools/${schoolId}/leaves`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: form.type,
-        reason: form.reason,
-        fromDate: form.fromDate,
-        toDate: form.toDate,
-        studentId: form.type === "STUDENT" ? form.studentId : undefined,
-        teacherId: form.type === "TEACHER" ? form.teacherId : undefined,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setError(data.error); setSaving(false); return; }
-    setDialogOpen(false);
-    fetchAll(schoolId);
-    setSaving(false);
-  }
 
   async function updateStatus(id: string, status: "APPROVED" | "REJECTED") {
     await fetch(`/api/schools/${schoolId}/leaves/${id}`, {
@@ -121,7 +74,7 @@ export default function LeavesPage() {
   async function fetchArrangements(leaveId: string) {
     if (expandedLeave === leaveId) { setExpandedLeave(null); return; }
     setExpandedLeave(leaveId);
-    if (arrangements[leaveId]) return; // already loaded
+    if (arrangements[leaveId]) return;
     const res = await fetch(`/api/schools/${schoolId}/arrangements?leaveRequestId=${leaveId}`);
     const data = await res.json();
     setArrangements((prev) => ({ ...prev, [leaveId]: data }));
@@ -133,44 +86,24 @@ export default function LeavesPage() {
     fetchAll(schoolId);
   }
 
-  const filtered = leaves.filter((l) => l.type === entityTab && l.status === statusTab);
+  const filtered = leaves.filter((l) => l.status === statusTab);
   const pendingCount = leaves.filter((l) => l.status === "PENDING").length;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Leave Management</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            {pendingCount > 0 ? `${pendingCount} pending request${pendingCount > 1 ? "s" : ""}` : "No pending requests"}
-          </p>
-        </div>
-        <Button onClick={() => { setForm({ type: "STUDENT", studentId: "", teacherId: "", reason: "", fromDate: "", toDate: "" }); setError(""); setDialogOpen(true); }} className="gap-2">
-          <Plus className="w-4 h-4" /> Add Leave Request
-        </Button>
-      </div>
-
-      {/* Entity tabs */}
-      <div className="flex rounded-lg border border-gray-200 overflow-hidden w-fit">
-        {(["STUDENT", "TEACHER"] as EntityTab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setEntityTab(t)}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors",
-              entityTab === t ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
-            )}
-          >
-            {t === "STUDENT" ? <GraduationCap className="w-4 h-4" /> : <Users className="w-4 h-4" />}
-            {t === "STUDENT" ? "Students" : "Teachers"}
-          </button>
-        ))}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Leave Management</h2>
+        <p className="text-sm text-gray-500 mt-1">
+          {pendingCount > 0
+            ? `${pendingCount} pending request${pendingCount > 1 ? "s" : ""}`
+            : "No pending requests — teachers submit requests from their portal"}
+        </p>
       </div>
 
       {/* Status tabs */}
       <div className="flex border-b border-gray-200">
         {(["PENDING", "APPROVED", "REJECTED"] as StatusTab[]).map((s) => {
-          const count = leaves.filter((l) => l.type === entityTab && l.status === s).length;
+          const count = leaves.filter((l) => l.status === s).length;
           return (
             <button
               key={s}
@@ -203,25 +136,19 @@ export default function LeavesPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map((l) => {
-            const person = l.type === "STUDENT" ? l.student : l.teacher;
             const days = differenceInCalendarDays(new Date(l.toDate), new Date(l.fromDate)) + 1;
             return (
               <Card key={l.id} className="hover:shadow-sm transition-shadow">
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex gap-3 flex-1 min-w-0">
-                      <div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0",
-                        l.type === "STUDENT" ? "bg-green-100 text-green-700" : "bg-purple-100 text-purple-700"
-                      )}>
-                        {person?.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                      <div className="w-9 h-9 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-semibold flex-shrink-0">
+                        {l.teacher?.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-gray-900 text-sm">{person?.name}</p>
-                          {l.type === "STUDENT" && l.student && (
-                            <span className="text-xs text-gray-400">{l.student.section.class.name}-{l.student.section.name} · Roll {l.student.rollNo}</span>
-                          )}
-                          {l.type === "TEACHER" && l.teacher?.subject && (
+                          <p className="font-semibold text-gray-900 text-sm">{l.teacher?.name}</p>
+                          {l.teacher?.subject && (
                             <span className="text-xs text-gray-400">{l.teacher.subject}</span>
                           )}
                         </div>
@@ -254,8 +181,8 @@ export default function LeavesPage() {
                   </div>
                 </CardContent>
 
-                {/* Arrangement details — only for approved teacher leaves */}
-                {l.status === "APPROVED" && l.type === "TEACHER" && (
+                {/* Arrangements — approved teacher leaves */}
+                {l.status === "APPROVED" && (
                   <>
                     <button
                       onClick={() => fetchArrangements(l.id)}
@@ -304,75 +231,6 @@ export default function LeavesPage() {
           })}
         </div>
       )}
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Add Leave Request</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
-            <div className="space-y-1.5">
-              <Label>Type *</Label>
-              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-                {(["STUDENT", "TEACHER"] as EntityTab[]).map((t) => (
-                  <button key={t} onClick={() => setForm({ ...form, type: t, studentId: "", teacherId: "" })}
-                    className={cn("flex-1 py-2 text-sm font-medium transition-colors",
-                      form.type === t ? "bg-blue-600 text-white" : "bg-white text-gray-600"
-                    )}>
-                    {t === "STUDENT" ? "Student" : "Teacher"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{form.type === "STUDENT" ? "Student" : "Teacher"} *</Label>
-              {form.type === "STUDENT" ? (
-                <Select value={form.studentId} onValueChange={(v) => setForm({ ...form, studentId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
-                  <SelectContent>
-                    {students.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name} ({s.section.class.name}-{s.section.name})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Select value={form.teacherId} onValueChange={(v) => setForm({ ...form, teacherId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select teacher" /></SelectTrigger>
-                  <SelectContent>
-                    {teachers.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}{t.subject ? ` (${t.subject})` : ""}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>From *</Label>
-                <input type="date" value={form.fromDate} onChange={(e) => setForm({ ...form, fromDate: e.target.value })}
-                  className="w-full h-10 px-3 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>To *</Label>
-                <input type="date" value={form.toDate} onChange={(e) => setForm({ ...form, toDate: e.target.value })}
-                  className="w-full h-10 px-3 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Reason *</Label>
-              <textarea
-                className="w-full min-h-[80px] px-3 py-2 rounded-md border border-gray-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Reason for leave..."
-                value={form.reason}
-                onChange={(e) => setForm({ ...form, reason: e.target.value })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Submit"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
