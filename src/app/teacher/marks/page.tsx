@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
-import { GraduationCap, LogOut, Save, FileText, ChevronLeft, CalendarDays } from "lucide-react";
+import { GraduationCap, LogOut, Save, FileText, ChevronLeft, CalendarDays, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -100,6 +100,11 @@ export default function TeacherMarksPage() {
           <Link href="/teacher/timetable">
             <Button variant="outline" size="sm" className="gap-2">
               <CalendarDays className="w-4 h-4" /> My Timetable
+            </Button>
+          </Link>
+          <Link href="/teacher/arrangements">
+            <Button variant="outline" size="sm" className="gap-2">
+              <RefreshCw className="w-4 h-4" /> Arrangements
             </Button>
           </Link>
           {profile && <p className="text-sm font-medium text-gray-700 hidden sm:block">{profile.name}</p>}

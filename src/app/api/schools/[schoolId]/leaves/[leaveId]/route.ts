@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { createArrangementsForLeave } from "@/lib/arrangements";
 
 async function canAccess(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -29,12 +30,29 @@ export async function PATCH(
     const body = await req.json();
     const { status } = patchSchema.parse(body);
 
-    const leave = await prisma.leaveRequest.updateMany({
+    // Fetch the leave request before updating so we have the details
+    const leaveRequest = await prisma.leaveRequest.findFirst({
       where: { id: leaveId, schoolId },
+    });
+    if (!leaveRequest) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Update status
+    await prisma.leaveRequest.update({
+      where: { id: leaveId },
       data: { status, reviewedById: session.user.id },
     });
 
-    if (leave.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // If a TEACHER leave just got APPROVED, auto-create arrangements
+    if (status === "APPROVED" && leaveRequest.type === "TEACHER" && leaveRequest.teacherId) {
+      await createArrangementsForLeave(
+        leaveId,
+        leaveRequest.teacherId,
+        schoolId,
+        leaveRequest.fromDate,
+        leaveRequest.toDate
+      );
+    }
+
     return NextResponse.json({ success: true });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

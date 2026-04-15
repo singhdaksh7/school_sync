@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
-import { GraduationCap, LogOut, CalendarDays, ClipboardCheck, FileText } from "lucide-react";
+import { GraduationCap, LogOut, CalendarDays, ClipboardCheck, FileText, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -80,6 +80,11 @@ export default function TeacherTimetablePage() {
           <Link href="/teacher/marks">
             <Button variant="outline" size="sm" className="gap-2">
               <FileText className="w-4 h-4" /> Marks
+            </Button>
+          </Link>
+          <Link href="/teacher/arrangements">
+            <Button variant="outline" size="sm" className="gap-2">
+              <RefreshCw className="w-4 h-4" /> Arrangements
             </Button>
           </Link>
           <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2 text-gray-500">

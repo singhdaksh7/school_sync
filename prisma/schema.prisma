@@ -81,6 +81,7 @@ model School {
   feeStructures   FeeStructure[]
   feePayments     FeePayment[]
   leaveRequests   LeaveRequest[]
+  arrangements    Arrangement[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 }
@@ -120,6 +121,7 @@ model Section {
   attendances    Attendance[]
   mentor         Teacher?        @relation("SectionMentor")
   timetableSlots TimetableSlot[]
+  arrangements   Arrangement[]
   createdAt      DateTime        @default(now())
 
   @@unique([name, classId])
@@ -139,10 +141,12 @@ model Teacher {
   mentorSection   Section?        @relation("SectionMentor", fields: [mentorSectionId], references: [id])
   invites         TeacherInvite[]
   attendances     Attendance[]
-  timetableSlots  TimetableSlot[] @relation("TeacherSlots")
-  leaveRequests   LeaveRequest[]
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  timetableSlots         TimetableSlot[] @relation("TeacherSlots")
+  leaveRequests          LeaveRequest[]
+  arrangmentsAsAbsent    Arrangement[]   @relation("ArrangementAbsent")
+  arrangmentsAsSubstitute Arrangement[]  @relation("ArrangementSubstitute")
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
 }
 
 model TeacherInvite {
@@ -311,20 +315,42 @@ model FeePayment {
 }
 
 model LeaveRequest {
-  id           String      @id @default(cuid())
+  id           String        @id @default(cuid())
   type         LeaveType
   reason       String
-  fromDate     DateTime    @db.Date
-  toDate       DateTime    @db.Date
-  status       LeaveStatus @default(PENDING)
+  fromDate     DateTime      @db.Date
+  toDate       DateTime      @db.Date
+  status       LeaveStatus   @default(PENDING)
   studentId    String?
-  student      Student?    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student      Student?      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   teacherId    String?
-  teacher      Teacher?    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacher      Teacher?      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   schoolId     String
-  school       School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   reviewedById String?
-  reviewedBy   User?       @relation("LeaveReviewer", fields: [reviewedById], references: [id])
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  reviewedBy   User?         @relation("LeaveReviewer", fields: [reviewedById], references: [id])
+  arrangements Arrangement[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Arrangement {
+  id                  String        @id @default(cuid())
+  date                DateTime      @db.Date
+  dayOfWeek           Int
+  period              Int
+  subject             String?
+  sectionId           String
+  section             Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  absentTeacherId     String
+  absentTeacher       Teacher       @relation("ArrangementAbsent", fields: [absentTeacherId], references: [id], onDelete: Cascade)
+  substituteTeacherId String?
+  substituteTeacher   Teacher?      @relation("ArrangementSubstitute", fields: [substituteTeacherId], references: [id], onDelete: SetNull)
+  leaveRequestId      String?
+  leaveRequest        LeaveRequest? @relation(fields: [leaveRequestId], references: [id], onDelete: SetNull)
+  schoolId            String
+  school              School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt           DateTime      @default(now())
+
+  @@unique([date, absentTeacherId, period])
 }

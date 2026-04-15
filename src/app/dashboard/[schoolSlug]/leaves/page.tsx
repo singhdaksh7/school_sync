@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { ClipboardList, Plus, Check, X, Trash2, Users, GraduationCap } from "lucide-react";
+import { ClipboardList, Plus, Check, X, Trash2, Users, GraduationCap, CalendarDays, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -11,6 +11,15 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { format, differenceInCalendarDays } from "date-fns";
 import { cn } from "@/lib/utils";
+
+interface Arrangement {
+  id: string;
+  date: string;
+  period: number;
+  subject: string | null;
+  substituteTeacher: { name: string } | null;
+  section: { name: string; class: { name: string } };
+}
 
 interface LeaveRequest {
   id: string;
@@ -47,6 +56,8 @@ export default function LeavesPage() {
   const [entityTab, setEntityTab] = useState<EntityTab>("STUDENT");
   const [statusTab, setStatusTab] = useState<StatusTab>("PENDING");
 
+  const [arrangements, setArrangements] = useState<Record<string, Arrangement[]>>({});
+  const [expandedLeave, setExpandedLeave] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ type: "STUDENT" as EntityTab, studentId: "", teacherId: "", reason: "", fromDate: "", toDate: "" });
   const [saving, setSaving] = useState(false);
@@ -105,6 +116,15 @@ export default function LeavesPage() {
       body: JSON.stringify({ status }),
     });
     fetchAll(schoolId);
+  }
+
+  async function fetchArrangements(leaveId: string) {
+    if (expandedLeave === leaveId) { setExpandedLeave(null); return; }
+    setExpandedLeave(leaveId);
+    if (arrangements[leaveId]) return; // already loaded
+    const res = await fetch(`/api/schools/${schoolId}/arrangements?leaveRequestId=${leaveId}`);
+    const data = await res.json();
+    setArrangements((prev) => ({ ...prev, [leaveId]: data }));
   }
 
   async function deleteLeave(id: string) {
@@ -233,6 +253,52 @@ export default function LeavesPage() {
                     </div>
                   </div>
                 </CardContent>
+
+                {/* Arrangement details — only for approved teacher leaves */}
+                {l.status === "APPROVED" && l.type === "TEACHER" && (
+                  <>
+                    <button
+                      onClick={() => fetchArrangements(l.id)}
+                      className="w-full flex items-center justify-between px-5 py-2 border-t border-gray-100 text-xs text-blue-600 hover:bg-blue-50 transition-colors"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <CalendarDays className="w-3.5 h-3.5" />
+                        View Arrangements
+                      </span>
+                      {expandedLeave === l.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                    {expandedLeave === l.id && (
+                      <div className="px-5 pb-4 border-t border-gray-100 bg-gray-50">
+                        {!arrangements[l.id] ? (
+                          <p className="text-xs text-gray-400 py-3">Loading...</p>
+                        ) : arrangements[l.id].length === 0 ? (
+                          <p className="text-xs text-gray-400 py-3">No arrangements created — teacher may have no timetable slots on leave days.</p>
+                        ) : (
+                          <div className="space-y-1.5 pt-3">
+                            {arrangements[l.id]
+                              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.period - b.period)
+                              .map((arr) => (
+                                <div key={arr.id} className="flex items-center justify-between text-xs bg-white rounded-lg px-3 py-2 border border-gray-200">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-gray-700">{format(new Date(arr.date), "dd MMM")} · P{arr.period}</span>
+                                    <span className="text-gray-500">
+                                      {arr.section.class.name}-{arr.section.name}
+                                      {arr.subject ? ` · ${arr.subject}` : ""}
+                                    </span>
+                                  </div>
+                                  {arr.substituteTeacher ? (
+                                    <span className="text-green-700 font-medium">{arr.substituteTeacher.name}</span>
+                                  ) : (
+                                    <span className="text-orange-500 font-medium">No substitute found</span>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </Card>
             );
           })}

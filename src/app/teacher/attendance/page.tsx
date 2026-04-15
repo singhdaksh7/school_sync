@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { signOut } from "next-auth/react";
 import {
-  GraduationCap, LogOut, Save, Check, X, Clock, ClipboardCheck, FileText, CalendarDays,
+  GraduationCap, LogOut, Save, Check, X, Clock, ClipboardCheck, FileText, CalendarDays, RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -126,6 +126,11 @@ export default function TeacherAttendancePage() {
           <Link href="/teacher/marks">
             <Button variant="outline" size="sm" className="gap-2">
               <FileText className="w-4 h-4" /> Enter Marks
+            </Button>
+          </Link>
+          <Link href="/teacher/arrangements">
+            <Button variant="outline" size="sm" className="gap-2">
+              <RefreshCw className="w-4 h-4" /> Arrangements
             </Button>
           </Link>
           <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2 text-gray-500">
