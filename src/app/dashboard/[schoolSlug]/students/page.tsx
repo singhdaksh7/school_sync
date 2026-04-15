@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
-import { Plus, Pencil, Trash2, GraduationCap, Search } from "lucide-react";
+import Link from "next/link";
+import { Plus, Pencil, Trash2, GraduationCap, Search, Upload, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,18 @@ interface Section { id: string; name: string; class: { id: string; name: string 
 interface Student { id: string; name: string; rollNo: string; email: string | null; phone: string | null; parentName: string | null; parentPhone: string | null; sectionId: string; section: { name: string; class: { name: string } } }
 
 const empty = { name: "", rollNo: "", sectionId: "", email: "", phone: "", parentName: "", parentPhone: "" };
+
+function parseCSV(text: string): Record<string, string>[] {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/\s+/g, ""));
+  return lines.slice(1).map((line) => {
+    const values = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+    const row: Record<string, string> = {};
+    headers.forEach((h, i) => { row[h] = values[i] || ""; });
+    return row;
+  });
+}
 
 export default function StudentsPage() {
   const params = useParams();
@@ -30,6 +43,11 @@ export default function StudentsPage() {
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [csvLoading, setCsvLoading] = useState(false);
+  const [csvResults, setCsvResults] = useState<{ name: string; success: boolean; error?: string }[]>([]);
+  const [csvDialogOpen, setCsvDialogOpen] = useState(false);
 
   useEffect(() => {
     fetch(`/api/school-by-slug/${schoolSlug}`).then((r) => r.json()).then((d) => {
@@ -83,6 +101,26 @@ export default function StudentsPage() {
     fetchData(schoolId);
   }
 
+  async function handleCSV(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const rows = parseCSV(text);
+    if (rows.length === 0) { alert("No valid rows found. Check CSV has a header row."); return; }
+    setCsvLoading(true);
+    const res = await fetch(`/api/schools/${schoolId}/students/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ students: rows }),
+    });
+    const data = await res.json();
+    setCsvLoading(false);
+    setCsvResults(data.results || []);
+    setCsvDialogOpen(true);
+    fetchData(schoolId);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
   const filtered = students.filter((s) => {
     const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) || s.rollNo.toLowerCase().includes(search.toLowerCase());
     const matchSection = filterSection === "all" || s.sectionId === filterSection;
@@ -104,9 +142,15 @@ export default function StudentsPage() {
           <h2 className="text-2xl font-bold text-gray-900">Students</h2>
           <p className="text-sm text-gray-500 mt-1">{students.length} students enrolled</p>
         </div>
-        <Button onClick={openAdd} className="gap-2" disabled={sections.length === 0}>
-          <Plus className="w-4 h-4" /> Add Student
-        </Button>
+        <div className="flex gap-2">
+          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleCSV} />
+          <Button variant="outline" onClick={() => fileRef.current?.click()} className="gap-2" disabled={csvLoading || sections.length === 0}>
+            <Upload className="w-4 h-4" /> {csvLoading ? "Importing..." : "Import CSV"}
+          </Button>
+          <Button onClick={openAdd} className="gap-2" disabled={sections.length === 0}>
+            <Plus className="w-4 h-4" /> Add Student
+          </Button>
+        </div>
       </div>
 
       {sections.length === 0 && !loading && (
@@ -162,6 +206,9 @@ export default function StudentsPage() {
                           </div>
                         </div>
                         <div className="flex gap-1">
+                          <Link href={`/dashboard/${schoolSlug}/students/${s.id}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-purple-600" title="View profile"><ExternalLink className="w-3 h-3" /></Button>
+                          </Link>
                           <Button variant="ghost" size="icon" onClick={() => openEdit(s)} className="h-7 w-7 text-gray-400 hover:text-blue-600"><Pencil className="w-3 h-3" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => deleteStudent(s.id)} className="h-7 w-7 text-gray-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></Button>
                         </div>
@@ -224,6 +271,35 @@ export default function StudentsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={save} disabled={saving}>{saving ? "Saving..." : editing ? "Save Changes" : "Add Student"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV Import Results Dialog */}
+      <Dialog open={csvDialogOpen} onOpenChange={setCsvDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>CSV Import Results</DialogTitle></DialogHeader>
+          <div className="max-h-72 overflow-y-auto space-y-1.5 py-2">
+            {csvResults.map((r, i) => (
+              <div key={i} className={`flex items-start justify-between px-3 py-2 rounded-lg text-sm ${r.success ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+                <div>
+                  <p className="font-medium">{r.name}</p>
+                  {!r.success && r.error && <p className="text-xs mt-0.5 opacity-75">{r.error}</p>}
+                </div>
+                <Badge variant={r.success ? "default" : "destructive"} className="text-xs ml-2 shrink-0">
+                  {r.success ? "Added" : "Failed"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400">
+            {csvResults.filter((r) => r.success).length} added, {csvResults.filter((r) => !r.success).length} failed
+          </p>
+          <p className="text-xs text-gray-400 bg-blue-50 px-3 py-2 rounded border border-blue-100">
+            CSV format: <code>name,rollno,class,section,email,phone,parentname,parentphone</code>
+          </p>
+          <DialogFooter>
+            <Button onClick={() => setCsvDialogOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

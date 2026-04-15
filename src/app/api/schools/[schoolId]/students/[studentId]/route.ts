@@ -22,6 +22,28 @@ const schema = z.object({
   parentPhone: z.string().optional(),
 });
 
+export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string; studentId: string }> }) {
+  const { schoolId, studentId } = await params;
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const student = await prisma.student.findUnique({
+    where: { id: studentId, schoolId },
+    include: {
+      section: { include: { class: true } },
+      attendances: { orderBy: { date: "desc" }, take: 60 },
+      examResults: {
+        include: { exam: { include: { scheme: true } } },
+        orderBy: [{ exam: { scheme: { name: "asc" } } }, { exam: { order: "asc" } }],
+      },
+    },
+  });
+
+  if (!student) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(student);
+}
+
 export async function PUT(req: Request, { params }: { params: Promise<{ schoolId: string; studentId: string }> }) {
   const { schoolId, studentId } = await params;
   const session = await auth();
