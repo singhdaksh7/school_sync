@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Mail, Phone, User, BookOpen, ClipboardCheck, Award, GraduationCap, FileText } from "lucide-react";
+import { ArrowLeft, Mail, Phone, User, BookOpen, ClipboardCheck, Award, GraduationCap, FileText, ArrowRightLeft, X, History } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,9 +19,22 @@ interface StudentDetail {
   phone: string | null;
   parentName: string | null;
   parentPhone: string | null;
-  section: { name: string; class: { name: string } };
+  section: { id: string; name: string; class: { name: string } };
   attendances: AttendanceRecord[];
   examResults: ExamResult[];
+}
+interface ClassWithSections {
+  id: string;
+  name: string;
+  sections: { id: string; name: string }[];
+}
+interface TransferRecord {
+  id: string;
+  createdAt: string;
+  reason: string | null;
+  fromSection: { name: string; class: { name: string } };
+  toSection: { name: string; class: { name: string } };
+  transferredBy: { name: string | null };
 }
 
 const STATUS_CONFIG = {
@@ -29,6 +42,91 @@ const STATUS_CONFIG = {
   ABSENT: { label: "A", color: "bg-red-100 text-red-700 border-red-200" },
   LATE: { label: "L", color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
 };
+
+function TransferDialog({
+  schoolId, studentId, currentSectionId,
+  classes, onSuccess, onClose,
+}: {
+  schoolId: string; studentId: string; currentSectionId: string;
+  classes: ClassWithSections[]; onSuccess: () => void; onClose: () => void;
+}) {
+  const [toSectionId, setToSectionId] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const allSections = classes.flatMap((c) =>
+    c.sections.map((s) => ({ id: s.id, label: `Class ${c.name} — Section ${s.name}` }))
+  ).filter((s) => s.id !== currentSectionId);
+
+  const handleSubmit = async () => {
+    if (!toSectionId) { setError("Please select a target section."); return; }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/students/${studentId}/transfer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toSectionId, reason: reason.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Failed to transfer."); setSaving(false); return; }
+      onSuccess();
+    } catch {
+      setError("Network error. Please try again.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <ArrowRightLeft className="w-4 h-4 text-purple-600" />
+            <h3 className="font-semibold text-gray-900">Transfer Section</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Transfer to</label>
+            <select
+              value={toSectionId}
+              onChange={(e) => setToSectionId(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <option value="">— Select section —</option>
+              {allSections.map((s) => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Reason <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Parent request, capacity adjustment..."
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-3 px-6 pb-5">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSubmit} disabled={saving || !toSectionId}
+            className="bg-purple-600 hover:bg-purple-700 text-white">
+            {saving ? "Transferring…" : "Transfer"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function StudentProfilePage() {
   const params = useParams();
@@ -39,16 +137,39 @@ export default function StudentProfilePage() {
   const [schoolId, setSchoolId] = useState("");
   const [student, setStudent] = useState<StudentDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [classes, setClasses] = useState<ClassWithSections[]>([]);
+  const [transfers, setTransfers] = useState<TransferRecord[]>([]);
+  const [showTransfer, setShowTransfer] = useState(false);
+
+  const loadStudent = (sid: string) => {
+    fetch(`/api/schools/${sid}/students/${studentId}`)
+      .then((r) => r.json())
+      .then((data) => { setStudent(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
+
+  const loadTransfers = (sid: string) => {
+    fetch(`/api/schools/${sid}/students/${studentId}/transfer`)
+      .then((r) => r.json())
+      .then(setTransfers)
+      .catch(() => {});
+  };
 
   useEffect(() => {
     fetch(`/api/school-by-slug/${schoolSlug}`).then((r) => r.json()).then((d) => {
       setSchoolId(d.id);
-      fetch(`/api/schools/${d.id}/students/${studentId}`)
-        .then((r) => r.json())
-        .then((data) => { setStudent(data); setLoading(false); })
-        .catch(() => setLoading(false));
+      loadStudent(d.id);
+      loadTransfers(d.id);
+      fetch(`/api/schools/${d.id}/classes`).then((r) => r.json()).then(setClasses).catch(() => {});
     });
   }, [schoolSlug, studentId]);
+
+  const handleTransferSuccess = () => {
+    setShowTransfer(false);
+    setLoading(true);
+    loadStudent(schoolId);
+    loadTransfers(schoolId);
+  };
 
   if (loading) return <div className="text-center py-20 text-gray-400">Loading...</div>;
   if (!student) return <div className="text-center py-20 text-gray-400">Student not found.</div>;
@@ -70,20 +191,32 @@ export default function StudentProfilePage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      {/* Back button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push(`/dashboard/${schoolSlug}/students`)}
-        className="gap-2 text-gray-500 -ml-2"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back to Students
-      </Button>
-      <Link href={`/dashboard/${schoolSlug}/reports/report-card/${studentId}`} className="ml-auto">
-        <Button variant="outline" size="sm" className="gap-2">
-          <FileText className="w-4 h-4" /> Report Card
+      {/* Back button + actions row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push(`/dashboard/${schoolSlug}/students`)}
+          className="gap-2 text-gray-500 -ml-2"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Students
         </Button>
-      </Link>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 text-purple-600 border-purple-200 hover:bg-purple-50"
+            onClick={() => setShowTransfer(true)}
+          >
+            <ArrowRightLeft className="w-4 h-4" /> Transfer Section
+          </Button>
+          <Link href={`/dashboard/${schoolSlug}/reports/report-card/${studentId}`}>
+            <Button variant="outline" size="sm" className="gap-2">
+              <FileText className="w-4 h-4" /> Report Card
+            </Button>
+          </Link>
+        </div>
+      </div>
 
       {/* Profile header */}
       <Card>
@@ -252,6 +385,50 @@ export default function StudentProfilePage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Transfer History */}
+      {transfers.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="w-4 h-4 text-purple-600" />
+              Transfer History
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-0 divide-y divide-gray-50">
+              {transfers.map((t) => (
+                <div key={t.id} className="py-3 flex items-center gap-3">
+                  <ArrowRightLeft className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-700">
+                      <span className="font-medium">Class {t.fromSection.class.name} — {t.fromSection.name}</span>
+                      <span className="text-gray-400 mx-2">→</span>
+                      <span className="font-medium">Class {t.toSection.class.name} — {t.toSection.name}</span>
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {new Date(t.createdAt).toLocaleDateString()} · by {t.transferredBy.name || "Admin"}
+                      {t.reason && <span> · {t.reason}</span>}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Transfer dialog */}
+      {showTransfer && schoolId && (
+        <TransferDialog
+          schoolId={schoolId}
+          studentId={studentId}
+          currentSectionId={student.section.id}
+          classes={classes}
+          onSuccess={handleTransferSuccess}
+          onClose={() => setShowTransfer(false)}
+        />
       )}
     </div>
   );

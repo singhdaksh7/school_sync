@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { logAudit } from "@/lib/audit";
 
 async function verify(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -62,6 +63,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
       },
       include: { section: { include: { class: true } } },
     });
+    await logAudit({ action: "STUDENT_UPDATED", entityType: "Student", entityId: studentId, metadata: { name: data.name }, userId: session.user.id, schoolId });
     return NextResponse.json(student);
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
@@ -75,6 +77,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ schoo
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  const student = await prisma.student.findUnique({ where: { id: studentId }, select: { name: true } });
   await prisma.student.delete({ where: { id: studentId } });
+  await logAudit({ action: "STUDENT_DELETED", entityType: "Student", entityId: studentId, metadata: { name: student?.name }, userId: session.user.id, schoolId });
   return NextResponse.json({ success: true });
 }

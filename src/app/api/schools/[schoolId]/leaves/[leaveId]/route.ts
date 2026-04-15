@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { createArrangementsForLeave } from "@/lib/arrangements";
+import { logAudit } from "@/lib/audit";
 
 async function canAccess(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -53,6 +54,7 @@ export async function PATCH(
       );
     }
 
+    await logAudit({ action: status === "APPROVED" ? "LEAVE_APPROVED" : "LEAVE_REJECTED", entityType: "LeaveRequest", entityId: leaveId, metadata: { type: leaveRequest.type, teacherId: leaveRequest.teacherId }, userId: session.user.id, schoolId });
     return NextResponse.json({ success: true });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

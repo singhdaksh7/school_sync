@@ -52,6 +52,8 @@ model User {
   announcements        Announcement[]
   feePaymentsRecorded  FeePayment[]   @relation("FeeRecorder")
   leavesReviewed       LeaveRequest[] @relation("LeaveReviewer")
+  transfersBy          SectionTransfer[] @relation("TransferBy")
+  auditLogs            AuditLog[]     @relation("AuditUser")
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 }
@@ -82,6 +84,8 @@ model School {
   feePayments     FeePayment[]
   leaveRequests   LeaveRequest[]
   arrangements    Arrangement[]
+  sectionTransfers SectionTransfer[]
+  auditLogs       AuditLog[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 }
@@ -119,10 +123,12 @@ model Section {
   class          Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
   students       Student[]
   attendances    Attendance[]
-  mentor         Teacher?        @relation("SectionMentor")
-  timetableSlots TimetableSlot[]
-  arrangements   Arrangement[]
-  createdAt      DateTime        @default(now())
+  mentor            Teacher?          @relation("SectionMentor")
+  timetableSlots    TimetableSlot[]
+  arrangements      Arrangement[]
+  transfersFrom     SectionTransfer[] @relation("TransferFrom")
+  transfersTo       SectionTransfer[] @relation("TransferTo")
+  createdAt         DateTime          @default(now())
 
   @@unique([name, classId])
 }
@@ -229,10 +235,11 @@ model Student {
   school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   attendances  Attendance[]
   examResults  ExamResult[]
-  feePayments   FeePayment[]
-  leaveRequests LeaveRequest[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  feePayments      FeePayment[]
+  leaveRequests    LeaveRequest[]
+  sectionTransfers SectionTransfer[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   @@unique([rollNo, schoolId])
 }
@@ -353,4 +360,33 @@ model Arrangement {
   createdAt           DateTime      @default(now())
 
   @@unique([date, absentTeacherId, period])
+}
+
+model SectionTransfer {
+  id            String   @id @default(cuid())
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  fromSectionId String
+  fromSection   Section  @relation("TransferFrom", fields: [fromSectionId], references: [id], onDelete: Cascade)
+  toSectionId   String
+  toSection     Section  @relation("TransferTo", fields: [toSectionId], references: [id], onDelete: Cascade)
+  reason        String?
+  transferredById String
+  transferredBy User     @relation("TransferBy", fields: [transferredById], references: [id])
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String   // e.g. STUDENT_CREATED, MARKS_SUBMITTED, LEAVE_APPROVED
+  entityType String   // e.g. Student, Teacher, ExamResult
+  entityId   String?
+  metadata   String?  // JSON string of relevant details
+  userId     String
+  user       User     @relation("AuditUser", fields: [userId], references: [id])
+  schoolId   String
+  school     School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
 }

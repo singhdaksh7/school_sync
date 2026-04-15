@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { logAudit } from "@/lib/audit";
 
 async function canAccess(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -73,6 +74,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
         recordedBy: { select: { name: true } },
       },
     });
+    await logAudit({ action: "FEE_PAYMENT_RECORDED", entityType: "FeePayment", entityId: payment.id, metadata: { studentName: payment.student.name, amount: payment.amount, feeName: payment.feeStructure.name }, userId: session.user.id, schoolId });
     return NextResponse.json(payment, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

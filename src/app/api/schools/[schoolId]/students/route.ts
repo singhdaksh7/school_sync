@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { logAudit } from "@/lib/audit";
 
 async function verify(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -61,6 +62,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       },
       include: { section: { include: { class: true } } },
     });
+    await logAudit({ action: "STUDENT_CREATED", entityType: "Student", entityId: student.id, metadata: { name: student.name, rollNo: student.rollNo }, userId: session.user.id, schoolId });
     return NextResponse.json(student, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

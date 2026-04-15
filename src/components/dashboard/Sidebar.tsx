@@ -7,7 +7,7 @@ import {
   ClipboardCheck, Settings, UserPlus, ChevronRight,
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
-  ClipboardList, PieChart,
+  ClipboardList, PieChart, Activity, BarChart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -48,8 +48,10 @@ export default function Sidebar({ school, userRole }: SidebarProps) {
     { href: `${base}/fees`, label: "Fee Management", icon: IndianRupee, show: true },
     { href: `${base}/leaves`, label: "Leave Management", icon: ClipboardList, show: true },
     { href: `${base}/analytics`, label: "Analytics", icon: PieChart, show: true },
+    { href: `${base}/teachers/workload`, label: "Teacher Workload", icon: BarChart, show: true },
     { href: `${base}/announcements`, label: "Announcements", icon: Megaphone, show: true },
     { href: `${base}/holidays`, label: "Holiday Calendar", icon: CalendarOff, show: true },
+    { href: `${base}/audit-logs`, label: "Audit Logs", icon: Activity, show: isOwnerOrAdmin },
     { href: `${base}/invite`, label: "Invite Staff", icon: UserPlus, show: userRole === "SCHOOL_OWNER" },
     { href: `${base}/settings`, label: "Settings", icon: Settings, show: isOwnerOrAdmin },
   ].filter((item) => item.show);
