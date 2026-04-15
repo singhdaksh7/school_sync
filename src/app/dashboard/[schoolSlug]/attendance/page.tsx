@@ -180,10 +180,18 @@ export default function AttendancePage() {
                 </Select>
               </div>
             )}
-            <div className="flex gap-2 ml-auto">
-              <Button variant="outline" size="sm" onClick={() => markAll("PRESENT")}>All Present</Button>
-              <Button variant="outline" size="sm" onClick={() => markAll("ABSENT")}>All Absent</Button>
-            </div>
+            {mode === "TEACHER" && (
+              <div className="flex gap-2 ml-auto">
+                <Button variant="outline" size="sm" onClick={() => markAll("PRESENT")}>All Present</Button>
+                <Button variant="outline" size="sm" onClick={() => markAll("ABSENT")}>All Absent</Button>
+              </div>
+            )}
+            {mode === "STUDENT" && (
+              <div className="ml-auto flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg">
+                <ClipboardCheck className="w-4 h-4" />
+                Student attendance is marked by class mentors only
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -218,10 +226,12 @@ export default function AttendancePage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center justify-between">
               <span>{items.length} {mode === "STUDENT" ? "Students" : "Teachers"}</span>
-              <Button onClick={saveAttendance} disabled={saving} className="gap-2">
-                <Save className="w-4 h-4" />
-                {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
-              </Button>
+              {mode === "TEACHER" && (
+                <Button onClick={saveAttendance} disabled={saving} className="gap-2">
+                  <Save className="w-4 h-4" />
+                  {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
+                </Button>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
@@ -246,33 +256,43 @@ export default function AttendancePage() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      {(["PRESENT", "ABSENT", "LATE"] as AttendanceStatus[]).map((s) => {
-                        const cfg = statusConfig[s];
-                        return (
-                          <button
-                            key={s}
-                            onClick={() => setStatus(item.id, s)}
-                            className={cn(
-                              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all",
-                              current === s ? cfg.color : "bg-white text-gray-400 border-gray-200 hover:border-gray-300"
-                            )}
-                          >
-                            <cfg.icon className="w-3 h-3" />
-                            {cfg.label}
-                          </button>
-                        );
-                      })}
+                      {mode === "STUDENT" ? (
+                        current ? (
+                          <span className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium", statusConfig[current].color)}>
+                            {(() => { const cfg = statusConfig[current]; return <><cfg.icon className="w-3 h-3" /><span>{cfg.label}</span></>; })()}
+                          </span>
+                        ) : <span className="text-xs text-gray-400 italic">Not marked</span>
+                      ) : (
+                        (["PRESENT", "ABSENT", "LATE"] as AttendanceStatus[]).map((s) => {
+                          const cfg = statusConfig[s];
+                          return (
+                            <button
+                              key={s}
+                              onClick={() => setStatus(item.id, s)}
+                              className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all",
+                                current === s ? cfg.color : "bg-white text-gray-400 border-gray-200 hover:border-gray-300"
+                              )}
+                            >
+                              <cfg.icon className="w-3 h-3" />
+                              {cfg.label}
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
-            <div className="mt-4 flex justify-end">
-              <Button onClick={saveAttendance} disabled={saving} className="gap-2">
-                <Save className="w-4 h-4" />
-                {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
-              </Button>
-            </div>
+            {mode === "TEACHER" && (
+              <div className="mt-4 flex justify-end">
+                <Button onClick={saveAttendance} disabled={saving} className="gap-2">
+                  <Save className="w-4 h-4" />
+                  {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

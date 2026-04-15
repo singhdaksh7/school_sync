@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
-async function verify(schoolId: string, userId: string) {
+async function canView(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
     where: { id: schoolId },
     include: { admins: { select: { id: true } } },
@@ -12,11 +12,16 @@ async function verify(schoolId: string, userId: string) {
   return school.ownerId === userId || school.admins.some((a: { id: string }) => a.id === userId);
 }
 
+async function canWrite(schoolId: string, userId: string, role: string) {
+  if (role === "VICE_PRINCIPAL") return false;
+  return canView(schoolId, userId);
+}
+
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canView(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
@@ -55,25 +60,34 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.user.id;
-  if (!(await verify(schoolId, userId))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const role = (session.user as any).role as string;
+
+  if (!(await canWrite(schoolId, userId, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
     const { date, type, records } = markSchema.parse(body);
+
+    // Only class mentors (via teacher portal) can mark student attendance
+    if (type === "STUDENT") {
+      return NextResponse.json(
+        { error: "Student attendance can only be marked by the class mentor via the teacher portal." },
+        { status: 403 }
+      );
+    }
+
     const dateObj = new Date(date);
     dateObj.setHours(0, 0, 0, 0);
 
     const upserts = records.map((r) =>
       prisma.attendance.upsert({
-        where: type === "STUDENT"
-          ? { date_studentId: { date: dateObj, studentId: r.id } }
-          : { date_teacherId: { date: dateObj, teacherId: r.id } },
+        where: { date_teacherId: { date: dateObj, teacherId: r.id } },
         update: { status: r.status },
         create: {
           date: dateObj,
           type,
           status: r.status,
-          ...(type === "STUDENT" ? { studentId: r.id, sectionId: r.sectionId } : { teacherId: r.id }),
+          teacherId: r.id,
           schoolId,
           markedById: userId,
         },

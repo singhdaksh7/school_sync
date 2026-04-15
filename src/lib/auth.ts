@@ -2,32 +2,10 @@ import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { authConfig } from "@/lib/auth.config";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  session: { strategy: "jwt" },
-  pages: {
-    signIn: "/login",
-  },
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-        token.role = (user as any).role;
-        token.schoolId = (user as any).schoolId;
-        token.schoolSlug = (user as any).schoolSlug;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (token) {
-        session.user.id = token.id as string;
-        (session.user as any).role = token.role;
-        (session.user as any).schoolId = token.schoolId;
-        (session.user as any).schoolSlug = token.schoolSlug;
-      }
-      return session;
-    },
-  },
+  ...authConfig,
   providers: [
     CredentialsProvider({
       name: "credentials",
@@ -51,6 +29,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         );
         if (!valid) return null;
 
+        if (user.role === "TEACHER") {
+          const teacherProfile = await prisma.teacher.findUnique({
+            where: { userId: user.id },
+            include: { school: { select: { id: true, slug: true } } },
+          });
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            schoolId: teacherProfile?.schoolId ?? null,
+            schoolSlug: teacherProfile?.school?.slug ?? null,
+            teacherId: teacherProfile?.id ?? null,
+            mentorSectionId: teacherProfile?.mentorSectionId ?? null,
+          };
+        }
+
         const school = user.ownedSchool || user.school;
 
         return {
@@ -60,6 +55,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           role: user.role,
           schoolId: school?.id ?? null,
           schoolSlug: school?.slug ?? null,
+          teacherId: null,
+          mentorSectionId: null,
         };
       },
     }),

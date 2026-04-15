@@ -28,6 +28,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const teachers = await prisma.teacher.findMany({
     where: { schoolId },
     orderBy: { name: "asc" },
+    include: {
+      mentorSection: { include: { class: { select: { name: true } } } },
+      user: { select: { id: true } },
+      invites: { where: { usedAt: null, expiresAt: { gt: new Date() } }, select: { token: true } },
+    },
   });
   return NextResponse.json(teachers);
 }
@@ -50,7 +55,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
         schoolId,
       },
     });
-    return NextResponse.json(teacher, { status: 201 });
+
+    let inviteToken: string | null = null;
+    if (data.email) {
+      const invite = await prisma.teacherInvite.create({
+        data: {
+          email: data.email,
+          teacherId: teacher.id,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        },
+      });
+      inviteToken = invite.token;
+    }
+
+    return NextResponse.json({ ...teacher, inviteToken }, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

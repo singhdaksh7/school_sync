@@ -5,12 +5,20 @@ import { useParams } from "next/navigation";
 import { Plus, Trash2, BookOpen, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+
+const CLASS_OPTIONS = [
+  "Nursery", "LKG", "UKG",
+  "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
+];
 
 interface Section { id: string; name: string; _count: { students: number } }
 interface Class { id: string; name: string; sections: Section[] }
@@ -23,10 +31,13 @@ export default function ClassesPage() {
   const [expanded, setExpanded] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Add class dialog
   const [addClassOpen, setAddClassOpen] = useState(false);
-  const [className, setClassName] = useState("");
+  const [selectedClass, setSelectedClass] = useState("");
+  const [sectionCount, setSectionCount] = useState("1");
   const [classLoading, setClassLoading] = useState(false);
 
+  // Add section dialog
   const [addSectionOpen, setAddSectionOpen] = useState<string | null>(null);
   const [sectionName, setSectionName] = useState("");
   const [sectionLoading, setSectionLoading] = useState(false);
@@ -51,18 +62,39 @@ export default function ClassesPage() {
   }
 
   async function addClass() {
-    if (!className.trim()) return;
+    if (!selectedClass) { setError("Please select a class"); return; }
+    const count = parseInt(sectionCount, 10);
+    if (isNaN(count) || count < 0 || count > 26) { setError("Section count must be 0–26"); return; }
+
     setClassLoading(true);
     setError("");
+
+    // Create class
     const res = await fetch(`/api/schools/${schoolId}/classes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: className }),
+      body: JSON.stringify({ name: selectedClass }),
     });
     const data = await res.json();
     if (!res.ok) { setError(data.error); setClassLoading(false); return; }
+
+    // Auto-create sections A, B, C...
+    if (count > 0) {
+      const sectionLetters = Array.from({ length: count }, (_, i) =>
+        String.fromCharCode(65 + i)
+      );
+      for (const letter of sectionLetters) {
+        await fetch(`/api/schools/${schoolId}/classes/${data.id}/sections`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: letter }),
+        });
+      }
+    }
+
     setAddClassOpen(false);
-    setClassName("");
+    setSelectedClass("");
+    setSectionCount("1");
     fetchClasses(schoolId);
     setClassLoading(false);
   }
@@ -103,6 +135,10 @@ export default function ClassesPage() {
   const toggleExpand = (id: string) =>
     setExpanded((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
 
+  // Filter out already-added classes from the dropdown
+  const existingClassNames = new Set(classes.map((c) => c.name));
+  const availableClasses = CLASS_OPTIONS.filter((c) => !existingClassNames.has(c));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -110,7 +146,10 @@ export default function ClassesPage() {
           <h2 className="text-2xl font-bold text-gray-900">Classes & Sections</h2>
           <p className="text-sm text-gray-500 mt-1">Organise your school into classes and sections</p>
         </div>
-        <Button onClick={() => { setError(""); setAddClassOpen(true); }} className="gap-2">
+        <Button
+          onClick={() => { setError(""); setSelectedClass(""); setSectionCount("1"); setAddClassOpen(true); }}
+          className="gap-2"
+        >
           <Plus className="w-4 h-4" /> Add Class
         </Button>
       </div>
@@ -142,7 +181,7 @@ export default function ClassesPage() {
                       <BookOpen className="w-4 h-4 text-blue-600" />
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-900">{cls.name}</p>
+                      <p className="font-semibold text-gray-900">Class {cls.name}</p>
                       <p className="text-xs text-gray-400">{cls.sections.length} sections · {totalStudents} students</p>
                     </div>
                   </div>
@@ -155,7 +194,12 @@ export default function ClassesPage() {
                     >
                       <Plus className="w-3.5 h-3.5" /> Add Section
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteClass(cls.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteClass(cls.id)}
+                      className="text-red-400 hover:text-red-600 hover:bg-red-50"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -191,17 +235,53 @@ export default function ClassesPage() {
       {/* Add Class Dialog */}
       <Dialog open={addClassOpen} onOpenChange={setAddClassOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add New Class</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2">
+          <DialogHeader><DialogTitle>Add Class</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
             {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="space-y-1.5">
-              <Label>Class name</Label>
-              <Input placeholder="e.g. Class 10, Grade 5" value={className} onChange={(e) => setClassName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addClass()} />
+              <Label>Class</Label>
+              {availableClasses.length === 0 ? (
+                <p className="text-sm text-gray-400 italic">All standard classes have been added.</p>
+              ) : (
+                <Select value={selectedClass} onValueChange={setSelectedClass}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a class..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableClasses.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {["Nursery", "LKG", "UKG"].includes(c) ? c : `Class ${c}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Number of sections</Label>
+              <Input
+                type="number"
+                min={0}
+                max={26}
+                placeholder="e.g. 3 → creates A, B, C"
+                value={sectionCount}
+                onChange={(e) => setSectionCount(e.target.value)}
+              />
+              {sectionCount && parseInt(sectionCount) > 0 && (
+                <p className="text-xs text-gray-400">
+                  Will create sections:{" "}
+                  {Array.from({ length: Math.min(parseInt(sectionCount) || 0, 26) }, (_, i) =>
+                    String.fromCharCode(65 + i)
+                  ).join(", ")}
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddClassOpen(false)}>Cancel</Button>
-            <Button onClick={addClass} disabled={classLoading}>{classLoading ? "Adding..." : "Add Class"}</Button>
+            <Button onClick={addClass} disabled={classLoading || availableClasses.length === 0}>
+              {classLoading ? "Adding..." : "Add Class"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -214,12 +294,19 @@ export default function ClassesPage() {
             {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="space-y-1.5">
               <Label>Section name</Label>
-              <Input placeholder="e.g. A, B, C" value={sectionName} onChange={(e) => setSectionName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addSection(addSectionOpen!)} />
+              <Input
+                placeholder="e.g. D, E"
+                value={sectionName}
+                onChange={(e) => setSectionName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addSection(addSectionOpen!)}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddSectionOpen(null)}>Cancel</Button>
-            <Button onClick={() => addSection(addSectionOpen!)} disabled={sectionLoading}>{sectionLoading ? "Adding..." : "Add Section"}</Button>
+            <Button onClick={() => addSection(addSectionOpen!)} disabled={sectionLoading}>
+              {sectionLoading ? "Adding..." : "Add Section"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

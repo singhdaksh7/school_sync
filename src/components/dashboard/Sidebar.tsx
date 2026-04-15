@@ -6,6 +6,7 @@ import {
   GraduationCap, LayoutDashboard, Users, BookOpen,
   ClipboardCheck, Settings, UserPlus, ChevronRight,
   CalendarDays, FileText, BarChart2, Award,
+  Megaphone, CalendarOff, IndianRupee,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +44,9 @@ export default function Sidebar({ school, userRole }: SidebarProps) {
     { href: `${base}/timetable`, label: "Timetable", icon: CalendarDays, show: true },
     { href: `${base}/exam-schemes`, label: "Exam Schemes", icon: FileText, show: true },
     { href: `${base}/results`, label: "Results", icon: Award, show: true },
+    { href: `${base}/fees`, label: "Fee Management", icon: IndianRupee, show: true },
+    { href: `${base}/announcements`, label: "Announcements", icon: Megaphone, show: true },
+    { href: `${base}/holidays`, label: "Holiday Calendar", icon: CalendarOff, show: true },
     { href: `${base}/invite`, label: "Invite Staff", icon: UserPlus, show: userRole === "SCHOOL_OWNER" },
     { href: `${base}/settings`, label: "Settings", icon: Settings, show: isOwnerOrAdmin },
   ].filter((item) => item.show);

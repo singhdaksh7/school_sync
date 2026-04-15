@@ -15,6 +15,8 @@ export default async function DashboardLayout({
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
+  const role = (session.user as any).role as string;
+
   const school = await prisma.school.findUnique({
     where: { slug: schoolSlug },
     include: { owner: true, admins: { select: { id: true } } },
@@ -23,7 +25,10 @@ export default async function DashboardLayout({
   if (!school) notFound();
 
   const userId = session.user.id;
-  const hasAccess = school.ownerId === userId || school.admins?.some((a: any) => a.id === userId);
+  const hasAccess =
+    school.ownerId === userId ||
+    school.admins?.some((a: any) => a.id === userId);
+
   if (!hasAccess) {
     const userSchool = await prisma.school.findFirst({
       where: { OR: [{ ownerId: userId }, { admins: { some: { id: userId } } }] },
@@ -34,7 +39,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <Sidebar school={school} userRole={(session.user as any).role} />
+      <Sidebar school={school} userRole={role} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header school={school} user={session.user} />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>

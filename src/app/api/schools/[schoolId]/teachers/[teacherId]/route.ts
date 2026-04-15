@@ -17,6 +17,7 @@ const schema = z.object({
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
   subject: z.string().optional(),
+  mentorSectionId: z.string().optional().nullable(),
 });
 
 export async function PUT(req: Request, { params }: { params: Promise<{ schoolId: string; teacherId: string }> }) {
@@ -28,9 +29,27 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
   try {
     const body = await req.json();
     const data = schema.parse(body);
+
+    // If assigning a new mentor section, clear any previous teacher's assignment for that section
+    if (data.mentorSectionId) {
+      await prisma.teacher.updateMany({
+        where: { mentorSectionId: data.mentorSectionId, id: { not: teacherId } },
+        data: { mentorSectionId: null },
+      });
+    }
+
     const teacher = await prisma.teacher.update({
       where: { id: teacherId },
-      data: { name: data.name, email: data.email || null, phone: data.phone || null, subject: data.subject || null },
+      data: {
+        name: data.name,
+        email: data.email || null,
+        phone: data.phone || null,
+        subject: data.subject || null,
+        mentorSectionId: data.mentorSectionId ?? null,
+      },
+      include: {
+        mentorSection: { include: { class: { select: { name: true } } } },
+      },
     });
     return NextResponse.json(teacher);
   } catch (err) {

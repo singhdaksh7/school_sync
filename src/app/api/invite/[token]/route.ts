@@ -15,7 +15,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   if (invite.usedAt) return NextResponse.json({ error: "Invite already used" }, { status: 400 });
   if (invite.expiresAt < new Date()) return NextResponse.json({ error: "Invite has expired" }, { status: 400 });
 
-  return NextResponse.json({ email: invite.email, school: invite.school });
+  return NextResponse.json({ email: invite.email, role: invite.role, school: invite.school });
 }
 
 const acceptSchema = z.object({
@@ -40,13 +40,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 
     const existing = await prisma.user.findUnique({ where: { email: invite.email } });
     if (existing) {
-      // Link existing user to school
-      await prisma.user.update({ where: { id: existing.id }, data: { schoolId: invite.schoolId, role: "SCHOOL_ADMIN" } });
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: { schoolId: invite.schoolId, role: invite.role },
+      });
     } else {
-      // Create new user
       const hashed = await bcrypt.hash(password, 12);
       await prisma.user.create({
-        data: { name, email: invite.email, password: hashed, role: "SCHOOL_ADMIN", schoolId: invite.schoolId },
+        data: {
+          name,
+          email: invite.email,
+          password: hashed,
+          role: invite.role,
+          schoolId: invite.schoolId,
+        },
       });
     }
 

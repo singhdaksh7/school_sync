@@ -10,6 +10,8 @@ datasource db {
 enum UserRole {
   SCHOOL_OWNER
   SCHOOL_ADMIN
+  VICE_PRINCIPAL
+  TEACHER
 }
 
 enum AttendanceStatus {
@@ -24,45 +26,57 @@ enum AttendanceType {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String
-  email         String    @unique
-  password      String
-  role          UserRole  @default(SCHOOL_OWNER)
-  schoolId      String?
-  school        School?   @relation("SchoolAdmins", fields: [schoolId], references: [id])
-  ownedSchool   School?   @relation("SchoolOwner")
-  invitesSent   SchoolInvite[] @relation("InviteSender")
-  attendancesMarked Attendance[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                   String         @id @default(cuid())
+  name                 String
+  email                String         @unique
+  password             String
+  role                 UserRole       @default(SCHOOL_OWNER)
+  schoolId             String?
+  school               School?        @relation("SchoolAdmins", fields: [schoolId], references: [id])
+  ownedSchool          School?        @relation("SchoolOwner")
+  invitesSent          SchoolInvite[] @relation("InviteSender")
+  attendancesMarked    Attendance[]
+  teacherProfile       Teacher?       @relation("TeacherUser")
+  examResultsSubmitted ExamResult[]   @relation("ResultSubmitter")
+  announcements        Announcement[]
+  feePaymentsRecorded  FeePayment[]   @relation("FeeRecorder")
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 }
 
 model School {
-  id          String    @id @default(cuid())
-  name        String
-  slug        String    @unique
-  address     String?
-  phone       String?
-  email       String?
-  website     String?
-  logoUrl     String?
-  ownerId     String    @unique
-  owner       User      @relation("SchoolOwner", fields: [ownerId], references: [id])
-  admins      User[]    @relation("SchoolAdmins")
-  classes     Class[]
-  teachers    Teacher[]
-  students    Student[]
-  invites     SchoolInvite[]
-  attendances Attendance[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String         @id @default(cuid())
+  name            String
+  slug            String         @unique
+  address         String?
+  phone           String?
+  email           String?
+  website         String?
+  logoUrl         String?
+  periodsPerDay   Int            @default(6)
+  ownerId         String         @unique
+  owner           User           @relation("SchoolOwner", fields: [ownerId], references: [id])
+  admins          User[]         @relation("SchoolAdmins")
+  classes         Class[]
+  teachers        Teacher[]
+  students        Student[]
+  invites         SchoolInvite[]
+  attendances     Attendance[]
+  timetableSlots  TimetableSlot[]
+  examSchemes     ExamScheme[]
+  announcements   Announcement[]
+  holidays        Holiday[]
+  feeStructures   FeeStructure[]
+  feePayments     FeePayment[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 }
 
 model SchoolInvite {
   id          String    @id @default(cuid())
   email       String
   token       String    @unique @default(cuid())
+  role        UserRole  @default(SCHOOL_ADMIN)
   schoolId    String
   school      School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   invitedById String
@@ -73,43 +87,118 @@ model SchoolInvite {
 }
 
 model Class {
-  id        String    @id @default(cuid())
-  name      String
-  schoolId  String
-  school    School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sections  Section[]
-  createdAt DateTime  @default(now())
+  id            String         @id @default(cuid())
+  name          String
+  schoolId      String
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sections      Section[]
+  feeStructures FeeStructure[]
+  createdAt     DateTime       @default(now())
 
   @@unique([name, schoolId])
 }
 
 model Section {
-  id          String    @id @default(cuid())
-  name        String
-  classId     String
-  class       Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
-  students    Student[]
-  attendances Attendance[]
-  createdAt   DateTime  @default(now())
+  id             String          @id @default(cuid())
+  name           String
+  classId        String
+  class          Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  students       Student[]
+  attendances    Attendance[]
+  mentor         Teacher?        @relation("SectionMentor")
+  timetableSlots TimetableSlot[]
+  createdAt      DateTime        @default(now())
 
   @@unique([name, classId])
 }
 
 model Teacher {
-  id          String    @id @default(cuid())
-  name        String
-  email       String?
-  phone       String?
-  subject     String?
-  schoolId    String
-  school      School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  attendances Attendance[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String          @id @default(cuid())
+  name            String
+  email           String?
+  phone           String?
+  subject         String?
+  schoolId        String
+  school          School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  userId          String?         @unique
+  user            User?           @relation("TeacherUser", fields: [userId], references: [id])
+  mentorSectionId String?         @unique
+  mentorSection   Section?        @relation("SectionMentor", fields: [mentorSectionId], references: [id])
+  invites         TeacherInvite[]
+  attendances     Attendance[]
+  timetableSlots  TimetableSlot[] @relation("TeacherSlots")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model TeacherInvite {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique @default(cuid())
+  teacherId String
+  teacher   Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  usedAt    DateTime?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+}
+
+model TimetableSlot {
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sectionId String
+  section   Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  dayOfWeek Int      // 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  period    Int      // 1, 2, 3...
+  teacherId String?
+  teacher   Teacher? @relation("TeacherSlots", fields: [teacherId], references: [id], onDelete: SetNull)
+  subject   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sectionId, dayOfWeek, period])
+}
+
+model ExamScheme {
+  id        String   @id @default(cuid())
+  name      String
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  exams     Exam[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, schoolId])
+}
+
+model Exam {
+  id        String       @id @default(cuid())
+  name      String
+  maxMarks  Int
+  order     Int          @default(0)
+  schemeId  String
+  scheme    ExamScheme   @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  results   ExamResult[]
+  createdAt DateTime     @default(now())
+}
+
+model ExamResult {
+  id            String   @id @default(cuid())
+  examId        String
+  exam          Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  marks         Float
+  submittedById String
+  submittedBy   User     @relation("ResultSubmitter", fields: [submittedById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([examId, studentId])
 }
 
 model Student {
-  id           String    @id @default(cuid())
+  id           String       @id @default(cuid())
   name         String
   rollNo       String
   email        String?
@@ -117,33 +206,91 @@ model Student {
   parentName   String?
   parentPhone  String?
   sectionId    String
-  section      Section   @relation(fields: [sectionId], references: [id])
+  section      Section      @relation(fields: [sectionId], references: [id])
   schoolId     String
-  school       School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   attendances  Attendance[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  examResults  ExamResult[]
+  feePayments  FeePayment[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   @@unique([rollNo, schoolId])
 }
 
 model Attendance {
-  id          String           @id @default(cuid())
-  date        DateTime         @db.Date
-  type        AttendanceType
-  status      AttendanceStatus
-  studentId   String?
-  student     Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  teacherId   String?
-  teacher     Teacher?         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  sectionId   String?
-  section     Section?         @relation(fields: [sectionId], references: [id])
-  schoolId    String
-  school      School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  markedById  String
-  markedBy    User             @relation(fields: [markedById], references: [id])
-  createdAt   DateTime         @default(now())
+  id         String           @id @default(cuid())
+  date       DateTime         @db.Date
+  type       AttendanceType
+  status     AttendanceStatus
+  studentId  String?
+  student    Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId  String?
+  teacher    Teacher?         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  sectionId  String?
+  section    Section?         @relation(fields: [sectionId], references: [id])
+  schoolId   String
+  school     School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  markedById String
+  markedBy   User             @relation(fields: [markedById], references: [id])
+  createdAt  DateTime         @default(now())
 
   @@unique([date, studentId])
   @@unique([date, teacherId])
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  name      String
+  date      DateTime @db.Date
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([date, schoolId])
+}
+
+model FeeStructure {
+  id        String       @id @default(cuid())
+  name      String
+  amount    Float
+  frequency String       // ANNUAL, MONTHLY, ONE_TIME, QUARTERLY
+  classId   String?
+  class     Class?       @relation(fields: [classId], references: [id], onDelete: SetNull)
+  schoolId  String
+  school    School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  payments  FeePayment[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model FeePayment {
+  id             String       @id @default(cuid())
+  amount         Float
+  paidAt         DateTime     @default(now())
+  method         String?      // CASH, ONLINE, CHEQUE, UPI
+  notes          String?
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feeStructureId String
+  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  recordedById   String
+  recordedBy     User         @relation("FeeRecorder", fields: [recordedById], references: [id])
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }

@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { GraduationCap, Users, BookOpen, ClipboardCheck, ArrowRight, CheckCircle } from "lucide-react";
+import {
+  GraduationCap, Users, BookOpen, ClipboardCheck,
+  ArrowRight, School, UserCog, Briefcase, Lock,
+} from "lucide-react";
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+
       {/* Navbar */}
-      <nav className="border-b border-gray-100 px-6 py-4">
+      <nav className="bg-white/80 backdrop-blur border-b border-gray-100 px-6 py-4 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -14,143 +18,150 @@ export default function LandingPage() {
             </div>
             <span className="text-xl font-bold text-gray-900">SchoolSync</span>
           </div>
-          <div className="flex items-center gap-3">
-            <Link href="/login">
-              <Button variant="ghost">Log in</Button>
-            </Link>
-            <Link href="/register">
-              <Button>Get Started Free</Button>
-            </Link>
-          </div>
+          <Link href="/register">
+            <Button variant="outline" size="sm" className="gap-2">
+              <School className="w-4 h-4" /> Register School
+            </Button>
+          </Link>
         </div>
       </nav>
 
       {/* Hero */}
-      <section className="px-6 py-24 text-center">
-        <div className="max-w-3xl mx-auto">
-          <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
-            <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-            School Management Made Simple
+      <section className="px-6 pt-20 pb-12 text-center">
+        <div className="max-w-2xl mx-auto">
+          <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
+            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+            School Management Platform
           </div>
-          <h1 className="text-5xl font-bold text-gray-900 leading-tight mb-6">
-            Your school, fully managed<br />
-            <span className="text-blue-600">in one place</span>
+          <h1 className="text-5xl font-bold text-gray-900 leading-tight mb-5">
+            Welcome to<br />
+            <span className="text-blue-600">SchoolSync</span>
           </h1>
-          <p className="text-xl text-gray-500 mb-10 leading-relaxed">
-            Set up your school&apos;s management app in minutes. Manage teachers, students,
-            classes, and attendance — all from a single dashboard.
+          <p className="text-lg text-gray-500 leading-relaxed">
+            One platform for teachers, students, and school administration.
+            Attendance, timetables, results — all in one place.
           </p>
-          <div className="flex items-center justify-center gap-4">
-            <Link href="/register">
-              <Button size="lg" className="gap-2">
-                Create your school app <ArrowRight className="w-4 h-4" />
-              </Button>
-            </Link>
+        </div>
+      </section>
+
+      {/* Main two-panel section */}
+      <section className="px-6 pb-20">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+
+          {/* Left: Onboard a new school */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-br from-blue-600 to-blue-700 px-6 py-8 text-white">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center mb-4">
+                <School className="w-6 h-6 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">Register Your School</h2>
+              <p className="text-blue-100 text-sm leading-relaxed">
+                Set up your school&apos;s management system in minutes. Add classes, teachers, students, and go live immediately.
+              </p>
+            </div>
+            <div className="px-6 py-6 space-y-4">
+              {[
+                { icon: Users, text: "Add teachers & assign classes" },
+                { icon: BookOpen, text: "Manage students with CSV import" },
+                { icon: ClipboardCheck, text: "Daily attendance & exam results" },
+              ].map((item) => (
+                <div key={item.text} className="flex items-center gap-3 text-sm text-gray-600">
+                  <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
+                    <item.icon className="w-4 h-4 text-blue-600" />
+                  </div>
+                  {item.text}
+                </div>
+              ))}
+              <div className="pt-2">
+                <Link href="/register">
+                  <Button className="w-full gap-2 mt-1">
+                    Get Started Free <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Portal logins */}
+          <div className="space-y-4">
+            <div className="px-1">
+              <h2 className="text-xl font-bold text-gray-900">Portal Login</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Sign in to your respective portal below</p>
+            </div>
+
+            {/* Admin Login */}
             <Link href="/login">
-              <Button size="lg" variant="outline">Sign in</Button>
+              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer">
+                <div className="w-11 h-11 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-blue-600 transition-colors">
+                  <UserCog className="w-5 h-5 text-blue-600 group-hover:text-white transition-colors" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm">Admin Login</p>
+                  <p className="text-xs text-gray-400 mt-0.5">School owners & administrators</p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-blue-500 transition-colors shrink-0" />
+              </div>
             </Link>
-          </div>
-        </div>
-      </section>
 
-      {/* Features */}
-      <section className="px-6 py-20 bg-gray-50">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 mb-4">Everything your school needs</h2>
-          <p className="text-center text-gray-500 mb-14 text-lg">One platform, complete control over your school operations.</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              {
-                icon: Users,
-                title: "Teacher Management",
-                desc: "Add teachers, assign subjects, and manage their profiles in one place.",
-                color: "bg-purple-100 text-purple-600",
-              },
-              {
-                icon: BookOpen,
-                title: "Student Management",
-                desc: "Manage students with class and section assignments, contact info, and parent details.",
-                color: "bg-green-100 text-green-600",
-              },
-              {
-                icon: ClipboardCheck,
-                title: "Attendance Tracking",
-                desc: "Mark daily attendance for both students and teachers. View reports instantly.",
-                color: "bg-orange-100 text-orange-600",
-              },
-              {
-                icon: GraduationCap,
-                title: "Classes & Sections",
-                desc: "Organize students into classes (e.g. Class 10) and sections (A, B, C).",
-                color: "bg-blue-100 text-blue-600",
-              },
-            ].map((f) => (
-              <div key={f.title} className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                <div className={`w-12 h-12 rounded-lg ${f.color} flex items-center justify-center mb-4`}>
-                  <f.icon className="w-6 h-6" />
+            {/* Principal / Vice Principal Login */}
+            <Link href="/login">
+              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-purple-400 hover:shadow-md transition-all cursor-pointer mt-3">
+                <div className="w-11 h-11 bg-purple-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-purple-600 transition-colors">
+                  <Briefcase className="w-5 h-5 text-purple-600 group-hover:text-white transition-colors" />
                 </div>
-                <h3 className="font-semibold text-gray-900 mb-2">{f.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section className="px-6 py-20">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 mb-14">Get started in 3 steps</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-            {[
-              { step: "1", title: "Create your account", desc: "Sign up for free and create your SchoolSync account." },
-              { step: "2", title: "Set up your school", desc: "Enter your school name, address, and basic details to launch your app." },
-              { step: "3", title: "Start managing", desc: "Add teachers, students, and start marking attendance right away." },
-            ].map((s) => (
-              <div key={s.step} className="text-center">
-                <div className="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-4">
-                  {s.step}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm">Principal Login</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Principal & Vice Principal access</p>
                 </div>
-                <h3 className="font-semibold text-gray-900 mb-2">{s.title}</h3>
-                <p className="text-gray-500 text-sm">{s.desc}</p>
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-purple-500 transition-colors shrink-0" />
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
+            </Link>
 
-      {/* CTA */}
-      <section className="px-6 py-20 bg-blue-600">
-        <div className="max-w-2xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">Ready to manage your school smarter?</h2>
-          <p className="text-blue-100 mb-8 text-lg">Join schools already using SchoolSync to simplify their daily operations.</p>
-          <div className="flex items-center justify-center gap-3 text-white text-sm mb-8">
-            {["Free to get started", "No credit card required", "Set up in minutes"].map((t) => (
-              <span key={t} className="flex items-center gap-1.5">
-                <CheckCircle className="w-4 h-4" /> {t}
-              </span>
-            ))}
+            {/* Faculty Login */}
+            <Link href="/login">
+              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-green-400 hover:shadow-md transition-all cursor-pointer mt-3">
+                <div className="w-11 h-11 bg-green-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-green-600 transition-colors">
+                  <GraduationCap className="w-5 h-5 text-green-600 group-hover:text-white transition-colors" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm">Faculty Login</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Teachers & class mentors</p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-green-500 transition-colors shrink-0" />
+              </div>
+            </Link>
+
+            {/* Student Login — coming soon */}
+            <div className="bg-gray-50 rounded-xl border border-dashed border-gray-200 px-5 py-4 flex items-center gap-4 opacity-70 mt-3 select-none">
+              <div className="w-11 h-11 bg-gray-100 rounded-xl flex items-center justify-center shrink-0">
+                <Lock className="w-5 h-5 text-gray-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-gray-500 text-sm">Student Login</p>
+                  <span className="text-xs bg-amber-100 text-amber-700 font-medium px-2 py-0.5 rounded-full">Coming Soon</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">Student portal — results, attendance & more</p>
+              </div>
+            </div>
+
           </div>
-          <Link href="/register">
-            <Button size="lg" variant="secondary" className="bg-white text-blue-600 hover:bg-blue-50">
-              Create your free account
-            </Button>
-          </Link>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-gray-100 px-6 py-8">
-        <div className="max-w-6xl mx-auto flex items-center justify-between text-sm text-gray-500">
+      <footer className="border-t border-gray-100 bg-white px-6 py-6">
+        <div className="max-w-6xl mx-auto flex items-center justify-between text-sm text-gray-400">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center">
               <GraduationCap className="w-3.5 h-3.5 text-white" />
             </div>
-            <span className="font-semibold text-gray-700">SchoolSync</span>
+            <span className="font-semibold text-gray-600">SchoolSync</span>
           </div>
           <p>School management platform</p>
         </div>
       </footer>
+
     </div>
   );
 }
