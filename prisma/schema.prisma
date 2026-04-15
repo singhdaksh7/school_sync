@@ -25,6 +25,17 @@ enum AttendanceType {
   TEACHER
 }
 
+enum LeaveType {
+  STUDENT
+  TEACHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id                   String         @id @default(cuid())
   name                 String
@@ -40,6 +51,7 @@ model User {
   examResultsSubmitted ExamResult[]   @relation("ResultSubmitter")
   announcements        Announcement[]
   feePaymentsRecorded  FeePayment[]   @relation("FeeRecorder")
+  leavesReviewed       LeaveRequest[] @relation("LeaveReviewer")
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 }
@@ -68,6 +80,7 @@ model School {
   holidays        Holiday[]
   feeStructures   FeeStructure[]
   feePayments     FeePayment[]
+  leaveRequests   LeaveRequest[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 }
@@ -127,6 +140,7 @@ model Teacher {
   invites         TeacherInvite[]
   attendances     Attendance[]
   timetableSlots  TimetableSlot[] @relation("TeacherSlots")
+  leaveRequests   LeaveRequest[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -211,9 +225,10 @@ model Student {
   school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   attendances  Attendance[]
   examResults  ExamResult[]
-  feePayments  FeePayment[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  feePayments   FeePayment[]
+  leaveRequests LeaveRequest[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@unique([rollNo, schoolId])
 }
@@ -293,4 +308,23 @@ model FeePayment {
   school         School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+}
+
+model LeaveRequest {
+  id           String      @id @default(cuid())
+  type         LeaveType
+  reason       String
+  fromDate     DateTime    @db.Date
+  toDate       DateTime    @db.Date
+  status       LeaveStatus @default(PENDING)
+  studentId    String?
+  student      Student?    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId    String?
+  teacher      Teacher?    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  schoolId     String
+  school       School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  reviewedById String?
+  reviewedBy   User?       @relation("LeaveReviewer", fields: [reviewedById], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }

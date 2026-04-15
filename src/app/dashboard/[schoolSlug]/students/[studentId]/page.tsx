@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Mail, Phone, User, BookOpen, ClipboardCheck, Award, GraduationCap } from "lucide-react";
+import { ArrowLeft, Mail, Phone, User, BookOpen, ClipboardCheck, Award, GraduationCap, FileText } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +79,11 @@ export default function StudentProfilePage() {
       >
         <ArrowLeft className="w-4 h-4" /> Back to Students
       </Button>
+      <Link href={`/dashboard/${schoolSlug}/reports/report-card/${studentId}`} className="ml-auto">
+        <Button variant="outline" size="sm" className="gap-2">
+          <FileText className="w-4 h-4" /> Report Card
+        </Button>
+      </Link>
 
       {/* Profile header */}
       <Card>
