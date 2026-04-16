@@ -153,6 +153,8 @@ model Teacher {
   arrangmentsAsSubstitute Arrangement[]  @relation("ArrangementSubstitute")
   createdAt              DateTime        @default(now())
   updatedAt              DateTime        @updatedAt
+
+  @@index([schoolId])
 }
 
 model TeacherInvite {
@@ -219,6 +221,8 @@ model ExamResult {
   updatedAt     DateTime @updatedAt
 
   @@unique([examId, studentId])
+  @@index([examId])
+  @@index([studentId])
 }
 
 model Student {
@@ -242,6 +246,9 @@ model Student {
   updatedAt        DateTime       @updatedAt
 
   @@unique([rollNo, schoolId])
+  @@index([schoolId])
+  @@index([sectionId])
+  @@index([schoolId, sectionId])
 }
 
 model Attendance {
@@ -263,6 +270,10 @@ model Attendance {
 
   @@unique([date, studentId])
   @@unique([date, teacherId])
+  @@index([schoolId, date, type])
+  @@index([schoolId, type])
+  @@index([studentId])
+  @@index([teacherId])
 }
 
 model Announcement {
@@ -276,6 +287,8 @@ model Announcement {
   publishedAt DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([schoolId, publishedAt])
 }
 
 model Holiday {
@@ -319,6 +332,9 @@ model FeePayment {
   school         School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@index([schoolId, paidAt])
+  @@index([studentId])
 }
 
 model LeaveRequest {
@@ -339,6 +355,10 @@ model LeaveRequest {
   arrangements Arrangement[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+
+  @@index([schoolId, status])
+  @@index([teacherId])
+  @@index([studentId])
 }
 
 model Arrangement {
@@ -389,4 +409,8 @@ model AuditLog {
   schoolId   String
   school     School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
+
+  @@index([schoolId, createdAt])
+  @@index([schoolId, entityType])
+  @@index([userId])
 }

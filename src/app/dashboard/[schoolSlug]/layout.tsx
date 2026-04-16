@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getSchoolBySlug } from "@/lib/school";
 import { redirect, notFound } from "next/navigation";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 
@@ -16,10 +17,7 @@ export default async function DashboardLayout({
 
   const role = (session.user as any).role as string;
 
-  const school = await prisma.school.findUnique({
-    where: { slug: schoolSlug },
-    include: { owner: true, admins: { select: { id: true } } },
-  });
+  const school = await getSchoolBySlug(schoolSlug);
 
   if (!school) notFound();
 

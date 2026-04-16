@@ -1,29 +1,11 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { Printer, ArrowLeft } from "lucide-react";
+import { getSchoolBySlug } from "@/lib/school";
+import { prisma } from "@/lib/prisma";
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-
-interface ReportData {
-  student: {
-    name: string; rollNo: string;
-    section: { name: string; class: { name: string } };
-    email: string | null; phone: string | null; parentName: string | null;
-  };
-  school: { name: string; address: string | null; logoUrl: string | null };
-  attendancePct: number | null;
-  presentDays: number;
-  totalDays: number;
-  schemes: {
-    schemeName: string;
-    exams: { name: string; marks: number; maxMarks: number }[];
-    totalMarks: number;
-    totalMax: number;
-    pct: number | null;
-  }[];
-}
+import PrintButton from "./PrintButton";
 
 function getGrade(pct: number) {
   if (pct >= 90) return "A+";
@@ -34,64 +16,81 @@ function getGrade(pct: number) {
   return "F";
 }
 
-export default function ReportCardPage() {
-  const params = useParams();
-  const router = useRouter();
-  const schoolSlug = params.schoolSlug as string;
-  const studentId = params.studentId as string;
-  const [data, setData] = useState<ReportData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+export default async function ReportCardPage({
+  params,
+}: {
+  params: Promise<{ schoolSlug: string; studentId: string }>;
+}) {
+  const { schoolSlug, studentId } = await params;
+  const school = await getSchoolBySlug(schoolSlug);
+  if (!school) return null;
 
-  useEffect(() => {
-    fetch(`/api/school-by-slug/${schoolSlug}`)
-      .then((r) => r.json())
-      .then((school) =>
-        fetch(`/api/schools/${school.id}/students/${studentId}/report-card`)
-      )
-      .then((r) => {
-        if (!r.ok) throw new Error("Not found");
-        return r.json();
-      })
-      .then((d) => { setData(d); setLoading(false); })
-      .catch(() => { setError("Could not load report card."); setLoading(false); });
-  }, [schoolSlug, studentId]);
+  const [student, schoolInfo, attendances, examResults] = await Promise.all([
+    prisma.student.findFirst({
+      where: { id: studentId, schoolId: school.id },
+      include: { section: { include: { class: true } } },
+    }),
+    prisma.school.findUnique({ where: { id: school.id }, select: { name: true, address: true, logoUrl: true } }),
+    prisma.attendance.findMany({
+      where: { studentId, schoolId: school.id },
+      select: { status: true },
+    }),
+    prisma.examResult.findMany({
+      where: { studentId, exam: { scheme: { schoolId: school.id } } },
+      include: { exam: { include: { scheme: { select: { id: true, name: true } } } } },
+      orderBy: [{ exam: { scheme: { name: "asc" } } }, { exam: { order: "asc" } }],
+    }),
+  ]);
 
-  if (loading) return <div className="text-center py-20 text-gray-400">Loading report card...</div>;
-  if (error || !data) return <div className="text-center py-20 text-red-400">{error || "Error"}</div>;
+  if (!student || !schoolInfo) notFound();
 
-  const { student, school, attendancePct, presentDays, totalDays, schemes } = data;
+  const totalDays = attendances.length;
+  const presentDays = attendances.filter((a) => a.status === "PRESENT" || a.status === "LATE").length;
+  const attendancePct = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : null;
+
+  const schemeMap = new Map<string, { schemeName: string; exams: { name: string; marks: number; maxMarks: number; order: number }[] }>();
+  for (const r of examResults) {
+    const key = r.exam.scheme.id;
+    const entry = schemeMap.get(key) || { schemeName: r.exam.scheme.name, exams: [] };
+    entry.exams.push({ name: r.exam.name, marks: r.marks, maxMarks: r.exam.maxMarks, order: r.exam.order });
+    schemeMap.set(key, entry);
+  }
+  const schemes = Array.from(schemeMap.values()).map((s) => {
+    const exams = s.exams.sort((a, b) => a.order - b.order);
+    const totalMarks = exams.reduce((sum, e) => sum + e.marks, 0);
+    const totalMax = exams.reduce((sum, e) => sum + e.maxMarks, 0);
+    const pct = totalMax > 0 ? Math.round((totalMarks / totalMax) * 100) : null;
+    return { schemeName: s.schemeName, exams, totalMarks, totalMax, pct };
+  });
+
+  const today = new Date();
 
   return (
     <>
-      {/* Print controls — hidden when printing */}
       <div className="print:hidden mb-4 flex items-center gap-3">
-        <Button variant="outline" size="sm" onClick={() => router.back()} className="gap-2">
-          <ArrowLeft className="w-4 h-4" /> Back
-        </Button>
-        <Button size="sm" onClick={() => window.print()} className="gap-2 ml-auto">
-          <Printer className="w-4 h-4" /> Print / Save as PDF
-        </Button>
+        <Link href={`/dashboard/${schoolSlug}/students/${studentId}`}>
+          <Button variant="outline" size="sm" className="gap-2">
+            <ArrowLeft className="w-4 h-4" /> Back
+          </Button>
+        </Link>
+        <PrintButton />
       </div>
 
-      {/* Report card — this is what prints */}
       <div className="report-card bg-white max-w-3xl mx-auto border border-gray-200 rounded-xl overflow-hidden print:border-none print:rounded-none print:max-w-full print:mx-0">
-        {/* Header */}
         <div className="bg-blue-700 text-white px-8 py-6 print:py-4">
           <div className="flex items-start justify-between">
             <div>
-              <h1 className="text-2xl font-bold print:text-xl">{school.name}</h1>
-              {school.address && <p className="text-blue-200 text-sm mt-0.5">{school.address}</p>}
-              <p className="text-blue-200 text-xs mt-1">Progress Report — {format(new Date(), "MMMM yyyy")}</p>
+              <h1 className="text-2xl font-bold print:text-xl">{schoolInfo.name}</h1>
+              {schoolInfo.address && <p className="text-blue-200 text-sm mt-0.5">{schoolInfo.address}</p>}
+              <p className="text-blue-200 text-xs mt-1">Progress Report — {format(today, "MMMM yyyy")}</p>
             </div>
             <div className="text-right">
               <p className="text-blue-200 text-xs">Generated</p>
-              <p className="text-sm font-medium">{format(new Date(), "dd MMM yyyy")}</p>
+              <p className="text-sm font-medium">{format(today, "dd MMM yyyy")}</p>
             </div>
           </div>
         </div>
 
-        {/* Student info */}
         <div className="px-8 py-5 border-b border-gray-100 print:py-3">
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
             <div><span className="text-gray-500">Student Name:</span> <span className="font-semibold text-gray-900">{student.name}</span></div>
@@ -103,7 +102,6 @@ export default function ReportCardPage() {
           </div>
         </div>
 
-        {/* Attendance summary */}
         <div className="px-8 py-4 bg-gray-50 border-b border-gray-100 print:py-3">
           <div className="flex items-center gap-8">
             <div>
@@ -122,7 +120,6 @@ export default function ReportCardPage() {
           </div>
         </div>
 
-        {/* Exam results */}
         <div className="px-8 py-5 print:py-3">
           {schemes.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8">No exam results recorded yet.</p>
@@ -181,10 +178,9 @@ export default function ReportCardPage() {
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-8 py-4 border-t border-gray-100 flex justify-between text-xs text-gray-400 print:py-2">
-          <span>{school.name} · SchoolSync</span>
-          <span>Printed on {format(new Date(), "dd MMM yyyy")}</span>
+          <span>{schoolInfo.name} · SchoolSync</span>
+          <span>Printed on {format(today, "dd MMM yyyy")}</span>
         </div>
       </div>
 
