@@ -7,13 +7,14 @@ import {
   ClipboardCheck, Settings, UserPlus, ChevronRight,
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
-  ClipboardList, PieChart, Activity, BarChart,
+  ClipboardList, PieChart, Activity, BarChart, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
   school: { slug: string; name: string; logoUrl?: string | null };
   userRole: string;
+  onClose?: () => void;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -30,7 +31,7 @@ const ROLE_COLORS: Record<string, string> = {
   TEACHER: "bg-orange-100 text-orange-700",
 };
 
-export default function Sidebar({ school, userRole }: SidebarProps) {
+export default function Sidebar({ school, userRole, onClose }: SidebarProps) {
   const pathname = usePathname();
   const base = `/dashboard/${school.slug}`;
   const isOwnerOrAdmin = userRole === "SCHOOL_OWNER" || userRole === "SCHOOL_ADMIN";
@@ -58,17 +59,25 @@ export default function Sidebar({ school, userRole }: SidebarProps) {
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-full">
-      {/* Logo */}
-      <div className="px-5 py-5 border-b border-gray-100">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <GraduationCap className="w-5 h-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-bold text-gray-900 truncate">{school.name}</p>
-            <p className="text-xs text-gray-400">SchoolSync</p>
-          </div>
+      {/* Logo + mobile close button */}
+      <div className="px-5 py-5 border-b border-gray-100 flex items-center gap-2.5">
+        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+          <GraduationCap className="w-5 h-5 text-white" />
         </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-gray-900 truncate">{school.name}</p>
+          <p className="text-xs text-gray-400">SchoolSync</p>
+        </div>
+        {/* Close button — only visible on mobile */}
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="md:hidden p-1 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors flex-shrink-0"
+            aria-label="Close menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* Nav */}

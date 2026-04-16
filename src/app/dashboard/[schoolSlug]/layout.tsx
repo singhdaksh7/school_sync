@@ -1,8 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
-import Sidebar from "@/components/dashboard/Sidebar";
-import Header from "@/components/dashboard/Header";
+import DashboardShell from "@/components/dashboard/DashboardShell";
 
 export default async function DashboardLayout({
   children,
@@ -38,12 +37,8 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <Sidebar school={school} userRole={role} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header school={school} user={session.user} />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
-      </div>
-    </div>
+    <DashboardShell school={school} user={session.user} userRole={role}>
+      {children}
+    </DashboardShell>
   );
 }
