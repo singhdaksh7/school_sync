@@ -86,6 +86,7 @@ model School {
   arrangements    Arrangement[]
   sectionTransfers SectionTransfer[]
   auditLogs       AuditLog[]
+  aiInsightCache  AIInsightCache?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 }
@@ -413,4 +414,12 @@ model AuditLog {
   @@index([schoolId, createdAt])
   @@index([schoolId, entityType])
   @@index([userId])
+}
+
+model AIInsightCache {
+  id          String   @id @default(cuid())
+  schoolId    String   @unique
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  insights    String   // JSON string
+  generatedAt DateTime @default(now())
 }

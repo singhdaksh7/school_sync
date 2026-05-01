@@ -7,7 +7,7 @@ import {
   ClipboardCheck, Settings, UserPlus, ChevronRight,
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
-  ClipboardList, PieChart, Activity, BarChart, X,
+  ClipboardList, PieChart, Activity, BarChart, X, Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +44,7 @@ export default function Sidebar({ school, userRole, onClose }: SidebarProps) {
     { href: `${base}/attendance`, label: "Attendance", icon: ClipboardCheck, show: true },
     { href: `${base}/reports`, label: "Attendance Reports", icon: BarChart2, show: true },
     { href: `${base}/timetable`, label: "Timetable", icon: CalendarDays, show: true },
+    { href: `${base}/custom-timetable`, label: "Custom Timetable", icon: Wand2, show: isOwnerOrAdmin },
     { href: `${base}/exam-schemes`, label: "Exam Schemes", icon: FileText, show: true },
     { href: `${base}/results`, label: "Results", icon: Award, show: true },
     { href: `${base}/fees`, label: "Fee Management", icon: IndianRupee, show: true },
