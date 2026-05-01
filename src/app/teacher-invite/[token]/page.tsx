@@ -62,7 +62,7 @@ export default function TeacherInvitePage() {
       return;
     }
 
-    window.location.href = signInResult.url ?? callbackUrl;
+    window.location.href = callbackUrl;
   }
 
   return (

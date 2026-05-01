@@ -33,7 +33,7 @@ function LoginForm() {
         setError("Invalid email or password");
         return;
       }
-      window.location.href = result.url ?? callbackUrl;
+      window.location.href = callbackUrl;
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {

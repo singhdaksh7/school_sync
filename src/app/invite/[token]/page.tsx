@@ -54,7 +54,7 @@ export default function InvitePage() {
       return;
     }
 
-    window.location.href = signInResult.url ?? callbackUrl;
+    window.location.href = callbackUrl;
   }
 
   return (
