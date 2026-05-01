@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /B \"C:\\\\Users\\\\daksh\\\\OneDrive\\\\Desktop\\\\Major-Project\\\\schoolsync\")",
+      "Bash(dir *)",
+      "WebFetch(domain:pris.ly)",
+      "WebFetch(domain:www.prisma.io)",
+      "Bash(DATABASE_URL=\"postgresql://postgres:SchoolSync2024@schoolsync-postgres.cfyo2q44krak.ap-south-1.rds.amazonaws.com:5432/postgres\" npx prisma migrate deploy)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git reset *)"
+    ]
+  }
+}

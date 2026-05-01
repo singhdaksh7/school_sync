@@ -6,8 +6,10 @@ frontend:
         - npm ci --cache .npm --prefer-offline
         - npx prisma generate
         - echo "DATABASE_URL=$DATABASE_URL" > .env.production
-        - echo "NEXTAUTH_SECRET=$NEXTAUTH_SECRET" >> .env.production
-        - echo "NEXTAUTH_URL=$NEXTAUTH_URL" >> .env.production
+        - echo "AUTH_SECRET=$AUTH_SECRET" >> .env.production
+        - echo "AUTH_URL=$AUTH_URL" >> .env.production
+        - echo "NEXTAUTH_SECRET=$AUTH_SECRET" >> .env.production
+        - echo "NEXTAUTH_URL=$AUTH_URL" >> .env.production
         - echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> .env.production
     build:
       commands:
