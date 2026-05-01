@@ -32,7 +32,17 @@ function LoginForm() {
         setError("Invalid email or password");
         return;
       }
-      window.location.href = "/api/auth/redirect";
+      const sessionRes = await fetch("/api/auth/session");
+      const session = await sessionRes.json();
+      const role = session?.user?.role;
+      const schoolSlug = session?.user?.schoolSlug;
+      if (role === "TEACHER") {
+        window.location.href = "/teacher/attendance";
+      } else if (schoolSlug) {
+        window.location.href = `/dashboard/${schoolSlug}`;
+      } else {
+        window.location.href = "/onboarding";
+      }
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
