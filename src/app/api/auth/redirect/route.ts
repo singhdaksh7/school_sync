@@ -1,14 +1,26 @@
 import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { NextResponse } from "next/server";
 
-export async function GET() {
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+function noStoreRedirect(req: Request, path: string) {
+  return NextResponse.redirect(new URL(path, req.url), {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    },
+  });
+}
+
+export async function GET(req: Request) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) return noStoreRedirect(req, "/login");
 
-  const role = (session.user as any).role;
-  if (role === "TEACHER") redirect("/teacher/attendance");
+  const user = session.user as { role?: string; schoolSlug?: string };
+  if (user.role === "TEACHER") return noStoreRedirect(req, "/teacher/attendance");
 
-  const schoolSlug = (session.user as any).schoolSlug;
-  if (schoolSlug) redirect(`/dashboard/${schoolSlug}`);
-  redirect("/onboarding");
+  if (user.schoolSlug) return noStoreRedirect(req, `/dashboard/${user.schoolSlug}`);
+  return noStoreRedirect(req, "/onboarding");
 }

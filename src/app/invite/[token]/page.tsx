@@ -40,11 +40,12 @@ export default function InvitePage() {
     const data = await res.json();
     if (!res.ok) { setError(data.error); setLoading(false); return; }
 
+    const callbackUrl = `/api/auth/redirect?nonce=${Date.now()}`;
     const signInResult = await signIn("credentials", {
       email: invite!.email,
       password: form.password,
       redirect: false,
-      callbackUrl: "/api/auth/redirect",
+      callbackUrl,
     });
 
     if (!signInResult?.ok) {
@@ -53,7 +54,7 @@ export default function InvitePage() {
       return;
     }
 
-    window.location.href = signInResult.url ?? "/api/auth/redirect";
+    window.location.href = signInResult.url ?? callbackUrl;
   }
 
   return (

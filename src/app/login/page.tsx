@@ -22,17 +22,18 @@ function LoginForm() {
     setError("");
     setLoading(true);
     try {
+      const callbackUrl = `/api/auth/redirect?nonce=${Date.now()}`;
       const result = await signIn("credentials", {
         email: form.email,
         password: form.password,
         redirect: false,
-        callbackUrl: "/api/auth/redirect",
+        callbackUrl,
       });
       if (!result?.ok) {
         setError("Invalid email or password");
         return;
       }
-      window.location.href = result.url ?? "/api/auth/redirect";
+      window.location.href = result.url ?? callbackUrl;
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
