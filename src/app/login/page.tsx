@@ -29,7 +29,7 @@ function LoginForm() {
         redirect: false,
       });
       if (result?.error) {
-        setError("Invalid email or password");
+        setError(`Debug: ${result.error} | ok:${result.ok} | status:${result.status}`);
         return;
       }
       // Fetch updated session to get role and schoolSlug
