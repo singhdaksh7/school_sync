@@ -36,7 +36,7 @@ export async function logAudit({
         schoolId,
       },
     });
-  } catch {
-    // Audit logging is best-effort — never fail the main request
+  } catch (err) {
+    console.error("Audit log failed:", err);
   }
 }

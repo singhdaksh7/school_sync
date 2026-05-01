@@ -11,18 +11,17 @@ export interface ParentTokenPayload {
 
 export function verifyParentToken(token: string): ParentTokenPayload | null {
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.NEXTAUTH_SECRET || "secret"
-    ) as ParentTokenPayload;
+    const secret = process.env.NEXTAUTH_SECRET;
+    if (!secret) throw new Error("NEXTAUTH_SECRET is not set");
+    const decoded = jwt.verify(token, secret) as ParentTokenPayload;
     return decoded;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
 
 export function generateParentToken(payload: ParentTokenPayload): string {
-  return jwt.sign(payload, process.env.NEXTAUTH_SECRET || "secret", {
-    expiresIn: "7d",
-  });
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret) throw new Error("NEXTAUTH_SECRET is not set");
+  return jwt.sign(payload, secret, { expiresIn: "7d" });
 }

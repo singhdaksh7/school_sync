@@ -72,6 +72,7 @@ export async function POST(
     return NextResponse.json(transfer, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
+    console.error("Transfer student error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

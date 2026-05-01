@@ -67,6 +67,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
     return NextResponse.json(student);
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
+    console.error("Update student error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -77,8 +78,14 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ schoo
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const student = await prisma.student.findUnique({ where: { id: studentId }, select: { name: true } });
-  await prisma.student.delete({ where: { id: studentId } });
-  await logAudit({ action: "STUDENT_DELETED", entityType: "Student", entityId: studentId, metadata: { name: student?.name }, userId: session.user.id, schoolId });
-  return NextResponse.json({ success: true });
+  try {
+    const student = await prisma.student.findUnique({ where: { id: studentId }, select: { name: true } });
+    if (!student) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    await prisma.student.delete({ where: { id: studentId } });
+    await logAudit({ action: "STUDENT_DELETED", entityType: "Student", entityId: studentId, metadata: { name: student.name }, userId: session.user.id, schoolId });
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Delete student error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
