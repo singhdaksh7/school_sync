@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
 import { GraduationCap, Building2, Phone, Mail, Globe, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,10 +36,7 @@ export default function OnboardingPage() {
         setError(data.error || "Failed to create school");
         return;
       }
-      // Refresh session to get new schoolSlug
-      await signIn("credentials", { redirect: false });
       router.push(`/dashboard/${data.slug}`);
-      router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {

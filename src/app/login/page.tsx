@@ -32,18 +32,7 @@ function LoginForm() {
         setError("Invalid email or password");
         return;
       }
-      // Fetch updated session to get role and schoolSlug
-      const sessionRes = await fetch("/api/auth/session");
-      const session = await sessionRes.json();
-      const role = session?.user?.role;
-      const schoolSlug = session?.user?.schoolSlug;
-      if (role === "TEACHER") {
-        router.push("/teacher/attendance");
-      } else if (schoolSlug) {
-        router.push(`/dashboard/${schoolSlug}`);
-      } else {
-        router.push("/onboarding");
-      }
+      router.push("/api/auth/redirect");
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
