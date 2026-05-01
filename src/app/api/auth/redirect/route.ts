@@ -1,12 +1,13 @@
 import { auth } from "@/lib/auth";
-import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function noStoreRedirect(req: Request, path: string) {
-  return NextResponse.redirect(new URL(path, req.url), {
+function noStoreRedirect(path: string) {
+  return new Response(null, {
+    status: 307,
     headers: {
+      Location: path,
       "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
       Pragma: "no-cache",
       Expires: "0",
@@ -14,13 +15,13 @@ function noStoreRedirect(req: Request, path: string) {
   });
 }
 
-export async function GET(req: Request) {
+export async function GET() {
   const session = await auth();
-  if (!session?.user) return noStoreRedirect(req, "/login");
+  if (!session?.user) return noStoreRedirect("/login");
 
   const user = session.user as { role?: string; schoolSlug?: string };
-  if (user.role === "TEACHER") return noStoreRedirect(req, "/teacher/attendance");
+  if (user.role === "TEACHER") return noStoreRedirect("/teacher/attendance");
 
-  if (user.schoolSlug) return noStoreRedirect(req, `/dashboard/${user.schoolSlug}`);
-  return noStoreRedirect(req, "/onboarding");
+  if (user.schoolSlug) return noStoreRedirect(`/dashboard/${user.schoolSlug}`);
+  return noStoreRedirect("/onboarding");
 }

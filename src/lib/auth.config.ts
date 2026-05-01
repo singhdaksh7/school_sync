@@ -24,14 +24,14 @@ export const authConfig: NextAuthConfig = {
 
       // TEACHER role: block dashboard access, allow teacher pages
       if (isLoggedIn && role === "TEACHER" && pathname.startsWith("/dashboard")) {
-        return Response.redirect(new URL("/teacher/attendance", nextUrl));
+        return new Response(null, { status: 307, headers: { Location: "/teacher/attendance" } });
       }
 
       // Non-teachers: block teacher portal pages
       if (isLoggedIn && role !== "TEACHER" && (pathname.startsWith("/teacher/attendance") || pathname.startsWith("/teacher/marks") || pathname.startsWith("/teacher/timetable"))) {
         const schoolSlug = (auth?.user as any)?.schoolSlug;
         if (schoolSlug) {
-          return Response.redirect(new URL(`/dashboard/${schoolSlug}`, nextUrl));
+          return new Response(null, { status: 307, headers: { Location: `/dashboard/${schoolSlug}` } });
         }
       }
 
