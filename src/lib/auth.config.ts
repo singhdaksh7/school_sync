@@ -1,10 +1,22 @@
 import type { NextAuthConfig } from "next-auth";
 
 // Edge-safe auth config (no Prisma — used in middleware)
+const isProd = process.env.NODE_ENV === "production";
+
 export const authConfig: NextAuthConfig = {
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   trustHost: true,
+  cookies: {
+    sessionToken: {
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: isProd,
+      },
+    },
+  },
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
