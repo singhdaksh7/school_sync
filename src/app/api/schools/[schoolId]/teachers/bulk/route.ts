@@ -17,7 +17,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { teachers } = await req.json();
+  let teachers: any[];
+  try {
+    const body = await req.json();
+    teachers = body.teachers;
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
   if (!Array.isArray(teachers) || teachers.length === 0) {
     return NextResponse.json({ error: "No teachers provided" }, { status: 400 });
   }
@@ -54,7 +60,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       }
 
       results.push({ name, success: true, inviteToken });
-    } catch {
+    } catch (err) {
+      console.error("Bulk create teacher error:", err);
       results.push({ name, success: false, error: "Failed to create (duplicate or invalid data)" });
     }
   }

@@ -33,26 +33,31 @@ export async function POST(req: Request) {
   const teacher = await getTeacher(userId);
   if (!teacher?.mentorSectionId) return NextResponse.json({ error: "No mentor section assigned" }, { status: 400 });
 
-  const { date: dateParam, records } = await req.json();
-  const date = new Date(dateParam + "T00:00:00.000Z");
+  try {
+    const { date: dateParam, records } = await req.json();
+    const date = new Date(dateParam + "T00:00:00.000Z");
 
-  await Promise.all(
-    (records as { id: string; status: string }[]).map((r) =>
-      prisma.attendance.upsert({
-        where: { date_studentId: { date, studentId: r.id } },
-        create: {
-          date,
-          type: "STUDENT",
-          status: r.status as "PRESENT" | "ABSENT" | "LATE",
-          studentId: r.id,
-          sectionId: teacher.mentorSectionId!,
-          schoolId: teacher.schoolId,
-          markedById: userId,
-        },
-        update: { status: r.status as "PRESENT" | "ABSENT" | "LATE" },
-      })
-    )
-  );
+    await Promise.all(
+      (records as { id: string; status: string }[]).map((r) =>
+        prisma.attendance.upsert({
+          where: { date_studentId: { date, studentId: r.id } },
+          create: {
+            date,
+            type: "STUDENT",
+            status: r.status as "PRESENT" | "ABSENT" | "LATE",
+            studentId: r.id,
+            sectionId: teacher.mentorSectionId!,
+            schoolId: teacher.schoolId,
+            markedById: userId,
+          },
+          update: { status: r.status as "PRESENT" | "ABSENT" | "LATE" },
+        })
+      )
+    );
 
-  return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Teacher attendance POST error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }

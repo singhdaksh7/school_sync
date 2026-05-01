@@ -39,6 +39,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     data: { email, schoolId, invitedById: session.user.id, expiresAt, role: inviteRole as any },
   });
 
-  const inviteLink = `${process.env.NEXTAUTH_URL}/invite/${invite.token}`;
+  const baseUrl = process.env.NEXTAUTH_URL || "https://main.d2keh6u7hogn2r.amplifyapp.com";
+  const inviteLink = `${baseUrl}/invite/${invite.token}`;
   return NextResponse.json({ ...invite, inviteLink }, { status: 201 });
 }

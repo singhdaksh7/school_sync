@@ -50,6 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
     // unique constraint violation
     if ((err as any)?.code === "P2002") return NextResponse.json({ error: "A holiday already exists on that date" }, { status: 400 });
+    console.error("Create holiday error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

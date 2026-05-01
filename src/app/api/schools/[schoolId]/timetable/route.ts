@@ -86,35 +86,40 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
   const role = (session.user as any).role as string;
   if (!(await canWrite(schoolId, session.user.id, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const body = await req.json();
+  try {
+    const body = await req.json();
 
-  // Update periodsPerDay
-  if (typeof body.periodsPerDay === "number") {
-    const updated = await prisma.school.update({
-      where: { id: schoolId },
-      data: { periodsPerDay: Math.max(1, Math.min(12, body.periodsPerDay)) },
-      select: { periodsPerDay: true },
+    // Update periodsPerDay
+    if (typeof body.periodsPerDay === "number") {
+      const updated = await prisma.school.update({
+        where: { id: schoolId },
+        data: { periodsPerDay: Math.max(1, Math.min(12, body.periodsPerDay)) },
+        select: { periodsPerDay: true },
+      });
+      return NextResponse.json(updated);
+    }
+
+    // Upsert a slot
+    const { sectionId, dayOfWeek, period, teacherId, subject } = body;
+    if (!sectionId || !dayOfWeek || !period) {
+      return NextResponse.json({ error: "sectionId, dayOfWeek, and period are required" }, { status: 400 });
+    }
+
+    // Clear slot
+    if (!teacherId) {
+      await prisma.timetableSlot.deleteMany({ where: { sectionId, dayOfWeek, period } });
+      return NextResponse.json({ success: true });
+    }
+
+    const slot = await prisma.timetableSlot.upsert({
+      where: { sectionId_dayOfWeek_period: { sectionId, dayOfWeek, period } },
+      create: { schoolId, sectionId, dayOfWeek, period, teacherId, subject: subject || null },
+      update: { teacherId, subject: subject || null },
+      include: { teacher: { select: { id: true, name: true, subject: true } } },
     });
-    return NextResponse.json(updated);
+    return NextResponse.json(slot);
+  } catch (err) {
+    console.error("Timetable PUT error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-
-  // Upsert a slot
-  const { sectionId, dayOfWeek, period, teacherId, subject } = body;
-  if (!sectionId || !dayOfWeek || !period) {
-    return NextResponse.json({ error: "sectionId, dayOfWeek, and period are required" }, { status: 400 });
-  }
-
-  // Clear slot
-  if (!teacherId) {
-    await prisma.timetableSlot.deleteMany({ where: { sectionId, dayOfWeek, period } });
-    return NextResponse.json({ success: true });
-  }
-
-  const slot = await prisma.timetableSlot.upsert({
-    where: { sectionId_dayOfWeek_period: { sectionId, dayOfWeek, period } },
-    create: { schoolId, sectionId, dayOfWeek, period, teacherId, subject: subject || null },
-    update: { teacherId, subject: subject || null },
-    include: { teacher: { select: { id: true, name: true, subject: true } } },
-  });
-  return NextResponse.json(slot);
 }

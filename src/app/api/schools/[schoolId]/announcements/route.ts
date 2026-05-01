@@ -47,6 +47,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     return NextResponse.json(announcement, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
+    console.error("Create announcement error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -23,7 +23,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   try {
     const section = await prisma.section.create({ data: { name: name.trim(), classId } });
     return NextResponse.json(section, { status: 201 });
-  } catch {
+  } catch (err) {
+    console.error("Create section error:", err);
     return NextResponse.json({ error: "Section already exists in this class" }, { status: 400 });
   }
 }
@@ -34,7 +35,13 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ schoo
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { sectionId } = await req.json();
-  await prisma.section.delete({ where: { id: sectionId } });
-  return NextResponse.json({ success: true });
+  try {
+    const { sectionId } = await req.json();
+    if (!sectionId) return NextResponse.json({ error: "sectionId required" }, { status: 400 });
+    await prisma.section.delete({ where: { id: sectionId } });
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Delete section error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
