@@ -32,7 +32,7 @@ function LoginForm() {
         setError("Invalid email or password");
         return;
       }
-      router.push("/api/auth/redirect");
+      window.location.href = "/api/auth/redirect";
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
