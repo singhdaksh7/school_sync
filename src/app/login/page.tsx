@@ -28,8 +28,8 @@ function LoginForm() {
         password: form.password,
         redirect: false,
       });
-      if (result?.error) {
-        setError(`Debug: ${result.error} | ok:${result.ok} | status:${result.status}`);
+      if (!result?.ok) {
+        setError("Invalid email or password");
         return;
       }
       // Fetch updated session to get role and schoolSlug
