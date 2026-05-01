@@ -18,7 +18,8 @@ export const authConfig: NextAuthConfig = {
         pathname.startsWith("/teacher-invite/") ||
         pathname.startsWith("/api/auth/") ||
         pathname.startsWith("/api/invite/") ||
-        pathname.startsWith("/api/teacher-invite/");
+        pathname.startsWith("/api/teacher-invite/") ||
+        pathname === "/api/health";
 
       if (!isLoggedIn && !isPublic) return false;
 
