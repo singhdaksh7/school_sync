@@ -7,9 +7,9 @@ frontend:
         - npx prisma generate
         - echo "DATABASE_URL=$DATABASE_URL" > .env.production
         - echo "AUTH_SECRET=$AUTH_SECRET" >> .env.production
-        - echo "AUTH_URL=https://main.d2keh6u7hogn2r.amplifyapp.com" >> .env.production
+        - if [ -n "$AUTH_URL" ]; then echo "AUTH_URL=$AUTH_URL" >> .env.production; fi
         - echo "NEXTAUTH_SECRET=$AUTH_SECRET" >> .env.production
-        - echo "NEXTAUTH_URL=https://main.d2keh6u7hogn2r.amplifyapp.com" >> .env.production
+        - if [ -n "$NEXTAUTH_URL" ]; then echo "NEXTAUTH_URL=$NEXTAUTH_URL" >> .env.production; fi
         - echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> .env.production
     build:
       commands:

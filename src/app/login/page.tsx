@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { GraduationCap } from "lucide-react";
@@ -11,7 +11,6 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const registered = params.get("registered");
   const [form, setForm] = useState({ email: "", password: "" });
@@ -27,22 +26,13 @@ function LoginForm() {
         email: form.email,
         password: form.password,
         redirect: false,
+        callbackUrl: "/api/auth/redirect",
       });
       if (!result?.ok) {
         setError("Invalid email or password");
         return;
       }
-      const sessionRes = await fetch("/api/auth/session");
-      const session = await sessionRes.json();
-      const role = session?.user?.role;
-      const schoolSlug = session?.user?.schoolSlug;
-      if (role === "TEACHER") {
-        window.location.href = "/teacher/attendance";
-      } else if (schoolSlug) {
-        window.location.href = `/dashboard/${schoolSlug}`;
-      } else {
-        window.location.href = "/onboarding";
-      }
+      window.location.href = result.url ?? "/api/auth/redirect";
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 
 export default function InvitePage() {
   const params = useParams();
-  const router = useRouter();
   const token = params.token as string;
 
   const [invite, setInvite] = useState<{ email: string; school: { name: string; slug: string } } | null>(null);
@@ -41,8 +40,20 @@ export default function InvitePage() {
     const data = await res.json();
     if (!res.ok) { setError(data.error); setLoading(false); return; }
 
-    await signIn("credentials", { email: invite!.email, password: form.password, redirect: false });
-    router.push(`/dashboard/${data.schoolSlug}`);
+    const signInResult = await signIn("credentials", {
+      email: invite!.email,
+      password: form.password,
+      redirect: false,
+      callbackUrl: "/api/auth/redirect",
+    });
+
+    if (!signInResult?.ok) {
+      setError("Account created, but sign in failed. Please log in manually.");
+      setLoading(false);
+      return;
+    }
+
+    window.location.href = signInResult.url ?? "/api/auth/redirect";
   }
 
   return (
