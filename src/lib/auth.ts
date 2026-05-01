@@ -16,48 +16,59 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-          include: { ownedSchool: true, school: true },
-        });
-
-        if (!user) return null;
-
-        const valid = await bcrypt.compare(
-          credentials.password as string,
-          user.password
-        );
-        if (!valid) return null;
-
-        if (user.role === "TEACHER") {
-          const teacherProfile = await prisma.teacher.findUnique({
-            where: { userId: user.id },
-            include: { school: { select: { id: true, slug: true } } },
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email as string },
+            include: { ownedSchool: true, school: true },
           });
+
+          if (!user) {
+            console.error("Login failed: user not found for email", credentials.email);
+            return null;
+          }
+
+          const valid = await bcrypt.compare(
+            credentials.password as string,
+            user.password
+          );
+          if (!valid) {
+            console.error("Login failed: wrong password for email", credentials.email);
+            return null;
+          }
+
+          if (user.role === "TEACHER") {
+            const teacherProfile = await prisma.teacher.findUnique({
+              where: { userId: user.id },
+              include: { school: { select: { id: true, slug: true } } },
+            });
+            return {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              schoolId: teacherProfile?.schoolId ?? null,
+              schoolSlug: teacherProfile?.school?.slug ?? null,
+              teacherId: teacherProfile?.id ?? null,
+              mentorSectionId: teacherProfile?.mentorSectionId ?? null,
+            };
+          }
+
+          const school = user.ownedSchool || user.school;
+
           return {
             id: user.id,
             name: user.name,
             email: user.email,
             role: user.role,
-            schoolId: teacherProfile?.schoolId ?? null,
-            schoolSlug: teacherProfile?.school?.slug ?? null,
-            teacherId: teacherProfile?.id ?? null,
-            mentorSectionId: teacherProfile?.mentorSectionId ?? null,
+            schoolId: school?.id ?? null,
+            schoolSlug: school?.slug ?? null,
+            teacherId: null,
+            mentorSectionId: null,
           };
+        } catch (err) {
+          console.error("Login error:", err);
+          return null;
         }
-
-        const school = user.ownedSchool || user.school;
-
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          schoolId: school?.id ?? null,
-          schoolSlug: school?.slug ?? null,
-          teacherId: null,
-          mentorSectionId: null,
-        };
       },
     }),
   ],
