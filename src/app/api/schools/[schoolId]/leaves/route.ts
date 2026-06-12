@@ -2,21 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-
-async function canAccess(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a) => a.id === userId);
-}
+import { canAccessSchool, studentBelongsToSchool, teacherBelongsToSchool } from "@/lib/tenant";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type") as "STUDENT" | "TEACHER" | null;
@@ -51,7 +43,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
@@ -61,6 +53,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       return NextResponse.json({ error: "studentId required for STUDENT leave" }, { status: 400 });
     if (data.type === "TEACHER" && !data.teacherId)
       return NextResponse.json({ error: "teacherId required for TEACHER leave" }, { status: 400 });
+    if (data.studentId && !(await studentBelongsToSchool(data.studentId, schoolId))) {
+      return NextResponse.json({ error: "Student not found in this school" }, { status: 400 });
+    }
+    if (data.teacherId && !(await teacherBelongsToSchool(data.teacherId, schoolId))) {
+      return NextResponse.json({ error: "Teacher not found in this school" }, { status: 400 });
+    }
 
     const leave = await prisma.leaveRequest.create({
       data: {

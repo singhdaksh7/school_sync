@@ -3,6 +3,16 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { subDays, startOfDay, format } from "date-fns";
 
+type AnalyticsStudent = {
+  id: string;
+  name: string;
+  rollNo: string;
+  section: {
+    name: string;
+    class: { name: string };
+  };
+};
+
 async function canAccess(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
     where: { id: schoolId },
@@ -73,7 +83,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
   }
 
   // At-risk students (< 75% attendance over last 30 days)
-  const studentAttMap = new Map<string, { present: number; total: number; student: any }>();
+  const studentAttMap = new Map<string, { present: number; total: number; student: AnalyticsStudent }>();
   for (const record of last30DaysStudentAttendance) {
     if (!record.student) continue;
     const entry = studentAttMap.get(record.student.id) || { present: 0, total: 0, student: record.student };
@@ -96,7 +106,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
     .slice(0, 10);
 
   // Top/bottom performers by average marks percentage
-  const studentMarks = new Map<string, { totalPct: number; count: number; student: any }>();
+  const studentMarks = new Map<string, { totalPct: number; count: number; student: AnalyticsStudent }>();
   for (const result of allExamResults) {
     const pct = (result.marks / result.exam.maxMarks) * 100;
     const entry = studentMarks.get(result.student.id) || { totalPct: 0, count: 0, student: result.student };

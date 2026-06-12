@@ -17,10 +17,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  let teachers: any[];
+  type TeacherImportRow = {
+    name?: unknown;
+    email?: string;
+    phone?: string;
+    subject?: string;
+  };
+  let teachers: TeacherImportRow[];
   try {
     const body = await req.json();
-    teachers = body.teachers;
+    teachers = (body as { teachers?: TeacherImportRow[] }).teachers ?? [];
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }

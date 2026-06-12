@@ -3,21 +3,13 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
-
-async function canAccess(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a) => a.id === userId);
-}
+import { canAccessSchool, feeStructureBelongsToSchool, studentBelongsToSchool } from "@/lib/tenant";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const studentId = searchParams.get("studentId");
@@ -52,11 +44,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
     const data = createSchema.parse(body);
+    const [studentOk, feeStructureOk] = await Promise.all([
+      studentBelongsToSchool(data.studentId, schoolId),
+      feeStructureBelongsToSchool(data.feeStructureId, schoolId),
+    ]);
+    if (!studentOk) return NextResponse.json({ error: "Student not found in this school" }, { status: 400 });
+    if (!feeStructureOk) return NextResponse.json({ error: "Fee structure not found in this school" }, { status: 400 });
+
     const payment = await prisma.feePayment.create({
       data: {
         studentId: data.studentId,

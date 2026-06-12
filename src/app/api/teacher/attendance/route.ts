@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { allStudentsBelongToSchool, sessionRole } from "@/lib/tenant";
 
 async function getTeacher(userId: string) {
   return prisma.teacher.findUnique({ where: { userId } });
@@ -9,7 +10,7 @@ async function getTeacher(userId: string) {
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((session.user as any).role !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const teacher = await getTeacher(session.user.id);
   if (!teacher?.mentorSectionId) return NextResponse.json({ error: "No mentor section assigned" }, { status: 400 });
@@ -19,7 +20,7 @@ export async function GET(req: Request) {
   const date = new Date(dateParam + "T00:00:00.000Z");
 
   const records = await prisma.attendance.findMany({
-    where: { sectionId: teacher.mentorSectionId, date, type: "STUDENT" },
+    where: { schoolId: teacher.schoolId, sectionId: teacher.mentorSectionId, date, type: "STUDENT" },
   });
   return NextResponse.json(records);
 }
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((session.user as any).role !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const teacher = await getTeacher(userId);
   if (!teacher?.mentorSectionId) return NextResponse.json({ error: "No mentor section assigned" }, { status: 400 });
@@ -36,9 +37,13 @@ export async function POST(req: Request) {
   try {
     const { date: dateParam, records } = await req.json();
     const date = new Date(dateParam + "T00:00:00.000Z");
+    const submitted = records as { id: string; status: string }[];
+    if (!(await allStudentsBelongToSchool(submitted.map((r) => r.id), teacher.schoolId, teacher.mentorSectionId))) {
+      return NextResponse.json({ error: "One or more students are not in your mentor section" }, { status: 400 });
+    }
 
     await Promise.all(
-      (records as { id: string; status: string }[]).map((r) =>
+      submitted.map((r) =>
         prisma.attendance.upsert({
           where: { date_studentId: { date, studentId: r.id } },
           create: {

@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSchoolBySlug } from "@/lib/school";
+import { sessionRole } from "@/lib/tenant";
 import { redirect, notFound } from "next/navigation";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 
@@ -15,7 +16,7 @@ export default async function DashboardLayout({
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const role = (session.user as any).role as string;
+  const role = sessionRole(session.user) ?? "";
 
   const school = await getSchoolBySlug(schoolSlug);
 
@@ -24,7 +25,7 @@ export default async function DashboardLayout({
   const userId = session.user.id;
   const hasAccess =
     school.ownerId === userId ||
-    school.admins?.some((a: any) => a.id === userId);
+    school.admins?.some((admin: { id: string }) => admin.id === userId);
 
   if (!hasAccess) {
     const userSchool = await prisma.school.findFirst({

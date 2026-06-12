@@ -175,8 +175,8 @@ export default function CustomTimetableClient({
       const data = await res.json();
       setGeneratedSlots(data.slots);
       setStep(3);
-    } catch (e: any) {
-      setError(e.message || "Generation failed");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Generation failed");
     } finally {
       setGenerating(false);
     }
@@ -202,8 +202,8 @@ export default function CustomTimetableClient({
       }
 
       setStep(4);
-    } catch (e: any) {
-      setError(e.message || "Save failed");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
     }

@@ -8,7 +8,6 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type Status = "PRESENT" | "ABSENT" | "LATE";
@@ -63,8 +62,10 @@ export default function TeacherAttendancePage() {
   }, []);
 
   useEffect(() => {
-    if (profile?.mentorSection) fetchAttendance(date);
-  }, [date, profile, fetchAttendance]);
+    if (!profile?.mentorSection) return;
+    const id = window.setTimeout(() => fetchAttendance(date), 0);
+    return () => window.clearTimeout(id);
+  }, [date, profile?.mentorSection, fetchAttendance]);
 
   function setStatus(id: string, status: Status) {
     setAttendance((prev) => ({ ...prev, [id]: status }));

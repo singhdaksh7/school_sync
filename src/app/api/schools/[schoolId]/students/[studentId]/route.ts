@@ -3,15 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
-
-async function verify(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a: { id: string }) => a.id === userId);
-}
+import { canAccessSchool, sectionBelongsToSchool } from "@/lib/tenant";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -27,7 +19,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const { schoolId, studentId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const student = await prisma.student.findUnique({
     where: { id: studentId, schoolId },
@@ -49,18 +41,28 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
   const { schoolId, studentId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
     const data = schema.parse(body);
-    const student = await prisma.student.update({
-      where: { id: studentId },
+    if (!(await sectionBelongsToSchool(data.sectionId, schoolId))) {
+      return NextResponse.json({ error: "Section not found in this school" }, { status: 400 });
+    }
+
+    const existing = await prisma.student.findFirst({ where: { id: studentId, schoolId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    await prisma.student.updateMany({
+      where: { id: studentId, schoolId },
       data: {
         name: data.name, rollNo: data.rollNo, sectionId: data.sectionId,
         email: data.email || null, phone: data.phone || null,
         parentName: data.parentName || null, parentPhone: data.parentPhone || null,
       },
+    });
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, schoolId },
       include: { section: { include: { class: true } } },
     });
     await logAudit({ action: "STUDENT_UPDATED", entityType: "Student", entityId: studentId, metadata: { name: data.name }, userId: session.user.id, schoolId });
@@ -76,12 +78,12 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ schoo
   const { schoolId, studentId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
-    const student = await prisma.student.findUnique({ where: { id: studentId }, select: { name: true } });
+    const student = await prisma.student.findFirst({ where: { id: studentId, schoolId }, select: { name: true } });
     if (!student) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    await prisma.student.delete({ where: { id: studentId } });
+    await prisma.student.deleteMany({ where: { id: studentId, schoolId } });
     await logAudit({ action: "STUDENT_DELETED", entityType: "Student", entityId: studentId, metadata: { name: student.name }, userId: session.user.id, schoolId });
     return NextResponse.json({ success: true });
   } catch (err) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { CalendarDays, X, GripVertical, Settings2, AlertTriangle, Search, Clock } from "lucide-react";
+import { CalendarDays, X, GripVertical, AlertTriangle, Search, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";

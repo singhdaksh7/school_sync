@@ -2,15 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-
-async function verify(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a: { id: string }) => a.id === userId);
-}
+import { canAccessSchool, sectionBelongsToSchool } from "@/lib/tenant";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -24,22 +16,28 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
   const { schoolId, teacherId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
     const data = schema.parse(body);
+    const existing = await prisma.teacher.findFirst({ where: { id: teacherId, schoolId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    if (data.mentorSectionId && !(await sectionBelongsToSchool(data.mentorSectionId, schoolId))) {
+      return NextResponse.json({ error: "Mentor section not found in this school" }, { status: 400 });
+    }
 
     // If assigning a new mentor section, clear any previous teacher's assignment for that section
     if (data.mentorSectionId) {
       await prisma.teacher.updateMany({
-        where: { mentorSectionId: data.mentorSectionId, id: { not: teacherId } },
+        where: { schoolId, mentorSectionId: data.mentorSectionId, id: { not: teacherId } },
         data: { mentorSectionId: null },
       });
     }
 
-    const teacher = await prisma.teacher.update({
-      where: { id: teacherId },
+    await prisma.teacher.updateMany({
+      where: { id: teacherId, schoolId },
       data: {
         name: data.name,
         email: data.email || null,
@@ -47,6 +45,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
         subject: data.subject || null,
         mentorSectionId: data.mentorSectionId ?? null,
       },
+    });
+    const teacher = await prisma.teacher.findFirst({
+      where: { id: teacherId, schoolId },
       include: {
         mentorSection: { include: { class: { select: { name: true } } } },
       },
@@ -62,8 +63,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ schoo
   const { schoolId, teacherId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  await prisma.teacher.delete({ where: { id: teacherId } });
+  const result = await prisma.teacher.deleteMany({ where: { id: teacherId, schoolId } });
+  if (result.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

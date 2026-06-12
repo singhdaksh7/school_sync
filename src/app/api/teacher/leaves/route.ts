@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { sessionRole } from "@/lib/tenant";
 
 async function getTeacher(userId: string) {
   return prisma.teacher.findUnique({ where: { userId } });
@@ -10,7 +11,7 @@ async function getTeacher(userId: string) {
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((session.user as any).role !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const teacher = await getTeacher(session.user.id);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
@@ -33,7 +34,7 @@ const schema = z.object({
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((session.user as any).role !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const teacher = await getTeacher(session.user.id);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });

@@ -2,33 +2,25 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-
-async function canView(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a: { id: string }) => a.id === userId);
-}
-
-async function canWrite(schoolId: string, userId: string, role: string) {
-  if (role === "VICE_PRINCIPAL") return false;
-  return canView(schoolId, userId);
-}
+import { allTeachersBelongToSchool, canAccessSchool, canWriteSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canView(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
-  const type = searchParams.get("type");
+  const typeParam = searchParams.get("type");
+  const type = typeParam === "STUDENT" || typeParam === "TEACHER" ? typeParam : null;
   const sectionId = searchParams.get("sectionId");
 
   if (!date) return NextResponse.json({ error: "date required" }, { status: 400 });
+  if (typeParam && !type) return NextResponse.json({ error: "Invalid attendance type" }, { status: 400 });
+  if (sectionId && !(await sectionBelongsToSchool(sectionId, schoolId))) {
+    return NextResponse.json({ error: "Section not found in this school" }, { status: 400 });
+  }
 
   const dateObj = new Date(date);
   dateObj.setHours(0, 0, 0, 0);
@@ -37,7 +29,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
     where: {
       schoolId,
       date: dateObj,
-      ...(type ? { type: type as any } : {}),
+      ...(type ? { type } : {}),
       ...(sectionId ? { sectionId } : {}),
     },
     include: { student: true, teacher: true },
@@ -60,9 +52,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.user.id;
-  const role = (session.user as any).role as string;
+  const role = sessionRole(session.user);
 
-  if (!(await canWrite(schoolId, userId, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canWriteSchool(schoolId, userId, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
@@ -74,6 +66,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
         { error: "Student attendance can only be marked by the class mentor via the teacher portal." },
         { status: 403 }
       );
+    }
+
+    if (!(await allTeachersBelongToSchool(records.map((r) => r.id), schoolId))) {
+      return NextResponse.json({ error: "One or more teachers are not in this school" }, { status: 400 });
     }
 
     const dateObj = new Date(date);

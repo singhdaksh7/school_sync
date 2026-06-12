@@ -54,20 +54,25 @@ export default function ResultsClient({ initialSchemes, initialSections, schoolI
   }, [schoolId]);
 
   useEffect(() => {
-    if (selectedScheme && selectedSection) {
+    if (!selectedScheme || !selectedSection) return;
+    const id = window.setTimeout(() => {
       loadResults(selectedScheme.id, selectedSection);
       setMarks({});
-    }
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [selectedScheme, selectedSection, loadResults]);
 
   useEffect(() => {
     if (!selectedExam) return;
-    const prefilled: Record<string, string> = {};
-    students.forEach((s) => {
-      const key = `${s.id}_${selectedExam.id}`;
-      if (existing[key] !== undefined) prefilled[s.id] = String(existing[key]);
-    });
-    setMarks(prefilled);
+    const id = window.setTimeout(() => {
+      const prefilled: Record<string, string> = {};
+      students.forEach((s) => {
+        const key = `${s.id}_${selectedExam.id}`;
+        if (existing[key] !== undefined) prefilled[s.id] = String(existing[key]);
+      });
+      setMarks(prefilled);
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [selectedExam, existing, students]);
 
   async function saveMarks() {

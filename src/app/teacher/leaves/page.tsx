@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -45,18 +45,19 @@ export default function TeacherLeavesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/teacher/me").then((r) => r.json()).then((d) => { if (!d.error) setProfile(d); });
-    fetchLeaves();
-  }, []);
-
-  function fetchLeaves() {
+  const fetchLeaves = useCallback(() => {
     setLoading(true);
     fetch("/api/teacher/leaves")
       .then((r) => r.json())
       .then((d) => { if (!d.error) setLeaves(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/teacher/me").then((r) => r.json()).then((d) => { if (!d.error) setProfile(d); });
+    const id = window.setTimeout(fetchLeaves, 0);
+    return () => window.clearTimeout(id);
+  }, [fetchLeaves]);
 
   async function submit() {
     if (!form.reason.trim() || !form.fromDate || !form.toDate) {
@@ -187,7 +188,7 @@ export default function TeacherLeavesPage() {
             <CardContent className="py-20 text-center">
               <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500 font-medium">No leave requests yet</p>
-              <p className="text-sm text-gray-400 mt-1">Click "Request Leave" to submit one</p>
+              <p className="text-sm text-gray-400 mt-1">Click &quot;Request Leave&quot; to submit one</p>
             </CardContent>
           </Card>
         ) : (

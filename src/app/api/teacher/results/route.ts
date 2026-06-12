@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { allStudentsBelongToSchool, getExamInSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
 
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((session.user as any).role !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
   if (!teacher) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -16,8 +17,18 @@ export async function GET(req: Request) {
 
   if (!examId || !sectionId) return NextResponse.json({ error: "examId and sectionId required" }, { status: 400 });
 
+  const [sectionOk, exam] = await Promise.all([
+    sectionBelongsToSchool(sectionId, teacher.schoolId),
+    getExamInSchool(examId, teacher.schoolId),
+  ]);
+  if (!sectionOk || !exam) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const isAssigned = teacher.mentorSectionId === sectionId ||
+    (await prisma.timetableSlot.findFirst({ where: { schoolId: teacher.schoolId, teacherId: teacher.id, sectionId } })) !== null;
+  if (!isAssigned) return NextResponse.json({ error: "You are not assigned to this section" }, { status: 403 });
+
   const results = await prisma.examResult.findMany({
-    where: { examId, student: { sectionId } },
+    where: { examId: exam.id, student: { schoolId: teacher.schoolId, sectionId } },
     select: { studentId: true, marks: true },
   });
   return NextResponse.json(results);
@@ -27,7 +38,7 @@ export async function POST(req: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((session.user as any).role !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const teacher = await prisma.teacher.findUnique({ where: { userId } });
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
@@ -39,15 +50,23 @@ export async function POST(req: Request) {
 
   // Verify teacher is assigned to this section (via timetable or mentor)
   const isAssigned = teacher.mentorSectionId === sectionId ||
-    (await prisma.timetableSlot.findFirst({ where: { teacherId: teacher.id, sectionId } })) !== null;
+    (await prisma.timetableSlot.findFirst({ where: { schoolId: teacher.schoolId, teacherId: teacher.id, sectionId } })) !== null;
 
   if (!isAssigned) return NextResponse.json({ error: "You are not assigned to this section" }, { status: 403 });
 
-  // Verify exam exists
-  const exam = await prisma.exam.findUnique({ where: { id: examId }, include: { scheme: true } });
+  const [sectionOk, exam] = await Promise.all([
+    sectionBelongsToSchool(sectionId, teacher.schoolId),
+    getExamInSchool(examId, teacher.schoolId),
+  ]);
+  if (!sectionOk) return NextResponse.json({ error: "Section not found in this school" }, { status: 404 });
   if (!exam) return NextResponse.json({ error: "Exam not found" }, { status: 404 });
 
-  const upserts = (results as { studentId: string; marks: number }[]).map((r) =>
+  const submitted = results as { studentId: string; marks: number }[];
+  if (!(await allStudentsBelongToSchool(submitted.map((r) => r.studentId), teacher.schoolId, sectionId))) {
+    return NextResponse.json({ error: "One or more students are not in this section" }, { status: 400 });
+  }
+
+  const upserts = submitted.map((r) =>
     prisma.examResult.upsert({
       where: { examId_studentId: { examId, studentId: r.studentId } },
       create: {

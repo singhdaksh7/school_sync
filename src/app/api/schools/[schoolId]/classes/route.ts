@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { z } from "zod";
 
 async function getSchoolAndVerify(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({

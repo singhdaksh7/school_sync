@@ -58,17 +58,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   }>();
 
   for (const r of records) {
-    const person = type === "STUDENT" ? r.student : r.teacher;
+    const student = r.student;
+    const teacher = r.teacher;
+    const person = type === "STUDENT" ? student : teacher;
     if (!person) continue;
     const key = person.id;
     if (!summaryMap.has(key)) {
       summaryMap.set(key, {
         id: person.id,
         name: person.name,
-        rollNo: type === "STUDENT" ? (r.student as any)?.rollNo : undefined,
-        subject: type === "TEACHER" ? (r.teacher as any)?.subject : undefined,
+        rollNo: type === "STUDENT" ? student?.rollNo : undefined,
+        subject: type === "TEACHER" ? teacher?.subject ?? undefined : undefined,
         sectionLabel: type === "STUDENT"
-          ? `${(r.student as any)?.section?.class?.name} - ${(r.student as any)?.section?.name}`
+          ? `${student?.section?.class?.name} - ${student?.section?.name}`
           : undefined,
         present: 0,
         absent: 0,

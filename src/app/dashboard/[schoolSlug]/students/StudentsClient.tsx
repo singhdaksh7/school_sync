@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 
 interface Section { id: string; name: string; class: { id: string; name: string } }
+interface ClassWithSections { id: string; name: string; sections: { id: string; name: string }[] }
 interface Student {
   id: string; name: string; rollNo: string; email: string | null; phone: string | null;
   parentName: string | null; parentPhone: string | null; sectionId: string;
@@ -65,8 +66,8 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
     const studentsData = await studentsRes.json();
     const classesData = await classesRes.json();
     setStudents(studentsData);
-    const allSections: Section[] = classesData.flatMap((c: any) =>
-      c.sections.map((s: any) => ({ id: s.id, name: s.name, class: { id: c.id, name: c.name } }))
+    const allSections: Section[] = (classesData as ClassWithSections[]).flatMap((c) =>
+      c.sections.map((s) => ({ id: s.id, name: s.name, class: { id: c.id, name: c.name } }))
     );
     setSections(allSections);
     setLoading(false);

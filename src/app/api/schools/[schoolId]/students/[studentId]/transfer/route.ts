@@ -3,15 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
-
-async function canAccess(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a) => a.id === userId);
-}
+import { canAccessSchool } from "@/lib/tenant";
 
 const schema = z.object({
   toSectionId: z.string().min(1),
@@ -25,7 +17,7 @@ export async function POST(
   const { schoolId, studentId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
@@ -54,8 +46,8 @@ export async function POST(
           schoolId,
         },
       }),
-      prisma.student.update({
-        where: { id: studentId },
+      prisma.student.updateMany({
+        where: { id: studentId, schoolId },
         data: { sectionId: toSectionId },
       }),
     ]);
@@ -84,7 +76,7 @@ export async function GET(
   const { schoolId, studentId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const history = await prisma.sectionTransfer.findMany({
     where: { studentId, schoolId },

@@ -21,10 +21,10 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Fetch all students with parent name matching the user's name
+    // Without a dedicated Parent model, the token can only safely authorize its source student.
     const children = await prisma.student.findMany({
       where: {
-        parentName: decoded.name,
+        id: decoded.userId,
         schoolId: decoded.schoolId,
       },
       include: {

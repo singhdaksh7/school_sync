@@ -2,21 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-
-async function canAccess(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a) => a.id === userId);
-}
+import { canAccessSchool, classBelongsToSchool } from "@/lib/tenant";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const structures = await prisma.feeStructure.findMany({
     where: { schoolId },
@@ -37,11 +29,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
     const data = createSchema.parse(body);
+    if (data.classId && !(await classBelongsToSchool(data.classId, schoolId))) {
+      return NextResponse.json({ error: "Class not found in this school" }, { status: 400 });
+    }
+
     const structure = await prisma.feeStructure.create({
       data: {
         name: data.name,

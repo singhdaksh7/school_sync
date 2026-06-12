@@ -3,15 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
-
-async function verify(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a: { id: string }) => a.id === userId);
-}
+import { canAccessSchool, hasPrismaErrorCode, sectionBelongsToSchool } from "@/lib/tenant";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -27,7 +19,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const sectionId = searchParams.get("sectionId");
@@ -44,11 +36,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
     const data = schema.parse(body);
+    if (!(await sectionBelongsToSchool(data.sectionId, schoolId))) {
+      return NextResponse.json({ error: "Section not found in this school" }, { status: 400 });
+    }
+
     const student = await prisma.student.create({
       data: {
         name: data.name,
@@ -66,7 +62,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     return NextResponse.json(student, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
-    if ((err as any)?.code === "P2002") return NextResponse.json({ error: "Roll number already exists" }, { status: 400 });
+    if (hasPrismaErrorCode(err, "P2002")) return NextResponse.json({ error: "Roll number already exists" }, { status: 400 });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

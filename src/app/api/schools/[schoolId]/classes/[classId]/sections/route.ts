@@ -1,21 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-async function verify(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a: { id: string }) => a.id === userId);
-}
+import { canAccessSchool, classBelongsToSchool } from "@/lib/tenant";
 
 export async function POST(req: Request, { params }: { params: Promise<{ schoolId: string; classId: string }> }) {
   const { schoolId, classId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await classBelongsToSchool(classId, schoolId))) return NextResponse.json({ error: "Class not found in this school" }, { status: 404 });
 
   const { name } = await req.json();
   if (!name?.trim()) return NextResponse.json({ error: "Section name required" }, { status: 400 });
@@ -33,12 +26,14 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ schoo
   const { schoolId, classId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await classBelongsToSchool(classId, schoolId))) return NextResponse.json({ error: "Class not found in this school" }, { status: 404 });
 
   try {
     const { sectionId } = await req.json();
     if (!sectionId) return NextResponse.json({ error: "sectionId required" }, { status: 400 });
-    await prisma.section.delete({ where: { id: sectionId } });
+    const result = await prisma.section.deleteMany({ where: { id: sectionId, classId } });
+    if (result.count === 0) return NextResponse.json({ error: "Section not found in this class" }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete section error:", err);

@@ -5,7 +5,6 @@ import { ClipboardCheck, Check, X, Clock, Save, Users, GraduationCap } from "luc
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE";
@@ -13,6 +12,11 @@ interface Section { id: string; name: string; class: { name: string } }
 interface Teacher { id: string; name: string; subject: string | null }
 interface Student { id: string; name: string; rollNo: string; sectionId: string }
 interface AttendanceRecord { [id: string]: AttendanceStatus }
+interface ApiAttendanceRow {
+  studentId?: string | null;
+  teacherId?: string | null;
+  status: AttendanceStatus;
+}
 
 const statusConfig = {
   PRESENT: { label: "Present", icon: Check, color: "bg-green-100 text-green-700 border-green-300" },
@@ -53,28 +57,26 @@ export default function AttendanceClient({ initialSections, initialTeachers, ini
     const res = await fetch(url);
     const data = await res.json();
     const map: AttendanceRecord = {};
-    data.forEach((r: any) => {
+    (data as ApiAttendanceRow[]).forEach((r) => {
       const id = type === "STUDENT" ? r.studentId : r.teacherId;
-      map[id] = r.status;
+      if (id) map[id] = r.status;
     });
     setAttendance(map);
     setLoading(false);
   }, [schoolId]);
 
-  // Load students on mount (server pre-loaded attendance for today; fetch students)
-  useEffect(() => {
-    fetchStudents("all");
-  }, [fetchStudents]);
-
   // Re-fetch when mode / date / section change (skip initial render)
   useEffect(() => {
-    if (mode === "STUDENT") {
-      fetchStudents(selectedSection);
-      fetchExisting(date, "STUDENT", selectedSection);
-    } else {
-      fetchExisting(date, "TEACHER", null);
-    }
-  }, [mode, date, selectedSection]); // eslint-disable-line react-hooks/exhaustive-deps
+    const id = window.setTimeout(() => {
+      if (mode === "STUDENT") {
+        fetchStudents(selectedSection);
+        fetchExisting(date, "STUDENT", selectedSection);
+      } else {
+        fetchExisting(date, "TEACHER", null);
+      }
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [mode, date, selectedSection, fetchStudents, fetchExisting]);
 
   function setStatus(id: string, status: AttendanceStatus) {
     setAttendance((prev) => ({ ...prev, [id]: status }));

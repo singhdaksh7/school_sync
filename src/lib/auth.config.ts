@@ -1,5 +1,17 @@
 import type { NextAuthConfig } from "next-auth";
 
+type AppUserFields = {
+  role?: string | null;
+  schoolId?: string | null;
+  schoolSlug?: string | null;
+  teacherId?: string | null;
+  mentorSectionId?: string | null;
+};
+
+function appUser(user: unknown): AppUserFields {
+  return user as AppUserFields;
+}
+
 export const authConfig: NextAuthConfig = {
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
@@ -7,7 +19,7 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const role = (auth?.user as any)?.role;
+      const role = appUser(auth?.user).role;
       const pathname = nextUrl.pathname;
 
       const publicRoutes = ["/", "/login", "/register"];
@@ -29,7 +41,7 @@ export const authConfig: NextAuthConfig = {
 
       // Non-teachers: block teacher portal pages
       if (isLoggedIn && role !== "TEACHER" && (pathname.startsWith("/teacher/attendance") || pathname.startsWith("/teacher/marks") || pathname.startsWith("/teacher/timetable"))) {
-        const schoolSlug = (auth?.user as any)?.schoolSlug;
+        const schoolSlug = appUser(auth?.user).schoolSlug;
         if (schoolSlug) {
           return new Response(null, { status: 307, headers: { Location: `/dashboard/${schoolSlug}` } });
         }
@@ -40,22 +52,24 @@ export const authConfig: NextAuthConfig = {
     jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as any).role;
-        token.schoolId = (user as any).schoolId;
-        token.schoolSlug = (user as any).schoolSlug;
-        token.teacherId = (user as any).teacherId;
-        token.mentorSectionId = (user as any).mentorSectionId;
+        token.role = appUser(user).role;
+        token.schoolId = appUser(user).schoolId;
+        token.schoolSlug = appUser(user).schoolSlug;
+        token.teacherId = appUser(user).teacherId;
+        token.mentorSectionId = appUser(user).mentorSectionId;
       }
       return token;
     },
     session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string;
-        (session.user as any).role = token.role;
-        (session.user as any).schoolId = token.schoolId;
-        (session.user as any).schoolSlug = token.schoolSlug;
-        (session.user as any).teacherId = token.teacherId;
-        (session.user as any).mentorSectionId = token.mentorSectionId;
+        Object.assign(session.user, {
+          role: token.role,
+          schoolId: token.schoolId,
+          schoolSlug: token.schoolSlug,
+          teacherId: token.teacherId,
+          mentorSectionId: token.mentorSectionId,
+        });
       }
       return session;
     },

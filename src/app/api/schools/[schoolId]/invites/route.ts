@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const validRoles = ["SCHOOL_ADMIN", "VICE_PRINCIPAL"] as const;
+type InviteRole = (typeof validRoles)[number];
+
 async function ownerOnly(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({ where: { id: schoolId } });
   return school?.ownerId === userId;
@@ -29,14 +32,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const { email, role } = await req.json();
   if (!email) return NextResponse.json({ error: "Email required" }, { status: 400 });
 
-  const validRoles = ["SCHOOL_ADMIN", "VICE_PRINCIPAL"];
-  const inviteRole = validRoles.includes(role) ? role : "SCHOOL_ADMIN";
+  const inviteRole: InviteRole = validRoles.includes(role as InviteRole) ? (role as InviteRole) : "SCHOOL_ADMIN";
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7);
 
   const invite = await prisma.schoolInvite.create({
-    data: { email, schoolId, invitedById: session.user.id, expiresAt, role: inviteRole as any },
+    data: { email, schoolId, invitedById: session.user.id, expiresAt, role: inviteRole },
   });
 
   const configuredBaseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL;

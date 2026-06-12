@@ -21,12 +21,13 @@ export async function GET(req: NextRequest) {
         { status: 401 }
       );
     }
+    if (studentId !== decoded.userId) {
+      return NextResponse.json({ error: "Student not found" }, { status: 404 });
+    }
 
-    // Verify student belongs to this parent
     const student = await prisma.student.findFirst({
       where: {
-        id: studentId,
-        parentName: decoded.name,
+        id: decoded.userId,
         schoolId: decoded.schoolId,
       },
     });
@@ -42,6 +43,8 @@ export async function GET(req: NextRequest) {
     const marks = await prisma.examResult.findMany({
       where: {
         studentId,
+        student: { schoolId: decoded.schoolId },
+        exam: { scheme: { schoolId: decoded.schoolId } },
       },
       include: {
         exam: {

@@ -6,7 +6,6 @@ import { GraduationCap, LogOut, CalendarDays, ClipboardCheck, FileText, RefreshC
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 

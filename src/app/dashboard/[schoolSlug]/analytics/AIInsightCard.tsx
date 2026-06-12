@@ -56,8 +56,8 @@ export default function AIInsightCard({ schoolId }: { schoolId: string }) {
       });
       if (!res.ok) throw new Error(await res.text());
       setData(await res.json());
-    } catch (e: any) {
-      setError(e.message || "Failed to generate insights");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to generate insights");
     } finally {
       setLoading(false);
     }

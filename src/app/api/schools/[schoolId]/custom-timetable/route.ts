@@ -1,16 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-async function canWrite(schoolId: string, userId: string, role: string) {
-  if (role === "VICE_PRINCIPAL") return false;
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a: { id: string }) => a.id === userId);
-}
+import { allTeachersBelongToSchool, canWriteSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
 
 type SubjectConfig = {
   name: string;
@@ -143,8 +134,8 @@ export async function POST(
   const session = await auth();
   if (!session?.user?.id)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const role = (session.user as any).role as string;
-  if (!(await canWrite(schoolId, session.user.id, role)))
+  const role = sessionRole(session.user);
+  if (!(await canWriteSchool(schoolId, session.user.id, role)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
@@ -160,6 +151,12 @@ export async function POST(
 
     if (!sectionId || !subjects?.length)
       return NextResponse.json({ error: "sectionId and subjects are required" }, { status: 400 });
+    if (!(await sectionBelongsToSchool(sectionId, schoolId))) {
+      return NextResponse.json({ error: "Section not found in this school" }, { status: 400 });
+    }
+    if (!(await allTeachersBelongToSchool(subjects.map((s) => s.teacherId), schoolId))) {
+      return NextResponse.json({ error: "One or more teachers are not in this school" }, { status: 400 });
+    }
 
     const allSlots = await prisma.timetableSlot.findMany({
       where: { schoolId, NOT: { sectionId } },
@@ -181,6 +178,12 @@ export async function POST(
 
     if (!sectionId || !slots)
       return NextResponse.json({ error: "sectionId and slots are required" }, { status: 400 });
+    if (!(await sectionBelongsToSchool(sectionId, schoolId))) {
+      return NextResponse.json({ error: "Section not found in this school" }, { status: 400 });
+    }
+    if (!(await allTeachersBelongToSchool(slots.map((s) => s.teacherId), schoolId))) {
+      return NextResponse.json({ error: "One or more teachers are not in this school" }, { status: 400 });
+    }
 
     await prisma.timetableSlot.deleteMany({ where: { sectionId, schoolId } });
     await prisma.timetableSlot.createMany({

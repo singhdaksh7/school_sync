@@ -6,7 +6,6 @@ import {
   TrendingUp, TrendingDown, ExternalLink, Flame, BookOpen,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { subDays, startOfDay, format } from "date-fns";
 import { cn } from "@/lib/utils";
 import AIInsightCard from "./AIInsightCard";
@@ -279,7 +278,7 @@ export default async function AnalyticsPage({
               <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center", todayRate === null ? "bg-gray-100" : todayRate >= 75 ? "bg-green-100" : "bg-red-100")}>
                 <BarChart2 className={cn("w-4 h-4", todayRate === null ? "text-gray-400" : todayRate >= 75 ? "text-green-600" : "text-red-600")} />
               </div>
-              <div><p className="text-xs text-gray-500">Today's Attendance</p><p className="text-2xl font-bold text-gray-900">{todayRate !== null ? `${todayRate}%` : "—"}</p></div>
+              <div><p className="text-xs text-gray-500">Today&apos;s Attendance</p><p className="text-2xl font-bold text-gray-900">{todayRate !== null ? `${todayRate}%` : "—"}</p></div>
             </div>
           </CardContent>
         </Card>
@@ -436,7 +435,6 @@ export default async function AnalyticsPage({
               <div className="space-y-3">
                 {enhancedRisk.map((s) => {
                   const riskColor = s.riskScore >= 70 ? "bg-red-500" : s.riskScore >= 55 ? "bg-orange-400" : "bg-yellow-400";
-                  const textColor = s.riskScore >= 70 ? "text-red-600" : s.riskScore >= 55 ? "text-orange-600" : "text-yellow-600";
                   return (
                     <div key={s.id} className="flex items-center gap-3">
                       <div className={cn("w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white flex-shrink-0", riskColor)}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import {
@@ -44,17 +44,18 @@ export default function TeacherArrangementsPage() {
   const [arrangements, setArrangements] = useState<Arrangement[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch("/api/teacher/me").then((r) => r.json()).then((d) => { if (!d.error) setProfile(d); });
-    fetchArrangements();
-  }, []);
-
-  function fetchArrangements() {
+  const fetchArrangements = useCallback(() => {
     setLoading(true);
     fetch("/api/teacher/arrangements")
       .then((r) => r.json())
       .then((d) => { if (!d.error) setArrangements(d); setLoading(false); });
-  }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/teacher/me").then((r) => r.json()).then((d) => { if (!d.error) setProfile(d); });
+    const id = window.setTimeout(fetchArrangements, 0);
+    return () => window.clearTimeout(id);
+  }, [fetchArrangements]);
 
   // Group by date
   const grouped = arrangements.reduce((acc, a) => {
@@ -119,7 +120,7 @@ export default function TeacherArrangementsPage() {
           <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4">
             <div className="flex items-center gap-2 mb-3">
               <Bell className="w-4 h-4 text-blue-600" />
-              <p className="text-sm font-semibold text-blue-800">Today's Arrangement Duties</p>
+              <p className="text-sm font-semibold text-blue-800">Today&apos;s Arrangement Duties</p>
             </div>
             <div className="space-y-2">
               {todayArrangements.map((a) => (
@@ -150,7 +151,7 @@ export default function TeacherArrangementsPage() {
             <CardContent className="py-20 text-center">
               <RefreshCw className="w-10 h-10 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500 font-medium">No arrangements assigned</p>
-              <p className="text-gray-400 text-sm mt-1">You'll see duties here when a colleague's leave is approved</p>
+              <p className="text-gray-400 text-sm mt-1">You&apos;ll see duties here when a colleague&apos;s leave is approved</p>
             </CardContent>
           </Card>
         ) : (

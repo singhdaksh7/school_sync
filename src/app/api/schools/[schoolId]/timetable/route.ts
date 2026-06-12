@@ -1,27 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-async function canView(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a: { id: string }) => a.id === userId);
-}
-
-async function canWrite(schoolId: string, userId: string, role: string) {
-  if (role === "VICE_PRINCIPAL") return false;
-  return canView(schoolId, userId);
-}
+import { canAccessSchool, canWriteSchool, sectionBelongsToSchool, sessionRole, teacherBelongsToSchool } from "@/lib/tenant";
 
 // GET: return school's periodsPerDay + all slots for a section
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canView(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const sectionId = searchParams.get("sectionId");
@@ -34,8 +21,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
     const period = parseInt(searchParams.get("period") || "0", 10);
     const excludeSectionId = searchParams.get("sectionId");
     if (teacherId && dayOfWeek && period) {
+      if (!(await teacherBelongsToSchool(teacherId, schoolId))) {
+        return NextResponse.json({ error: "Teacher not found in this school" }, { status: 400 });
+      }
+      if (excludeSectionId && !(await sectionBelongsToSchool(excludeSectionId, schoolId))) {
+        return NextResponse.json({ error: "Section not found in this school" }, { status: 400 });
+      }
       const conflict = await prisma.timetableSlot.findFirst({
         where: {
+          schoolId,
           teacherId,
           dayOfWeek,
           period,
@@ -69,10 +63,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   }
 
   const slots = sectionId
-    ? await prisma.timetableSlot.findMany({
+    ? (await sectionBelongsToSchool(sectionId, schoolId))
+      ? await prisma.timetableSlot.findMany({
         where: { schoolId, sectionId },
         include: { teacher: { select: { id: true, name: true, subject: true } } },
       })
+      : []
     : [];
 
   return NextResponse.json({ periodsPerDay: school?.periodsPerDay ?? 6, slots });
@@ -83,8 +79,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const role = (session.user as any).role as string;
-  if (!(await canWrite(schoolId, session.user.id, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const role = sessionRole(session.user);
+  if (!(await canWriteSchool(schoolId, session.user.id, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
     const body = await req.json();
@@ -104,11 +100,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
     if (!sectionId || !dayOfWeek || !period) {
       return NextResponse.json({ error: "sectionId, dayOfWeek, and period are required" }, { status: 400 });
     }
+    if (!(await sectionBelongsToSchool(sectionId, schoolId))) {
+      return NextResponse.json({ error: "Section not found in this school" }, { status: 400 });
+    }
 
     // Clear slot
     if (!teacherId) {
-      await prisma.timetableSlot.deleteMany({ where: { sectionId, dayOfWeek, period } });
+      await prisma.timetableSlot.deleteMany({ where: { schoolId, sectionId, dayOfWeek, period } });
       return NextResponse.json({ success: true });
+    }
+    if (!(await teacherBelongsToSchool(teacherId, schoolId))) {
+      return NextResponse.json({ error: "Teacher not found in this school" }, { status: 400 });
     }
 
     const slot = await prisma.timetableSlot.upsert({

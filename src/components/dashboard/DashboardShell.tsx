@@ -18,7 +18,8 @@ export default function DashboardShell({ school, user, userRole, children }: Das
 
   // Close sidebar on route change (mobile nav tap)
   useEffect(() => {
-    setSidebarOpen(false);
+    const id = window.setTimeout(() => setSidebarOpen(false), 0);
+    return () => window.clearTimeout(id);
   }, [pathname]);
 
   // Close sidebar on Escape
