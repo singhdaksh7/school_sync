@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { moneyToNumber } from "@/lib/money";
 import Anthropic from "@anthropic-ai/sdk";
 import { subDays, startOfDay, format, differenceInDays } from "date-fns";
 
@@ -69,7 +70,7 @@ export async function POST(req: Request) {
     }),
     prisma.leaveRequest.count({ where: { schoolId, status: "PENDING" } }),
     prisma.feePayment.findMany({
-      where: { schoolId, paidAt: { gte: thirtyDaysAgo } },
+      where: { schoolId, status: "PAID", paidAt: { gte: thirtyDaysAgo } },
       select: { amount: true },
     }),
     prisma.announcement.count({ where: { schoolId, publishedAt: { gte: sevenDaysAgo } } }),
@@ -117,7 +118,7 @@ export async function POST(req: Request) {
     ? Math.round(allExamResults.reduce((sum, r) => sum + (r.exam.maxMarks ? (r.marks / r.exam.maxMarks) * 100 : 0), 0) / allExamResults.length)
     : null;
 
-  const collected = feePayments.reduce((s, p) => s + p.amount, 0);
+  const collected = feePayments.reduce((s, p) => s + moneyToNumber(p.amount), 0);
 
   const context = {
     school: school.name,

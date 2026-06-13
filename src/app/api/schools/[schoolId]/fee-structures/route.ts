@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { canAccessSchool, classBelongsToSchool } from "@/lib/tenant";
+import { moneyToNumber } from "@/lib/money";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -15,7 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
     include: { class: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
-  return NextResponse.json(structures);
+  return NextResponse.json(structures.map((structure) => ({ ...structure, amount: moneyToNumber(structure.amount) })));
 }
 
 const createSchema = z.object({
@@ -48,7 +49,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       },
       include: { class: { select: { name: true } } },
     });
-    return NextResponse.json(structure, { status: 201 });
+    return NextResponse.json({ ...structure, amount: moneyToNumber(structure.amount) }, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

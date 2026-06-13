@@ -1,5 +1,6 @@
 import { getSchoolBySlug } from "@/lib/school";
 import { prisma } from "@/lib/prisma";
+import { moneyToNumber } from "@/lib/money";
 import FeesClient from "./FeesClient";
 
 export default async function FeesPage({
@@ -38,10 +39,23 @@ export default async function FeesPage({
     }),
   ]);
 
+  const serializedStructures = structures.map((structure) => ({
+    ...structure,
+    amount: moneyToNumber(structure.amount),
+  }));
+  const serializedPayments = payments.map((payment) => ({
+    ...payment,
+    amount: moneyToNumber(payment.amount),
+    feeStructure: {
+      ...payment.feeStructure,
+      amount: moneyToNumber(payment.feeStructure.amount),
+    },
+  }));
+
   return (
     <FeesClient
-      initialStructures={JSON.parse(JSON.stringify(structures))}
-      initialPayments={JSON.parse(JSON.stringify(payments))}
+      initialStructures={JSON.parse(JSON.stringify(serializedStructures))}
+      initialPayments={JSON.parse(JSON.stringify(serializedPayments))}
       initialStudents={JSON.parse(JSON.stringify(students))}
       initialClasses={classes}
       schoolId={school.id}

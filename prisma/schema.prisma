@@ -345,7 +345,7 @@ model Holiday {
 model FeeStructure {
   id        String       @id @default(cuid())
   name      String
-  amount    Float
+  amount    Decimal      @db.Decimal(10, 2)
   frequency String       // ANNUAL, MONTHLY, ONE_TIME, QUARTERLY
   classId   String?
   class     Class?       @relation(fields: [classId], references: [id], onDelete: SetNull)
@@ -358,23 +358,31 @@ model FeeStructure {
 
 model FeePayment {
   id             String       @id @default(cuid())
-  amount         Float
-  paidAt         DateTime     @default(now())
+  amount         Decimal      @db.Decimal(10, 2)
+  paidAt         DateTime?
   method         String?      // CASH, ONLINE, CHEQUE, UPI
   notes          String?
+  paymentGateway String?
+  gatewayOrderId String?      @unique
+  gatewayPaymentId String?    @unique
+  gatewaySignature String?
+  receiptNumber String?       @unique
+  status         String       @default("PAID") // PENDING, PAID, FAILED
   studentId      String
   student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   feeStructureId String
   feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
-  recordedById   String
-  recordedBy     User         @relation("FeeRecorder", fields: [recordedById], references: [id])
+  recordedById   String?
+  recordedBy     User?        @relation("FeeRecorder", fields: [recordedById], references: [id])
   schoolId       String
   school         School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   @@index([schoolId, paidAt])
+  @@index([schoolId, status])
   @@index([studentId])
+  @@index([feeStructureId])
 }
 
 model LeaveRequest {

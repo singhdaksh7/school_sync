@@ -16,9 +16,10 @@ interface FeeStructure { id: string; name: string; amount: number; frequency: st
 interface Student { id: string; name: string; rollNo: string; section: { name: string; class: { name: string } } }
 interface FeePayment {
   id: string; amount: number; paidAt: string; method: string | null; notes: string | null;
+  paymentGateway: string | null; gatewayPaymentId: string | null; receiptNumber: string | null; status: string;
   student: { name: string; rollNo: string; section: { name: string; class: { name: string } } };
   feeStructure: { name: string; amount: number };
-  recordedBy: { name: string };
+  recordedBy: { name: string } | null;
 }
 
 const FREQUENCY_LABELS: Record<string, string> = { ANNUAL: "Annual", MONTHLY: "Monthly", QUARTERLY: "Quarterly", ONE_TIME: "One-time" };
@@ -31,6 +32,11 @@ const FREQUENCY_COLORS: Record<string, string> = {
 const METHOD_COLORS: Record<string, string> = {
   CASH: "bg-yellow-50 text-yellow-700", ONLINE: "bg-blue-50 text-blue-700",
   CHEQUE: "bg-purple-50 text-purple-700", UPI: "bg-green-50 text-green-700",
+};
+const STATUS_COLORS: Record<string, string> = {
+  PAID: "bg-green-50 text-green-700",
+  PENDING: "bg-amber-50 text-amber-700",
+  FAILED: "bg-red-50 text-red-700",
 };
 
 type Tab = "structures" | "payments";
@@ -117,10 +123,11 @@ export default function FeesClient({ initialStructures, initialPayments, initial
     setPaymentForm((prev) => ({ ...prev, feeStructureId: id, amount: structure ? String(structure.amount) : prev.amount }));
   }
 
-  const totalCollected = payments.reduce((sum, p) => sum + p.amount, 0);
+  const paidPayments = payments.filter((p) => p.status === "PAID");
+  const totalCollected = paidPayments.reduce((sum, p) => sum + p.amount, 0);
   const thisMonth = payments.filter((p) => {
     const d = new Date(p.paidAt); const now = new Date();
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    return p.status === "PAID" && p.paidAt && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
   const thisMonthTotal = thisMonth.reduce((sum, p) => sum + p.amount, 0);
 
@@ -220,13 +227,19 @@ export default function FeesClient({ initialStructures, initialPayments, initial
                     <div>
                       <p className="font-medium text-sm text-gray-900">{p.student.name}</p>
                       <p className="text-xs text-gray-400">{p.student.section.class.name} - {p.student.section.name} · Roll {p.student.rollNo}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{p.feeStructure.name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{p.feeStructure.name}</p>
+                    <div className="flex gap-1.5 mt-1 flex-wrap">
+                      <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded", STATUS_COLORS[p.status] || "bg-gray-50 text-gray-600")}>{p.status}</span>
+                      {p.method && <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded", METHOD_COLORS[p.method] || "bg-gray-50 text-gray-600")}>{p.method}</span>}
+                      {p.receiptNumber && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{p.receiptNumber}</span>}
                     </div>
+                    {p.gatewayPaymentId && <p className="text-[10px] text-gray-400 mt-1">Gateway ID: {p.gatewayPaymentId}</p>}
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold text-gray-900">₹{p.amount.toLocaleString("en-IN")}</p>
-                    <p className="text-xs text-gray-400">{format(new Date(p.paidAt), "dd MMM yyyy")}</p>
-                    {p.method && <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded mt-0.5 inline-block", METHOD_COLORS[p.method] || "bg-gray-50 text-gray-600")}>{p.method}</span>}
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-gray-900">₹{p.amount.toLocaleString("en-IN")}</p>
+                    <p className="text-xs text-gray-400">{p.paidAt ? format(new Date(p.paidAt), "dd MMM yyyy") : "Awaiting payment"}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{p.recordedBy ? `By ${p.recordedBy.name}` : p.paymentGateway || "Online"}</p>
                   </div>
                 </div>
               ))}
