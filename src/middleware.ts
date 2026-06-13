@@ -25,7 +25,11 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  const token = await getToken({ req, secret });
+  const token = await getToken({
+    req,
+    secret,
+    secureCookie: process.env.NODE_ENV === "production",
+  });
 
   if (!token && !isPublicRoute(pathname)) {
     return NextResponse.redirect(new URL("/login", req.url));
