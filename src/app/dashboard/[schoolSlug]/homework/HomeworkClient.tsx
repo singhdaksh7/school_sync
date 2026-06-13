@@ -48,7 +48,12 @@ const STATUS_COLORS: Record<HomeworkStatus, string> = {
 
 function formatDate(value: string) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function toDeadlineIso(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
 interface Props {
@@ -145,7 +150,7 @@ export default function HomeworkClient({
         subject: selected.subject,
         title: form.title,
         description: form.description,
-        dueDate: form.dueDate,
+        dueDate: toDeadlineIso(form.dueDate),
         attachmentUrl: form.attachmentUrl,
       }),
     });

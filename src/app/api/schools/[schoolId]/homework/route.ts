@@ -101,6 +101,7 @@ export async function POST(
         title,
         description,
         dueDate,
+        deadlineAt: dueDate,
         attachmentUrl,
       },
     });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Mail, Phone, User, BookOpen, ClipboardCheck, Award, GraduationCap, FileText, ArrowRightLeft, X, History } from "lucide-react";
 import Link from "next/link";
@@ -24,6 +24,42 @@ interface TransferRecord {
   fromSection: { name: string; class: { name: string } };
   toSection: { name: string; class: { name: string } };
   transferredBy: { name: string | null };
+}
+interface HomeworkSubjectSummary {
+  subject: string;
+  totalAssigned: number;
+  submittedCount: number;
+  onlineSubmittedCount: number;
+  physicalSubmittedCount: number;
+  lateSubmittedCount: number;
+  notSubmittedCount: number;
+  checkedCount: number;
+  averageScore: number | null;
+}
+interface HomeworkRecord {
+  id: string;
+  title: string;
+  subject: string;
+  deadlineAt: string;
+  submissionStatus: string;
+  submissionMethod: string;
+  submittedAt: string | null;
+  checkedAt: string | null;
+  score: number | null;
+  maxScore: number | null;
+  teacherRemark: string | null;
+}
+interface HomeworkSummary {
+  totalAssigned: number;
+  submittedCount: number;
+  onlineSubmittedCount: number;
+  physicalSubmittedCount: number;
+  lateSubmittedCount: number;
+  notSubmittedCount: number;
+  checkedCount: number;
+  averageScore: number | null;
+  subjectWiseSummary: HomeworkSubjectSummary[];
+  recentHomeworkRecords: HomeworkRecord[];
 }
 
 const STATUS_CONFIG = {
@@ -117,6 +153,23 @@ export default function StudentProfileClient({ initialStudent, initialClasses, i
   const [classes] = useState<ClassWithSections[]>(initialClasses);
   const [transfers, setTransfers] = useState<TransferRecord[]>(initialTransfers);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [homeworkSummary, setHomeworkSummary] = useState<HomeworkSummary | null>(null);
+  const [homeworkLoading, setHomeworkLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    async function loadHomeworkSummary() {
+      setHomeworkLoading(true);
+      const res = await fetch(`/api/schools/${schoolId}/students/${student.id}/homework-summary`);
+      if (!active) return;
+      if (res.ok) {
+        setHomeworkSummary(await res.json());
+      }
+      setHomeworkLoading(false);
+    }
+    void loadHomeworkSummary();
+    return () => { active = false; };
+  }, [schoolId, student.id]);
 
   const handleTransferSuccess = async () => {
     setShowTransfer(false);
@@ -197,6 +250,99 @@ export default function StudentProfileClient({ initialStudent, initialClasses, i
         <Card><CardContent className="pt-4 pb-4"><p className="text-xs text-gray-500 font-medium mb-1">Absent</p><p className={cn("text-2xl font-bold", absentCount > 0 ? "text-red-600" : "text-gray-400")}>{absentCount}</p></CardContent></Card>
         <Card><CardContent className="pt-4 pb-4"><p className="text-xs text-gray-500 font-medium mb-1">Late</p><p className={cn("text-2xl font-bold", lateCount > 0 ? "text-yellow-600" : "text-gray-400")}>{lateCount}</p></CardContent></Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-blue-600" /> Homework Performance
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-4">
+          {homeworkLoading ? (
+            <p className="text-sm text-gray-400 py-6 text-center">Loading homework performance...</p>
+          ) : homeworkSummary ? (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  ["Total assigned", homeworkSummary.totalAssigned],
+                  ["Submitted", homeworkSummary.submittedCount],
+                  ["Online submitted", homeworkSummary.onlineSubmittedCount],
+                  ["Physical submitted", homeworkSummary.physicalSubmittedCount],
+                  ["Late", homeworkSummary.lateSubmittedCount],
+                  ["Not submitted", homeworkSummary.notSubmittedCount],
+                  ["Checked", homeworkSummary.checkedCount],
+                  ["Average score", homeworkSummary.averageScore === null ? "-" : `${homeworkSummary.averageScore}%`],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
+                    <p className="text-lg font-bold text-gray-900 mt-1">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Subject-wise summary</h3>
+                {homeworkSummary.subjectWiseSummary.length === 0 ? (
+                  <p className="text-sm text-gray-400">No homework records yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {homeworkSummary.subjectWiseSummary.map((subject) => (
+                      <div key={subject.subject} className="rounded-lg border border-gray-100 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-gray-800">{subject.subject}</p>
+                          <Badge variant="secondary">{subject.averageScore === null ? "No score" : `${subject.averageScore}% avg`}</Badge>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {subject.submittedCount}/{subject.totalAssigned} submitted · {subject.checkedCount} checked · {subject.lateSubmittedCount} late
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Recent homework</h3>
+                {homeworkSummary.recentHomeworkRecords.length === 0 ? (
+                  <p className="text-sm text-gray-400">No recent homework records.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
+                          <th className="py-2 pr-3 font-medium">Homework</th>
+                          <th className="py-2 pr-3 font-medium">Deadline</th>
+                          <th className="py-2 pr-3 font-medium">Status</th>
+                          <th className="py-2 pr-3 font-medium">Method</th>
+                          <th className="py-2 pr-3 font-medium text-right">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {homeworkSummary.recentHomeworkRecords.map((record) => (
+                          <tr key={record.id} className="border-b border-gray-50">
+                            <td className="py-2 pr-3">
+                              <p className="font-medium text-gray-800">{record.title}</p>
+                              <p className="text-xs text-gray-400">{record.subject}</p>
+                            </td>
+                            <td className="py-2 pr-3 text-gray-500">{new Date(record.deadlineAt).toLocaleString()}</td>
+                            <td className="py-2 pr-3"><Badge variant="outline">{record.submissionStatus.replace("_", " ")}</Badge></td>
+                            <td className="py-2 pr-3 text-gray-500">{record.submissionMethod}</td>
+                            <td className="py-2 pr-3 text-right font-medium text-gray-800">
+                              {record.score !== null && record.maxScore !== null ? `${record.score}/${record.maxScore}` : "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400 py-6 text-center">Homework performance is unavailable.</p>
+          )}
+        </CardContent>
+      </Card>
 
       {Object.keys(resultsByScheme).length > 0 ? (
         <div className="space-y-4">

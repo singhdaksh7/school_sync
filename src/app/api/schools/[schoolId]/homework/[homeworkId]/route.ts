@@ -31,6 +31,7 @@ export async function PATCH(
     title?: string;
     description?: string | null;
     dueDate?: Date;
+    deadlineAt?: Date;
     attachmentUrl?: string | null;
     status?: "ACTIVE" | "CLOSED" | "CANCELLED";
     sectionId?: string;
@@ -53,6 +54,7 @@ export async function PATCH(
     const dueDate = parseRequiredDate(body.dueDate);
     if (!dueDate) return NextResponse.json({ error: "Valid due date is required" }, { status: 400 });
     data.dueDate = dueDate;
+    data.deadlineAt = dueDate;
   }
   if (body.status !== undefined) {
     if (!["ACTIVE", "CLOSED", "CANCELLED"].includes(body.status)) {

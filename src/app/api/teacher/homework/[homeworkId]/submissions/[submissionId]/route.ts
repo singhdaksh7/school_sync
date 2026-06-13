@@ -50,7 +50,15 @@ export async function PATCH(
   const teacherRemark = typeof body.teacherRemark === "string" && body.teacherRemark.trim()
     ? body.teacherRemark.trim()
     : null;
+  if (body.status === "REJECTED" && !teacherRemark) {
+    return NextResponse.json({ error: "Teacher remark is required when rejecting homework" }, { status: 400 });
+  }
+  if (body.status === "REVIEWED" && (score === null || maxScore === null)) {
+    return NextResponse.json({ error: "Score and max score are required when checking homework" }, { status: 400 });
+  }
+
   const reviewedAt = new Date();
+  const submissionStatus = body.status === "REVIEWED" ? "CHECKED" : "REJECTED";
 
   const updated = await prisma.$transaction(async (tx) => {
     const saved = await tx.homeworkSubmission.update({
@@ -61,6 +69,8 @@ export async function PATCH(
         maxScore,
         teacherRemark,
         reviewedAt,
+        checkedAt: reviewedAt,
+        submissionStatus,
       },
       include: {
         student: { select: { id: true, name: true, rollNo: true, sectionId: true } },
@@ -74,6 +84,8 @@ export async function PATCH(
         homeworkId: homework.id,
         studentId: submission.studentId,
         status: body.status === "REVIEWED" ? "CHECKED" : "NOT_SUBMITTED",
+        submissionStatus,
+        submissionMethod: submission.submissionMethod,
         submittedAt: submission.submittedAt,
         score,
         maxScore,
@@ -82,6 +94,8 @@ export async function PATCH(
       },
       update: {
         status: body.status === "REVIEWED" ? "CHECKED" : "NOT_SUBMITTED",
+        submissionStatus,
+        submissionMethod: submission.submissionMethod,
         submittedAt: submission.submittedAt,
         score,
         maxScore,

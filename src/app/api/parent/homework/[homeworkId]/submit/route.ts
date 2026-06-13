@@ -34,6 +34,7 @@ export async function POST(
         schoolId: true,
         sectionId: true,
         dueDate: true,
+        deadlineAt: true,
         status: true,
       },
     });
@@ -54,8 +55,17 @@ export async function POST(
       return NextResponse.json({ error: "Student is not in this homework section" }, { status: 400 });
     }
 
+    const existingStatus = await prisma.homeworkStudentStatus.findUnique({
+      where: { homeworkId_studentId: { homeworkId: homework.id, studentId } },
+      select: { submissionStatus: true },
+    });
+    if (existingStatus?.submissionStatus === "CHECKED") {
+      return NextResponse.json({ error: "Checked homework cannot be resubmitted" }, { status: 400 });
+    }
+
     const submittedAt = new Date();
-    const status = submittedAt > homework.dueDate ? "LATE" : "SUBMITTED";
+    const status = submittedAt > homework.deadlineAt ? "LATE" : "SUBMITTED";
+    const submissionStatus = status === "LATE" ? "LATE_SUBMITTED" : "SUBMITTED";
 
     const submission = await prisma.$transaction(async (tx) => {
       const saved = await tx.homeworkSubmission.upsert({
@@ -70,6 +80,8 @@ export async function POST(
           fileType,
           submittedAt,
           status,
+          submissionStatus,
+          submissionMethod: "ONLINE",
         },
         update: {
           guardianId: auth.guardian.id,
@@ -78,10 +90,13 @@ export async function POST(
           fileType,
           submittedAt,
           status,
+          submissionStatus,
+          submissionMethod: "ONLINE",
           teacherRemark: null,
           score: null,
           maxScore: null,
           reviewedAt: null,
+          checkedAt: null,
         },
       });
 
@@ -91,10 +106,14 @@ export async function POST(
           homeworkId: homework.id,
           studentId,
           status,
+          submissionStatus,
+          submissionMethod: "ONLINE",
           submittedAt,
         },
         update: {
           status,
+          submissionStatus,
+          submissionMethod: "ONLINE",
           submittedAt,
           score: null,
           maxScore: null,

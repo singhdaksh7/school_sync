@@ -76,6 +76,7 @@ export async function POST(req: Request) {
         title,
         description,
         dueDate,
+        deadlineAt: dueDate,
         attachmentUrl,
       },
     });

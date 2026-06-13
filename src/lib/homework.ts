@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma";
 
 export type HomeworkStudentStatusInput = {
   studentId: string;
-  status: "PENDING" | "SUBMITTED" | "NOT_SUBMITTED" | "LATE" | "CHECKED";
+  status: "PENDING" | "SUBMITTED" | "NOT_SUBMITTED" | "LATE" | "CHECKED" | "REJECTED";
+  submissionMethod?: "NONE" | "ONLINE" | "PHYSICAL";
   submittedAt?: string | null;
   score?: number | string | null;
   maxScore?: number | string | null;

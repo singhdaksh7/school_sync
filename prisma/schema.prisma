@@ -57,66 +57,81 @@ enum HomeworkSubmissionStatus {
   REJECTED
 }
 
+enum HomeworkAcademicSubmissionStatus {
+  PENDING
+  SUBMITTED
+  LATE_SUBMITTED
+  NOT_SUBMITTED
+  CHECKED
+  REJECTED
+}
+
+enum HomeworkSubmissionMethod {
+  NONE
+  ONLINE
+  PHYSICAL
+}
+
 model User {
-  id                   String         @id @default(cuid())
+  id                   String                     @id @default(cuid())
   name                 String
-  email                String         @unique
+  email                String                     @unique
   password             String
-  role                 UserRole       @default(SCHOOL_OWNER)
+  role                 UserRole                   @default(SCHOOL_OWNER)
   schoolId             String?
-  school               School?        @relation("SchoolAdmins", fields: [schoolId], references: [id])
-  ownedSchool          School?        @relation("SchoolOwner")
-  invitesSent          SchoolInvite[] @relation("InviteSender")
+  school               School?                    @relation("SchoolAdmins", fields: [schoolId], references: [id])
+  ownedSchool          School?                    @relation("SchoolOwner")
+  invitesSent          SchoolInvite[]             @relation("InviteSender")
   attendancesMarked    Attendance[]
-  teacherProfile       Teacher?       @relation("TeacherUser")
-  examResultsSubmitted ExamResult[]   @relation("ResultSubmitter")
+  teacherProfile       Teacher?                   @relation("TeacherUser")
+  examResultsSubmitted ExamResult[]               @relation("ResultSubmitter")
   announcements        Announcement[]
-  feePaymentsRecorded  FeePayment[]   @relation("FeeRecorder")
-  leavesReviewed       LeaveRequest[] @relation("LeaveReviewer")
+  feePaymentsRecorded  FeePayment[]               @relation("FeeRecorder")
+  leavesReviewed       LeaveRequest[]             @relation("LeaveReviewer")
   earlyLeavesReviewed  TeacherEarlyLeaveRequest[] @relation("EarlyLeaveApprover")
-  transfersBy          SectionTransfer[] @relation("TransferBy")
-  auditLogs            AuditLog[]     @relation("AuditUser")
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
+  transfersBy          SectionTransfer[]          @relation("TransferBy")
+  auditLogs            AuditLog[]                 @relation("AuditUser")
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
 }
 
 model School {
-  id              String         @id @default(cuid())
-  name            String
-  slug            String         @unique
-  address         String?
-  phone           String?
-  email           String?
-  website         String?
-  logoUrl         String?
-  periodsPerDay   Int            @default(6)
-  teacherAttendanceCutoffTime String @default("09:30")
-  ownerId         String         @unique
-  owner           User           @relation("SchoolOwner", fields: [ownerId], references: [id])
-  admins          User[]         @relation("SchoolAdmins")
-  classes         Class[]
-  teachers        Teacher[]
-  students        Student[]
-  guardians       Guardian[]
-  studentGuardians StudentGuardian[]
-  invites         SchoolInvite[]
-  attendances     Attendance[]
-  timetableSlots  TimetableSlot[]
-  examSchemes     ExamScheme[]
-  announcements   Announcement[]
-  holidays        Holiday[]
-  feeStructures   FeeStructure[]
-  feePayments     FeePayment[]
-  leaveRequests   LeaveRequest[]
-  homework        Homework[]
-  homeworkSubmissions HomeworkSubmission[]
-  arrangements    Arrangement[]
-  earlyLeaveRequests TeacherEarlyLeaveRequest[]
-  sectionTransfers SectionTransfer[]
-  auditLogs       AuditLog[]
-  aiInsightCache  AIInsightCache?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                          String                     @id @default(cuid())
+  name                        String
+  slug                        String                     @unique
+  address                     String?
+  phone                       String?
+  email                       String?
+  website                     String?
+  logoUrl                     String?
+  periodsPerDay               Int                        @default(6)
+  teacherAttendanceCutoffTime String                     @default("09:30")
+  ownerId                     String                     @unique
+  owner                       User                       @relation("SchoolOwner", fields: [ownerId], references: [id])
+  admins                      User[]                     @relation("SchoolAdmins")
+  classes                     Class[]
+  teachers                    Teacher[]
+  students                    Student[]
+  guardians                   Guardian[]
+  studentGuardians            StudentGuardian[]
+  invites                     SchoolInvite[]
+  attendances                 Attendance[]
+  timetableSlots              TimetableSlot[]
+  examSchemes                 ExamScheme[]
+  announcements               Announcement[]
+  holidays                    Holiday[]
+  feeStructures               FeeStructure[]
+  feePayments                 FeePayment[]
+  leaveRequests               LeaveRequest[]
+  homework                    Homework[]
+  homeworkSubmissions         HomeworkSubmission[]
+  arrangements                Arrangement[]
+  earlyLeaveRequests          TeacherEarlyLeaveRequest[]
+  sectionTransfers            SectionTransfer[]
+  auditLogs                   AuditLog[]
+  aiInsightCache              AIInsightCache?
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime                   @updatedAt
 }
 
 model SchoolInvite {
@@ -146,45 +161,45 @@ model Class {
 }
 
 model Section {
-  id             String          @id @default(cuid())
+  id             String            @id @default(cuid())
   name           String
   classId        String
-  class          Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  class          Class             @relation(fields: [classId], references: [id], onDelete: Cascade)
   students       Student[]
   attendances    Attendance[]
-  mentor            Teacher?          @relation("SectionMentor")
-  timetableSlots    TimetableSlot[]
-  homework          Homework[]
-  arrangements      Arrangement[]
-  transfersFrom     SectionTransfer[] @relation("TransferFrom")
-  transfersTo       SectionTransfer[] @relation("TransferTo")
-  createdAt         DateTime          @default(now())
+  mentor         Teacher?          @relation("SectionMentor")
+  timetableSlots TimetableSlot[]
+  homework       Homework[]
+  arrangements   Arrangement[]
+  transfersFrom  SectionTransfer[] @relation("TransferFrom")
+  transfersTo    SectionTransfer[] @relation("TransferTo")
+  createdAt      DateTime          @default(now())
 
   @@unique([name, classId])
 }
 
 model Teacher {
-  id              String          @id @default(cuid())
-  name            String
-  email           String?
-  phone           String?
-  subject         String?
-  schoolId        String
-  school          School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  userId          String?         @unique
-  user            User?           @relation("TeacherUser", fields: [userId], references: [id])
-  mentorSectionId String?         @unique
-  mentorSection   Section?        @relation("SectionMentor", fields: [mentorSectionId], references: [id])
-  invites         TeacherInvite[]
-  attendances     Attendance[]
-  timetableSlots         TimetableSlot[] @relation("TeacherSlots")
-  leaveRequests          LeaveRequest[]
-  homework               Homework[]
-  arrangmentsAsAbsent    Arrangement[]   @relation("ArrangementAbsent")
-  arrangmentsAsSubstitute Arrangement[]  @relation("ArrangementSubstitute")
-  earlyLeaveRequests     TeacherEarlyLeaveRequest[]
-  createdAt              DateTime        @default(now())
-  updatedAt              DateTime        @updatedAt
+  id                      String                     @id @default(cuid())
+  name                    String
+  email                   String?
+  phone                   String?
+  subject                 String?
+  schoolId                String
+  school                  School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  userId                  String?                    @unique
+  user                    User?                      @relation("TeacherUser", fields: [userId], references: [id])
+  mentorSectionId         String?                    @unique
+  mentorSection           Section?                   @relation("SectionMentor", fields: [mentorSectionId], references: [id])
+  invites                 TeacherInvite[]
+  attendances             Attendance[]
+  timetableSlots          TimetableSlot[]            @relation("TeacherSlots")
+  leaveRequests           LeaveRequest[]
+  homework                Homework[]
+  arrangmentsAsAbsent     Arrangement[]              @relation("ArrangementAbsent")
+  arrangmentsAsSubstitute Arrangement[]              @relation("ArrangementSubstitute")
+  earlyLeaveRequests      TeacherEarlyLeaveRequest[]
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
 
   @@index([schoolId])
 }
@@ -206,8 +221,8 @@ model TimetableSlot {
   school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sectionId String
   section   Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  dayOfWeek Int      // 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-  period    Int      // 1, 2, 3...
+  dayOfWeek Int // 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  period    Int // 1, 2, 3...
   teacherId String?
   teacher   Teacher? @relation("TeacherSlots", fields: [teacherId], references: [id], onDelete: SetNull)
   subject   String?
@@ -258,27 +273,27 @@ model ExamResult {
 }
 
 model Student {
-  id           String       @id @default(cuid())
-  name         String
-  rollNo       String
-  email        String?
-  phone        String?
-  parentName   String?
-  parentPhone  String?
-  sectionId    String
-  section      Section      @relation(fields: [sectionId], references: [id])
-  schoolId     String
-  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  attendances  Attendance[]
-  examResults  ExamResult[]
-  homeworkStatuses HomeworkStudentStatus[]
+  id                  String                  @id @default(cuid())
+  name                String
+  rollNo              String
+  email               String?
+  phone               String?
+  parentName          String?
+  parentPhone         String?
+  sectionId           String
+  section             Section                 @relation(fields: [sectionId], references: [id])
+  schoolId            String
+  school              School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  attendances         Attendance[]
+  examResults         ExamResult[]
+  homeworkStatuses    HomeworkStudentStatus[]
   homeworkSubmissions HomeworkSubmission[]
-  guardianLinks   StudentGuardian[]
-  feePayments      FeePayment[]
-  leaveRequests    LeaveRequest[]
-  sectionTransfers SectionTransfer[]
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  guardianLinks       StudentGuardian[]
+  feePayments         FeePayment[]
+  leaveRequests       LeaveRequest[]
+  sectionTransfers    SectionTransfer[]
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
   @@unique([rollNo, schoolId])
   @@index([schoolId])
@@ -287,17 +302,17 @@ model Student {
 }
 
 model Guardian {
-  id            String            @id @default(cuid())
-  name          String
-  phone         String
-  email         String?
-  passwordHash  String?
-  schoolId      String
-  school        School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  studentLinks  StudentGuardian[]
+  id                  String               @id @default(cuid())
+  name                String
+  phone               String
+  email               String?
+  passwordHash        String?
+  schoolId            String
+  school              School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentLinks        StudentGuardian[]
   homeworkSubmissions HomeworkSubmission[]
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@unique([schoolId, phone])
   @@index([schoolId])
@@ -378,7 +393,7 @@ model FeeStructure {
   id        String       @id @default(cuid())
   name      String
   amount    Decimal      @db.Decimal(10, 2)
-  frequency String       // ANNUAL, MONTHLY, ONE_TIME, QUARTERLY
+  frequency String // ANNUAL, MONTHLY, ONE_TIME, QUARTERLY
   classId   String?
   class     Class?       @relation(fields: [classId], references: [id], onDelete: SetNull)
   schoolId  String
@@ -389,27 +404,27 @@ model FeeStructure {
 }
 
 model FeePayment {
-  id             String       @id @default(cuid())
-  amount         Decimal      @db.Decimal(10, 2)
-  paidAt         DateTime?
-  method         String?      // CASH, ONLINE, CHEQUE, UPI
-  notes          String?
-  paymentGateway String?
-  gatewayOrderId String?      @unique
-  gatewayPaymentId String?    @unique
+  id               String       @id @default(cuid())
+  amount           Decimal      @db.Decimal(10, 2)
+  paidAt           DateTime?
+  method           String? // CASH, ONLINE, CHEQUE, UPI
+  notes            String?
+  paymentGateway   String?
+  gatewayOrderId   String?      @unique
+  gatewayPaymentId String?      @unique
   gatewaySignature String?
-  receiptNumber String?       @unique
-  status         String       @default("PAID") // PENDING, PAID, FAILED
-  studentId      String
-  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  feeStructureId String
-  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
-  recordedById   String?
-  recordedBy     User?        @relation("FeeRecorder", fields: [recordedById], references: [id])
-  schoolId       String
-  school         School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  receiptNumber    String?      @unique
+  status           String       @default("PAID") // PENDING, PAID, FAILED
+  studentId        String
+  student          Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feeStructureId   String
+  feeStructure     FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  recordedById     String?
+  recordedBy       User?        @relation("FeeRecorder", fields: [recordedById], references: [id])
+  schoolId         String
+  school           School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   @@index([schoolId, paidAt])
   @@index([schoolId, status])
@@ -442,45 +457,49 @@ model LeaveRequest {
 }
 
 model Homework {
-  id            String                  @id @default(cuid())
-  schoolId      String
-  school        School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sectionId     String
-  section       Section                 @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  teacherId     String
-  teacher       Teacher                 @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  subject       String
-  title         String
-  description   String?
-  dueDate       DateTime
-  attachmentUrl String?
-  status        HomeworkStatus          @default(ACTIVE)
+  id              String                  @id @default(cuid())
+  schoolId        String
+  school          School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sectionId       String
+  section         Section                 @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  teacherId       String
+  teacher         Teacher                 @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject         String
+  title           String
+  description     String?
+  dueDate         DateTime
+  deadlineAt      DateTime
+  attachmentUrl   String?
+  status          HomeworkStatus          @default(ACTIVE)
   studentStatuses HomeworkStudentStatus[]
-  submissions    HomeworkSubmission[]
-  createdAt     DateTime                @default(now())
-  updatedAt     DateTime                @updatedAt
+  submissions     HomeworkSubmission[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 
   @@index([schoolId, dueDate])
+  @@index([schoolId, deadlineAt])
   @@index([schoolId, status])
   @@index([sectionId, subject])
   @@index([teacherId])
 }
 
 model HomeworkStudentStatus {
-  id             String                          @id @default(cuid())
-  homeworkId     String
-  homework       Homework                        @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
-  studentId      String
-  student        Student                         @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  status         HomeworkStudentSubmissionStatus @default(PENDING)
-  submittedAt    DateTime?
-  score          Float?
-  maxScore       Float?
-  teacherRemark  String?
-  parentVisible  Boolean                         @default(true)
-  checkedAt      DateTime?
-  createdAt      DateTime                        @default(now())
-  updatedAt      DateTime                        @updatedAt
+  id               String                           @id @default(cuid())
+  homeworkId       String
+  homework         Homework                         @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          Student                          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status           HomeworkStudentSubmissionStatus  @default(PENDING)
+  submissionStatus HomeworkAcademicSubmissionStatus @default(PENDING)
+  submissionMethod HomeworkSubmissionMethod         @default(NONE)
+  submittedAt      DateTime?
+  score            Float?
+  maxScore         Float?
+  teacherRemark    String?
+  parentVisible    Boolean                          @default(true)
+  checkedAt        DateTime?
+  createdAt        DateTime                         @default(now())
+  updatedAt        DateTime                         @updatedAt
 
   @@unique([homeworkId, studentId])
   @@index([studentId])
@@ -488,32 +507,37 @@ model HomeworkStudentStatus {
 }
 
 model HomeworkSubmission {
-  id            String                   @id @default(cuid())
-  schoolId      String
-  school        School                   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  homeworkId    String
-  homework      Homework                 @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
-  studentId     String
-  student       Student                  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  guardianId    String?
-  guardian      Guardian?                @relation(fields: [guardianId], references: [id], onDelete: SetNull)
-  attachmentUrl String
-  fileName      String?
-  fileType      String?
-  submittedAt   DateTime                 @default(now())
-  status        HomeworkSubmissionStatus
-  teacherRemark String?
-  score         Float?
-  maxScore      Float?
-  reviewedAt    DateTime?
-  createdAt     DateTime                 @default(now())
-  updatedAt     DateTime                 @updatedAt
+  id               String                           @id @default(cuid())
+  schoolId         String
+  school           School                           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  homeworkId       String
+  homework         Homework                         @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          Student                          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardianId       String?
+  guardian         Guardian?                        @relation(fields: [guardianId], references: [id], onDelete: SetNull)
+  attachmentUrl    String?
+  fileName         String?
+  fileType         String?
+  submittedAt      DateTime                         @default(now())
+  status           HomeworkSubmissionStatus
+  submissionStatus HomeworkAcademicSubmissionStatus @default(PENDING)
+  submissionMethod HomeworkSubmissionMethod         @default(NONE)
+  teacherRemark    String?
+  score            Float?
+  maxScore         Float?
+  reviewedAt       DateTime?
+  checkedAt        DateTime?
+  createdAt        DateTime                         @default(now())
+  updatedAt        DateTime                         @updatedAt
 
   @@unique([homeworkId, studentId])
   @@index([schoolId])
   @@index([homeworkId])
   @@index([studentId])
   @@index([status])
+  @@index([submissionStatus])
+  @@index([submissionMethod])
 }
 
 model Arrangement {
@@ -538,27 +562,27 @@ model Arrangement {
 }
 
 model SectionTransfer {
-  id            String   @id @default(cuid())
-  studentId     String
-  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  fromSectionId String
-  fromSection   Section  @relation("TransferFrom", fields: [fromSectionId], references: [id], onDelete: Cascade)
-  toSectionId   String
-  toSection     Section  @relation("TransferTo", fields: [toSectionId], references: [id], onDelete: Cascade)
-  reason        String?
+  id              String   @id @default(cuid())
+  studentId       String
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  fromSectionId   String
+  fromSection     Section  @relation("TransferFrom", fields: [fromSectionId], references: [id], onDelete: Cascade)
+  toSectionId     String
+  toSection       Section  @relation("TransferTo", fields: [toSectionId], references: [id], onDelete: Cascade)
+  reason          String?
   transferredById String
-  transferredBy User     @relation("TransferBy", fields: [transferredById], references: [id])
-  schoolId      String
-  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  createdAt     DateTime @default(now())
+  transferredBy   User     @relation("TransferBy", fields: [transferredById], references: [id])
+  schoolId        String
+  school          School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
 }
 
 model AuditLog {
   id         String   @id @default(cuid())
-  action     String   // e.g. STUDENT_CREATED, MARKS_SUBMITTED, LEAVE_APPROVED
-  entityType String   // e.g. Student, Teacher, ExamResult
+  action     String // e.g. STUDENT_CREATED, MARKS_SUBMITTED, LEAVE_APPROVED
+  entityType String // e.g. Student, Teacher, ExamResult
   entityId   String?
-  metadata   String?  // JSON string of relevant details
+  metadata   String? // JSON string of relevant details
   userId     String
   user       User     @relation("AuditUser", fields: [userId], references: [id])
   schoolId   String
@@ -574,7 +598,7 @@ model AIInsightCache {
   id          String   @id @default(cuid())
   schoolId    String   @unique
   school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  insights    String   // JSON string
+  insights    String // JSON string
   generatedAt DateTime @default(now())
 }
 
@@ -585,7 +609,7 @@ model TeacherEarlyLeaveRequest {
   teacherId        String
   teacher          Teacher     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   date             DateTime    @db.Date
-  leaveAfterPeriod Int         // teacher leaves after this period; later periods need substitutes
+  leaveAfterPeriod Int // teacher leaves after this period; later periods need substitutes
   reason           String
   status           LeaveStatus @default(PENDING)
   approvedById     String?
