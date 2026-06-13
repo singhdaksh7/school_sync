@@ -36,6 +36,20 @@ enum LeaveStatus {
   REJECTED
 }
 
+enum HomeworkStatus {
+  ACTIVE
+  CLOSED
+  CANCELLED
+}
+
+enum HomeworkStudentSubmissionStatus {
+  PENDING
+  SUBMITTED
+  NOT_SUBMITTED
+  LATE
+  CHECKED
+}
+
 model User {
   id                   String         @id @default(cuid())
   name                 String
@@ -85,6 +99,7 @@ model School {
   feeStructures   FeeStructure[]
   feePayments     FeePayment[]
   leaveRequests   LeaveRequest[]
+  homework        Homework[]
   arrangements    Arrangement[]
   sectionTransfers SectionTransfer[]
   auditLogs       AuditLog[]
@@ -128,6 +143,7 @@ model Section {
   attendances    Attendance[]
   mentor            Teacher?          @relation("SectionMentor")
   timetableSlots    TimetableSlot[]
+  homework          Homework[]
   arrangements      Arrangement[]
   transfersFrom     SectionTransfer[] @relation("TransferFrom")
   transfersTo       SectionTransfer[] @relation("TransferTo")
@@ -152,6 +168,7 @@ model Teacher {
   attendances     Attendance[]
   timetableSlots         TimetableSlot[] @relation("TeacherSlots")
   leaveRequests          LeaveRequest[]
+  homework               Homework[]
   arrangmentsAsAbsent    Arrangement[]   @relation("ArrangementAbsent")
   arrangmentsAsSubstitute Arrangement[]  @relation("ArrangementSubstitute")
   createdAt              DateTime        @default(now())
@@ -242,6 +259,7 @@ model Student {
   school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   attendances  Attendance[]
   examResults  ExamResult[]
+  homeworkStatuses HomeworkStudentStatus[]
   guardianLinks   StudentGuardian[]
   feePayments      FeePayment[]
   leaveRequests    LeaveRequest[]
@@ -407,6 +425,51 @@ model LeaveRequest {
   @@index([schoolId, status])
   @@index([teacherId])
   @@index([studentId])
+}
+
+model Homework {
+  id            String                  @id @default(cuid())
+  schoolId      String
+  school        School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sectionId     String
+  section       Section                 @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  teacherId     String
+  teacher       Teacher                 @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject       String
+  title         String
+  description   String?
+  dueDate       DateTime
+  attachmentUrl String?
+  status        HomeworkStatus          @default(ACTIVE)
+  studentStatuses HomeworkStudentStatus[]
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@index([schoolId, dueDate])
+  @@index([schoolId, status])
+  @@index([sectionId, subject])
+  @@index([teacherId])
+}
+
+model HomeworkStudentStatus {
+  id             String                          @id @default(cuid())
+  homeworkId     String
+  homework       Homework                        @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student                         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status         HomeworkStudentSubmissionStatus @default(PENDING)
+  submittedAt    DateTime?
+  score          Float?
+  maxScore       Float?
+  teacherRemark  String?
+  parentVisible  Boolean                         @default(true)
+  checkedAt      DateTime?
+  createdAt      DateTime                        @default(now())
+  updatedAt      DateTime                        @updatedAt
+
+  @@unique([homeworkId, studentId])
+  @@index([studentId])
+  @@index([status])
 }
 
 model Arrangement {
