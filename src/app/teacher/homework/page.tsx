@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { BookOpenCheck, CalendarDays, ClipboardCheck, FileText, GraduationCap, LogOut, RefreshCw, Save } from "lucide-react";
+import { BookOpenCheck, CalendarDays, ClipboardCheck, ExternalLink, FileText, GraduationCap, LogOut, RefreshCw, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type SubmissionStatus = "PENDING" | "SUBMITTED" | "NOT_SUBMITTED" | "LATE" | "CHECKED";
+type HomeworkSubmissionReviewStatus = "SUBMITTED" | "LATE" | "REVIEWED" | "REJECTED";
 type HomeworkStatus = "ACTIVE" | "CLOSED" | "CANCELLED";
 
 interface Student { id: string; name: string; rollNo: string }
@@ -32,6 +33,21 @@ interface HomeworkStudentStatus {
   teacherRemark: string | null;
   student: Student;
 }
+interface HomeworkSubmission {
+  id: string;
+  homeworkId: string;
+  studentId: string;
+  attachmentUrl: string;
+  fileName: string | null;
+  fileType: string | null;
+  submittedAt: string;
+  status: HomeworkSubmissionReviewStatus;
+  teacherRemark: string | null;
+  score: number | null;
+  maxScore: number | null;
+  student: Student;
+  guardian: { id: string; name: string; phone: string } | null;
+}
 interface Homework {
   id: string;
   title: string;
@@ -43,10 +59,12 @@ interface Homework {
   section: { name: string; class: { name: string } };
   teacher: { name: string };
   studentStatuses: HomeworkStudentStatus[];
+  submissions: HomeworkSubmission[];
 }
 interface TeacherProfile { name: string; school: { name: string } }
 
 const STATUS_OPTIONS: SubmissionStatus[] = ["SUBMITTED", "NOT_SUBMITTED", "LATE", "CHECKED"];
+const REVIEW_STATUS_OPTIONS: HomeworkSubmissionReviewStatus[] = ["REVIEWED", "REJECTED"];
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: "bg-green-50 text-green-700 border-green-200",
   CLOSED: "bg-gray-50 text-gray-700 border-gray-200",
@@ -56,6 +74,8 @@ const STATUS_COLORS: Record<string, string> = {
   NOT_SUBMITTED: "bg-red-50 text-red-700 border-red-200",
   LATE: "bg-orange-50 text-orange-700 border-orange-200",
   CHECKED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  REVIEWED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  REJECTED: "bg-red-50 text-red-700 border-red-200",
 };
 
 function formatDate(value: string) {
@@ -71,8 +91,10 @@ export default function TeacherHomeworkPage() {
   const [form, setForm] = useState({ title: "", description: "", dueDate: "", attachmentUrl: "" });
   const [selectedHomeworkId, setSelectedHomeworkId] = useState<string | null>(null);
   const [scores, setScores] = useState<Record<string, { status: SubmissionStatus; score: string; maxScore: string; teacherRemark: string }>>({});
+  const [reviews, setReviews] = useState<Record<string, { status: HomeworkSubmissionReviewStatus; score: string; maxScore: string; teacherRemark: string }>>({});
   const [saving, setSaving] = useState(false);
   const [scoreSaving, setScoreSaving] = useState(false);
+  const [reviewSavingId, setReviewSavingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   async function loadHomework() {
@@ -119,6 +141,17 @@ export default function TeacherHomeworkPage() {
         };
       });
       setScores(next);
+
+      const nextReviews: typeof reviews = {};
+      selectedHomework.submissions.forEach((submission) => {
+        nextReviews[submission.id] = {
+          status: submission.status === "REVIEWED" || submission.status === "REJECTED" ? submission.status : "REVIEWED",
+          score: submission.score === null ? "" : String(submission.score),
+          maxScore: submission.maxScore === null ? "" : String(submission.maxScore),
+          teacherRemark: submission.teacherRemark || "",
+        };
+      });
+      setReviews(nextReviews);
     }, 0);
     return () => window.clearTimeout(id);
   }, [selectedHomework]);
@@ -206,6 +239,33 @@ export default function TeacherHomeworkPage() {
     }
     await loadHomework();
     setMessage("Scores saved.");
+  }
+
+  async function saveSubmissionReview(submission: HomeworkSubmission) {
+    if (!selectedHomework) return;
+    const review = reviews[submission.id];
+    if (!review) return;
+
+    setReviewSavingId(submission.id);
+    setMessage("");
+    const res = await fetch(`/api/teacher/homework/${selectedHomework.id}/submissions/${submission.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: review.status,
+        score: review.score || null,
+        maxScore: review.maxScore || null,
+        teacherRemark: review.teacherRemark || null,
+      }),
+    });
+    const data = await res.json();
+    setReviewSavingId(null);
+    if (!res.ok) {
+      setMessage(data.error || "Could not save submission review.");
+      return;
+    }
+    await loadHomework();
+    setMessage("Submission review saved.");
   }
 
   const canScore = selectedHomework ? new Date() >= new Date(selectedHomework.dueDate) && selectedHomework.status !== "CANCELLED" : false;
@@ -344,6 +404,61 @@ export default function TeacherHomeworkPage() {
                     <Button onClick={saveScores} disabled={!canScore || scoreSaving} className="gap-2">
                       <Save className="w-4 h-4" /> {scoreSaving ? "Saving..." : "Save Scores"}
                     </Button>
+                  </div>
+
+                  <div className="pt-4 border-t border-gray-100 space-y-3">
+                    <div>
+                      <h2 className="text-base font-semibold text-gray-900">Submission Reviews</h2>
+                      <p className="text-xs text-gray-500 mt-1">Review uploaded homework links, add scores, and send remarks back to parents.</p>
+                    </div>
+                    {selectedHomework.studentStatuses.map((item) => {
+                      const submission = selectedHomework.submissions.find((entry) => entry.studentId === item.studentId) || null;
+                      return (
+                        <div key={`submission-${item.studentId}`} className="grid gap-2 rounded-lg border border-gray-100 p-3 md:grid-cols-[1fr_160px_90px_90px_1fr_auto] md:items-center">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{item.student.name}</p>
+                            <p className="text-xs text-gray-400">Roll {item.student.rollNo}</p>
+                            {submission && <p className="text-xs text-gray-400 mt-1">Submitted {formatDate(submission.submittedAt)}</p>}
+                          </div>
+                          {submission ? (
+                            <>
+                              <div className="space-y-2">
+                                <Badge variant="outline" className={cn("text-xs", STATUS_COLORS[submission.status])}>{submission.status}</Badge>
+                                <a
+                                  href={submission.attachmentUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  {submission.fileName || "Open file"}
+                                </a>
+                              </div>
+                              <Input type="number" min={0} placeholder="Score" value={reviews[submission.id]?.score || ""} onChange={(e) => setReviews((prev) => ({ ...prev, [submission.id]: { ...prev[submission.id], score: e.target.value } }))} />
+                              <Input type="number" min={0} placeholder="Max" value={reviews[submission.id]?.maxScore || ""} onChange={(e) => setReviews((prev) => ({ ...prev, [submission.id]: { ...prev[submission.id], maxScore: e.target.value } }))} />
+                              <Input placeholder="Remark" value={reviews[submission.id]?.teacherRemark || ""} onChange={(e) => setReviews((prev) => ({ ...prev, [submission.id]: { ...prev[submission.id], teacherRemark: e.target.value } }))} />
+                              <div className="flex gap-2">
+                                <Select
+                                  value={reviews[submission.id]?.status || "REVIEWED"}
+                                  onValueChange={(value) => setReviews((prev) => ({ ...prev, [submission.id]: { ...prev[submission.id], status: value as HomeworkSubmissionReviewStatus } }))}
+                                >
+                                  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                                  <SelectContent>{REVIEW_STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
+                                </Select>
+                                <Button size="sm" onClick={() => saveSubmissionReview(submission)} disabled={reviewSavingId === submission.id} className="gap-2">
+                                  <Save className="w-4 h-4" />
+                                  {reviewSavingId === submission.id ? "Saving" : "Save"}
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="md:col-span-5">
+                              <Badge variant="outline" className={cn("text-xs", STATUS_COLORS.PENDING)}>NO SUBMISSION</Badge>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

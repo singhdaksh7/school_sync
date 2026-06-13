@@ -119,6 +119,13 @@ export async function getHomeworkForTeacherAccess(homeworkId: string, teacherId:
         },
         orderBy: { student: { rollNo: "asc" } },
       },
+      submissions: {
+        include: {
+          student: { select: { id: true, name: true, rollNo: true, sectionId: true, schoolId: true } },
+          guardian: { select: { id: true, name: true, phone: true } },
+        },
+        orderBy: { submittedAt: "desc" },
+      },
     },
   });
   if (!homework) return null;
@@ -163,6 +170,13 @@ export function homeworkIncludeForList() {
         student: { select: { id: true, name: true, rollNo: true, sectionId: true } },
       },
       orderBy: { student: { rollNo: "asc" } },
+    },
+    submissions: {
+      include: {
+        student: { select: { id: true, name: true, rollNo: true, sectionId: true } },
+        guardian: { select: { id: true, name: true, phone: true } },
+      },
+      orderBy: { submittedAt: "desc" },
     },
   } as const;
 }

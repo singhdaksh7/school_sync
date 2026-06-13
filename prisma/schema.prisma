@@ -50,6 +50,13 @@ enum HomeworkStudentSubmissionStatus {
   CHECKED
 }
 
+enum HomeworkSubmissionStatus {
+  SUBMITTED
+  LATE
+  REVIEWED
+  REJECTED
+}
+
 model User {
   id                   String         @id @default(cuid())
   name                 String
@@ -100,6 +107,7 @@ model School {
   feePayments     FeePayment[]
   leaveRequests   LeaveRequest[]
   homework        Homework[]
+  homeworkSubmissions HomeworkSubmission[]
   arrangements    Arrangement[]
   sectionTransfers SectionTransfer[]
   auditLogs       AuditLog[]
@@ -260,6 +268,7 @@ model Student {
   attendances  Attendance[]
   examResults  ExamResult[]
   homeworkStatuses HomeworkStudentStatus[]
+  homeworkSubmissions HomeworkSubmission[]
   guardianLinks   StudentGuardian[]
   feePayments      FeePayment[]
   leaveRequests    LeaveRequest[]
@@ -282,6 +291,7 @@ model Guardian {
   schoolId      String
   school        School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   studentLinks  StudentGuardian[]
+  homeworkSubmissions HomeworkSubmission[]
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
@@ -442,6 +452,7 @@ model Homework {
   attachmentUrl String?
   status        HomeworkStatus          @default(ACTIVE)
   studentStatuses HomeworkStudentStatus[]
+  submissions    HomeworkSubmission[]
   createdAt     DateTime                @default(now())
   updatedAt     DateTime                @updatedAt
 
@@ -468,6 +479,35 @@ model HomeworkStudentStatus {
   updatedAt      DateTime                        @updatedAt
 
   @@unique([homeworkId, studentId])
+  @@index([studentId])
+  @@index([status])
+}
+
+model HomeworkSubmission {
+  id            String                   @id @default(cuid())
+  schoolId      String
+  school        School                   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  homeworkId    String
+  homework      Homework                 @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student                  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardianId    String?
+  guardian      Guardian?                @relation(fields: [guardianId], references: [id], onDelete: SetNull)
+  attachmentUrl String
+  fileName      String?
+  fileType      String?
+  submittedAt   DateTime                 @default(now())
+  status        HomeworkSubmissionStatus
+  teacherRemark String?
+  score         Float?
+  maxScore      Float?
+  reviewedAt    DateTime?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@unique([homeworkId, studentId])
+  @@index([schoolId])
+  @@index([homeworkId])
   @@index([studentId])
   @@index([status])
 }

@@ -51,6 +51,12 @@ export async function GET(req: NextRequest) {
               include: {
                 teacher: { select: { id: true, name: true } },
                 section: { include: { class: { select: { name: true } } } },
+                submissions: {
+                  where: {
+                    studentId: { in: studentIds },
+                    schoolId: auth.guardian.schoolId,
+                  },
+                },
               },
             },
           },
@@ -58,7 +64,9 @@ export async function GET(req: NextRequest) {
         })
       : [];
 
-    const homework = statuses.map((item) => ({
+    const homework = statuses.map((item) => {
+      const submission = item.homework.submissions.find((submitted) => submitted.studentId === item.studentId) || null;
+      return {
       id: item.id,
       homeworkId: item.homeworkId,
       studentId: item.studentId,
@@ -69,14 +77,16 @@ export async function GET(req: NextRequest) {
       dueDate: item.homework.dueDate,
       attachmentUrl: item.homework.attachmentUrl,
       homeworkStatus: item.homework.status,
-      submissionStatus: item.status,
-      submittedAt: item.submittedAt,
-      score: item.score,
-      maxScore: item.maxScore,
-      teacherRemark: item.teacherRemark,
+      submissionStatus: submission?.status ?? item.status,
+      submittedAt: submission?.submittedAt ?? item.submittedAt,
+      score: submission?.score ?? item.score,
+      maxScore: submission?.maxScore ?? item.maxScore,
+      teacherRemark: submission?.teacherRemark ?? item.teacherRemark,
+      submission,
       teacher: item.homework.teacher,
       section: item.homework.section,
-    }));
+      };
+    });
 
     return NextResponse.json({ homework });
   } catch (error) {
