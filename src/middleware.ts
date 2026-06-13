@@ -42,7 +42,9 @@ export async function middleware(req: NextRequest) {
   const isTeacherPage =
     pathname.startsWith("/teacher/attendance") ||
     pathname.startsWith("/teacher/marks") ||
-    pathname.startsWith("/teacher/timetable");
+    pathname.startsWith("/teacher/timetable") ||
+    pathname.startsWith("/teacher/arrangements") ||
+    pathname.startsWith("/teacher/early-leave");
 
   if (token && token.role !== "TEACHER" && isTeacherPage) {
     const schoolSlug = typeof token.schoolSlug === "string" ? token.schoolSlug : "";

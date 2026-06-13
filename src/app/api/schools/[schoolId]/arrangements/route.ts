@@ -28,8 +28,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
       ...(dateStr ? { date: new Date(dateStr) } : {}),
     },
     include: {
-      absentTeacher: { select: { name: true } },
-      substituteTeacher: { select: { name: true } },
+      absentTeacher: { select: { name: true, subject: true } },
+      substituteTeacher: { select: { name: true, subject: true } },
       section: { include: { class: { select: { name: true } } } },
     },
     orderBy: [{ date: "asc" }, { period: "asc" }],
