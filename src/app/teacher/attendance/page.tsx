@@ -24,6 +24,13 @@ interface TeacherProfile {
     students: Student[];
   } | null;
 }
+interface TeacherSelfAttendance {
+  date: string;
+  cutoffTime: string;
+  cutoffPassed: boolean;
+  canMarkPresent: boolean;
+  attendance: { id: string; status: Status; createdAt: string } | null;
+}
 
 const statusConfig = {
   PRESENT: { label: "Present", icon: Check, color: "bg-green-100 text-green-700 border-green-300" },
@@ -39,6 +46,11 @@ export default function TeacherAttendancePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [selfAttendance, setSelfAttendance] = useState<TeacherSelfAttendance | null>(null);
+  const [selfLoading, setSelfLoading] = useState(false);
+  const [selfMarking, setSelfMarking] = useState(false);
+  const [selfMessage, setSelfMessage] = useState("");
+  const [selfError, setSelfError] = useState("");
 
   useEffect(() => {
     fetch("/api/teacher/me")
@@ -48,6 +60,39 @@ export default function TeacherAttendancePage() {
         else setProfile(d);
       });
   }, []);
+
+  const fetchSelfAttendance = useCallback(async () => {
+    setSelfLoading(true);
+    const res = await fetch("/api/teacher/attendance/today");
+    const data = await res.json();
+    setSelfLoading(false);
+    if (res.ok) {
+      setSelfAttendance(data);
+      setSelfError("");
+      return;
+    }
+    setSelfError(data.error || "Unable to load today's attendance");
+  }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => fetchSelfAttendance(), 0);
+    return () => window.clearTimeout(id);
+  }, [fetchSelfAttendance]);
+
+  async function markSelfPresent() {
+    setSelfMarking(true);
+    setSelfMessage("");
+    setSelfError("");
+    const res = await fetch("/api/teacher/attendance/mark", { method: "POST" });
+    const data = await res.json();
+    setSelfMarking(false);
+    if (res.ok) {
+      setSelfMessage("Your attendance has been marked present");
+      fetchSelfAttendance();
+      return;
+    }
+    setSelfError(data.error || "Unable to mark attendance");
+  }
 
   const fetchAttendance = useCallback(async (d: string) => {
     setLoading(true);
@@ -98,6 +143,8 @@ export default function TeacherAttendancePage() {
   const absentCount = students.filter((s) => attendance[s.id] === "ABSENT").length;
   const lateCount = students.filter((s) => attendance[s.id] === "LATE").length;
   const unmarkedCount = students.filter((s) => !attendance[s.id]).length;
+  const selfStatus = selfAttendance?.attendance?.status;
+  const selfStatusConfig = selfStatus ? statusConfig[selfStatus] : null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -159,18 +206,56 @@ export default function TeacherAttendancePage() {
           </Card>
         ) : !profile ? (
           <div className="text-center py-20 text-gray-400">Loading...</div>
-        ) : !profile.mentorSection ? (
-          <Card>
-            <CardContent className="py-16 text-center">
-              <ClipboardCheck className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-700 font-semibold text-lg">No class assigned yet</p>
-              <p className="text-gray-400 text-sm mt-2">
-                Your school admin has not assigned you a class section. Please contact them.
-              </p>
-            </CardContent>
-          </Card>
         ) : (
           <>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span>My Attendance Today</span>
+                  {selfLoading ? (
+                    <span className="text-xs text-gray-400">Loading...</span>
+                  ) : selfStatusConfig ? (
+                    <span className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium", selfStatusConfig.color)}>
+                      <selfStatusConfig.icon className="w-3 h-3" />
+                      {selfStatusConfig.label}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400 italic">Not marked</span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-gray-700">
+                      Cutoff time: <span className="font-semibold">{selfAttendance?.cutoffTime ?? "09:30"}</span>
+                    </p>
+                    {selfAttendance?.cutoffPassed && !selfAttendance.attendance && (
+                      <p className="text-sm text-red-600 mt-1">Cutoff has passed. Admin can run auto-absent for unmarked teachers.</p>
+                    )}
+                    {selfMessage && <p className="text-sm text-green-700 mt-1">{selfMessage}</p>}
+                    {selfError && <p className="text-sm text-red-600 mt-1">{selfError}</p>}
+                  </div>
+                  <Button onClick={markSelfPresent} disabled={selfMarking || !selfAttendance?.canMarkPresent} className="gap-2">
+                    <Check className="w-4 h-4" />
+                    {selfMarking ? "Marking..." : "Mark Present"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {!profile.mentorSection ? (
+              <Card>
+                <CardContent className="py-16 text-center">
+                  <ClipboardCheck className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-700 font-semibold text-lg">No class assigned yet</p>
+                  <p className="text-gray-400 text-sm mt-2">
+                    You can still mark your own attendance here. Student attendance needs a class section assignment.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
             {/* Section Info */}
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Attendance</h1>
@@ -286,6 +371,8 @@ export default function TeacherAttendancePage() {
                   </div>
                 </CardContent>
               </Card>
+            )}
+              </>
             )}
           </>
         )}

@@ -89,6 +89,7 @@ model School {
   website         String?
   logoUrl         String?
   periodsPerDay   Int            @default(6)
+  teacherAttendanceCutoffTime String @default("09:30")
   ownerId         String         @unique
   owner           User           @relation("SchoolOwner", fields: [ownerId], references: [id])
   admins          User[]         @relation("SchoolAdmins")

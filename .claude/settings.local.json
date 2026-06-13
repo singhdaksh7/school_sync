@@ -9,7 +9,14 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(git reset *)"
+      "Bash(git reset *)",
+      "Bash(git diff *)",
+      "PowerShell(npx prisma generate 2>&1 | Select-Object -Last 15)",
+      "PowerShell(npm run build 2>&1)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "code-review-graph"
+  ]
 }

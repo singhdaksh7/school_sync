@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ClipboardCheck, Check, X, Clock, Save, Users, GraduationCap } from "lucide-react";
+import { ClipboardCheck, Check, X, Clock, Users, GraduationCap, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -29,9 +29,16 @@ interface Props {
   initialTeachers: Teacher[];
   initialAttendance: Record<string, string>;
   schoolId: string;
+  initialTeacherAttendanceCutoffTime: string;
 }
 
-export default function AttendanceClient({ initialSections, initialTeachers, initialAttendance, schoolId }: Props) {
+export default function AttendanceClient({
+  initialSections,
+  initialTeachers,
+  initialAttendance,
+  schoolId,
+  initialTeacherAttendanceCutoffTime,
+}: Props) {
   const [mode, setMode] = useState<"STUDENT" | "TEACHER">("STUDENT");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [sections] = useState<Section[]>(initialSections);
@@ -39,9 +46,12 @@ export default function AttendanceClient({ initialSections, initialTeachers, ini
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers] = useState<Teacher[]>(initialTeachers);
   const [attendance, setAttendance] = useState<AttendanceRecord>(initialAttendance as AttendanceRecord);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [cutoffTime, setCutoffTime] = useState(initialTeacherAttendanceCutoffTime);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [autoAbsentRunning, setAutoAbsentRunning] = useState(false);
+  const [teacherAttendanceMessage, setTeacherAttendanceMessage] = useState("");
+  const [teacherAttendanceError, setTeacherAttendanceError] = useState("");
 
   const fetchStudents = useCallback(async (sectionId: string) => {
     const url = sectionId !== "all"
@@ -78,31 +88,38 @@ export default function AttendanceClient({ initialSections, initialTeachers, ini
     return () => window.clearTimeout(id);
   }, [mode, date, selectedSection, fetchStudents, fetchExisting]);
 
-  function setStatus(id: string, status: AttendanceStatus) {
-    setAttendance((prev) => ({ ...prev, [id]: status }));
-  }
-
-  function markAll(status: AttendanceStatus) {
-    const items = mode === "STUDENT" ? students : teachers;
-    const map: AttendanceRecord = {};
-    items.forEach((i) => { map[i.id] = status; });
-    setAttendance(map);
-  }
-
-  async function saveAttendance() {
-    const items = mode === "STUDENT" ? students : teachers;
-    const records = items.map((i) => ({
-      id: i.id,
-      status: attendance[i.id] || "ABSENT",
-      ...(mode === "STUDENT" ? { sectionId: (i as Student).sectionId } : {}),
-    }));
-    setSaving(true);
-    const res = await fetch(`/api/schools/${schoolId}/attendance`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, type: mode, records }),
+  async function saveCutoffTime() {
+    setSettingsSaving(true);
+    setTeacherAttendanceMessage("");
+    setTeacherAttendanceError("");
+    const res = await fetch(`/api/schools/${schoolId}/settings/attendance`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teacherAttendanceCutoffTime: cutoffTime }),
     });
-    setSaving(false);
-    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500); }
+    const data = await res.json();
+    setSettingsSaving(false);
+    if (res.ok) {
+      setCutoffTime(data.teacherAttendanceCutoffTime);
+      setTeacherAttendanceMessage("Cutoff time updated");
+      return;
+    }
+    setTeacherAttendanceError(data.error || "Failed to update cutoff time");
+  }
+
+  async function runAutoAbsent() {
+    setAutoAbsentRunning(true);
+    setTeacherAttendanceMessage("");
+    setTeacherAttendanceError("");
+    const res = await fetch(`/api/schools/${schoolId}/attendance/teacher-auto-absent`, { method: "POST" });
+    const data = await res.json();
+    setAutoAbsentRunning(false);
+    if (res.ok) {
+      setTeacherAttendanceMessage(`Auto-absent complete: ${data.createdAbsent} teacher(s) marked absent`);
+      fetchExisting(date, "TEACHER", null);
+      return;
+    }
+    setTeacherAttendanceError(data.error || "Failed to run auto-absent check");
   }
 
   const items = mode === "STUDENT" ? students : teachers;
@@ -116,7 +133,7 @@ export default function AttendanceClient({ initialSections, initialTeachers, ini
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Attendance</h2>
-          <p className="text-sm text-gray-500 mt-1">Mark daily attendance for students and teachers</p>
+          <p className="text-sm text-gray-500 mt-1">Review daily attendance and manage teacher cutoff settings</p>
         </div>
       </div>
 
@@ -159,9 +176,23 @@ export default function AttendanceClient({ initialSections, initialTeachers, ini
               </div>
             )}
             {mode === "TEACHER" && (
-              <div className="flex gap-2 ml-auto">
-                <Button variant="outline" size="sm" onClick={() => markAll("PRESENT")}>All Present</Button>
-                <Button variant="outline" size="sm" onClick={() => markAll("ABSENT")}>All Absent</Button>
+              <div className="ml-auto flex flex-wrap items-end gap-3">
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Teacher Cutoff</p>
+                  <input
+                    type="time"
+                    value={cutoffTime}
+                    onChange={(e) => setCutoffTime(e.target.value)}
+                    className="h-10 px-3 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <Button variant="outline" size="sm" onClick={saveCutoffTime} disabled={settingsSaving}>
+                  {settingsSaving ? "Saving..." : "Save Cutoff"}
+                </Button>
+                <Button size="sm" onClick={runAutoAbsent} disabled={autoAbsentRunning} className="gap-2">
+                  <RefreshCw className="w-4 h-4" />
+                  {autoAbsentRunning ? "Checking..." : "Run Auto-Absent"}
+                </Button>
               </div>
             )}
             {mode === "STUDENT" && (
@@ -173,6 +204,17 @@ export default function AttendanceClient({ initialSections, initialTeachers, ini
           </div>
         </CardContent>
       </Card>
+
+      {mode === "TEACHER" && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <p className="font-medium">Teachers mark their own attendance before {cutoffTime}.</p>
+          <p className="mt-1 text-blue-700">
+            Admins can review status here and run auto-absent after the cutoff; direct teacher present/absent marking is disabled.
+          </p>
+          {teacherAttendanceMessage && <p className="mt-2 text-green-700">{teacherAttendanceMessage}</p>}
+          {teacherAttendanceError && <p className="mt-2 text-red-700">{teacherAttendanceError}</p>}
+        </div>
+      )}
 
       <div className="grid grid-cols-4 gap-3">
         {[
@@ -206,12 +248,6 @@ export default function AttendanceClient({ initialSections, initialTeachers, ini
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center justify-between">
               <span>{items.length} {mode === "STUDENT" ? "Students" : "Teachers"}</span>
-              {mode === "TEACHER" && (
-                <Button onClick={saveAttendance} disabled={saving} className="gap-2">
-                  <Save className="w-4 h-4" />
-                  {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
-                </Button>
-              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
@@ -240,32 +276,18 @@ export default function AttendanceClient({ initialSections, initialTeachers, ini
                             {(() => { const cfg = statusConfig[current as AttendanceStatus]; return <><cfg.icon className="w-3 h-3" /><span>{cfg.label}</span></>; })()}
                           </span>
                         ) : <span className="text-xs text-gray-400 italic">Not marked</span>
+                      ) : current ? (
+                        <span className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium", statusConfig[current as AttendanceStatus].color)}>
+                          {(() => { const cfg = statusConfig[current as AttendanceStatus]; return <><cfg.icon className="w-3 h-3" /><span>{cfg.label}</span></>; })()}
+                        </span>
                       ) : (
-                        (["PRESENT", "ABSENT", "LATE"] as AttendanceStatus[]).map((s) => {
-                          const cfg = statusConfig[s];
-                          return (
-                            <button key={s} onClick={() => setStatus(item.id, s)} className={cn(
-                              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all",
-                              current === s ? cfg.color : "bg-white text-gray-400 border-gray-200 hover:border-gray-300"
-                            )}>
-                              <cfg.icon className="w-3 h-3" />{cfg.label}
-                            </button>
-                          );
-                        })
+                        <span className="text-xs text-gray-400 italic">Not marked</span>
                       )}
                     </div>
                   </div>
                 );
               })}
             </div>
-            {mode === "TEACHER" && (
-              <div className="mt-4 flex justify-end">
-                <Button onClick={saveAttendance} disabled={saving} className="gap-2">
-                  <Save className="w-4 h-4" />
-                  {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
-                </Button>
-              </div>
-            )}
           </CardContent>
         </Card>
       )}

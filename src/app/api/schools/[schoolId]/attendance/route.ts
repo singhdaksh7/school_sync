@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { allTeachersBelongToSchool, canAccessSchool, canWriteSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
+import { canAccessSchool, canWriteSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -58,7 +58,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
 
   try {
     const body = await req.json();
-    const { date, type, records } = markSchema.parse(body);
+    const { type } = markSchema.parse(body);
 
     // Only class mentors (via teacher portal) can mark student attendance
     if (type === "STUDENT") {
@@ -68,30 +68,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       );
     }
 
-    if (!(await allTeachersBelongToSchool(records.map((r) => r.id), schoolId))) {
-      return NextResponse.json({ error: "One or more teachers are not in this school" }, { status: 400 });
-    }
-
-    const dateObj = new Date(date);
-    dateObj.setHours(0, 0, 0, 0);
-
-    const upserts = records.map((r) =>
-      prisma.attendance.upsert({
-        where: { date_teacherId: { date: dateObj, teacherId: r.id } },
-        update: { status: r.status },
-        create: {
-          date: dateObj,
-          type,
-          status: r.status,
-          teacherId: r.id,
-          schoolId,
-          markedById: userId,
-        },
-      })
+    return NextResponse.json(
+      { error: "Teacher attendance is marked by teachers themselves. Use auto-absent after the cutoff." },
+      { status: 403 }
     );
-
-    await prisma.$transaction(upserts);
-    return NextResponse.json({ success: true });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -46,6 +46,7 @@ export default async function AttendancePage({
       initialTeachers={teachers}
       initialAttendance={initialAttendance}
       schoolId={school.id}
+      initialTeacherAttendanceCutoffTime={school.teacherAttendanceCutoffTime ?? "09:30"}
     />
   );
 }

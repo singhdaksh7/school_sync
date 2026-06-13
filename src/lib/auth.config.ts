@@ -40,7 +40,7 @@ export const authConfig: NextAuthConfig = {
       }
 
       // Non-teachers: block teacher portal pages
-      if (isLoggedIn && role !== "TEACHER" && (pathname.startsWith("/teacher/attendance") || pathname.startsWith("/teacher/marks") || pathname.startsWith("/teacher/timetable"))) {
+      if (isLoggedIn && role !== "TEACHER" && (pathname === "/teacher" || pathname.startsWith("/teacher/"))) {
         const schoolSlug = appUser(auth?.user).schoolSlug;
         if (schoolSlug) {
           return new Response(null, { status: 307, headers: { Location: `/dashboard/${schoolSlug}` } });
