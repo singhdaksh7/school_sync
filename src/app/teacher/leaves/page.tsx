@@ -5,7 +5,7 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import {
   GraduationCap, LogOut, CalendarDays, ClipboardCheck,
-  FileText, Plus, ClipboardList, X,
+  FileText, Plus, ClipboardList, X, BookOpenCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -108,6 +108,9 @@ export default function TeacherLeavesPage() {
           </Link>
           <Link href="/teacher/marks">
             <Button variant="outline" size="sm" className="gap-2"><FileText className="w-4 h-4" /> Marks</Button>
+          </Link>
+          <Link href="/teacher/homework">
+            <Button variant="outline" size="sm" className="gap-2"><BookOpenCheck className="w-4 h-4" /> Homework</Button>
           </Link>
           <Link href="/teacher/arrangements">
             <Button variant="outline" size="sm" className="gap-2"><ClipboardList className="w-4 h-4" /> Arrangements</Button>
