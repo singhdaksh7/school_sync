@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { signOut } from "next-auth/react";
-import { GraduationCap, LogOut, CalendarDays, ClipboardCheck, FileText, RefreshCw, BookOpenCheck } from "lucide-react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { CalendarDays } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -17,23 +14,12 @@ interface Slot {
   className: string;
 }
 
-interface TeacherProfile {
-  id: string;
-  name: string;
-  school: { name: string };
-}
-
 export default function TeacherTimetablePage() {
-  const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [periodsPerDay, setPeriodsPerDay] = useState(6);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/teacher/me")
-      .then((r) => r.json())
-      .then((d) => { if (!d.error) setProfile(d); });
-
     fetch("/api/teacher/timetable")
       .then((r) => r.json())
       .then((d) => {
@@ -52,57 +38,7 @@ export default function TeacherTimetablePage() {
   const hasAnySlot = slots.length > 0;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 text-sm">SchoolSync</p>
-            {profile && <p className="text-xs text-gray-400">{profile.school.name}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {profile && (
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-gray-800">{profile.name}</p>
-              <p className="text-xs text-gray-400">Teacher Portal</p>
-            </div>
-          )}
-          <Link href="/teacher/attendance">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ClipboardCheck className="w-4 h-4" /> Attendance
-            </Button>
-          </Link>
-          <Link href="/teacher/marks">
-            <Button variant="outline" size="sm" className="gap-2">
-              <FileText className="w-4 h-4" /> Marks
-            </Button>
-          </Link>
-          <Link href="/teacher/homework">
-            <Button variant="outline" size="sm" className="gap-2">
-              <BookOpenCheck className="w-4 h-4" /> Homework
-            </Button>
-          </Link>
-          <Link href="/teacher/arrangements">
-            <Button variant="outline" size="sm" className="gap-2">
-              <RefreshCw className="w-4 h-4" /> Arrangements
-            </Button>
-          </Link>
-          <Link href="/teacher/leaves">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ClipboardCheck className="w-4 h-4" /> My Leaves
-            </Button>
-          </Link>
-          <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2 text-gray-500">
-            <LogOut className="w-4 h-4" /> Sign Out
-          </Button>
-        </div>
-      </header>
-
-      <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">My Timetable</h1>
           <p className="text-sm text-gray-500 mt-1">Your weekly class schedule</p>
@@ -172,7 +108,6 @@ export default function TeacherTimetablePage() {
             </table>
           </div>
         )}
-      </div>
     </div>
   );
 }

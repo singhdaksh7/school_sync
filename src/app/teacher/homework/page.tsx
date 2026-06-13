@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { signOut } from "next-auth/react";
-import { BookOpenCheck, CalendarDays, ClipboardCheck, ExternalLink, FileText, GraduationCap, LogOut, RefreshCw, Save } from "lucide-react";
+import { BookOpenCheck, ExternalLink, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -61,8 +59,6 @@ interface Homework {
   studentStatuses: HomeworkStudentStatus[];
   submissions: HomeworkSubmission[];
 }
-interface TeacherProfile { name: string; school: { name: string } }
-
 const STATUS_OPTIONS: SubmissionStatus[] = ["SUBMITTED", "NOT_SUBMITTED", "LATE", "CHECKED"];
 const REVIEW_STATUS_OPTIONS: HomeworkSubmissionReviewStatus[] = ["REVIEWED", "REJECTED"];
 const STATUS_COLORS: Record<string, string> = {
@@ -84,7 +80,6 @@ function formatDate(value: string) {
 }
 
 export default function TeacherHomeworkPage() {
-  const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [homework, setHomework] = useState<Homework[]>([]);
   const [selectedAssignmentKey, setSelectedAssignmentKey] = useState("");
@@ -98,13 +93,8 @@ export default function TeacherHomeworkPage() {
   const [message, setMessage] = useState("");
 
   async function loadHomework() {
-    const [profileRes, homeworkRes] = await Promise.all([
-      fetch("/api/teacher/me"),
-      fetch("/api/teacher/homework"),
-    ]);
-    const profileData = await profileRes.json();
+    const homeworkRes = await fetch("/api/teacher/homework");
     const homeworkData = await homeworkRes.json();
-    if (!profileData.error) setProfile(profileData);
     if (!homeworkData.error) {
       setAssignments(homeworkData.assignments || []);
       setHomework(homeworkData.homework || []);
@@ -271,29 +261,7 @@ export default function TeacherHomeworkPage() {
   const canScore = selectedHomework ? new Date() >= new Date(selectedHomework.dueDate) && selectedHomework.status !== "CANCELLED" : false;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 text-sm">SchoolSync</p>
-            {profile && <p className="text-xs text-gray-400">{profile.school.name}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href="/teacher/attendance"><Button variant="outline" size="sm" className="gap-2"><ClipboardCheck className="w-4 h-4" /> Attendance</Button></Link>
-          <Link href="/teacher/marks"><Button variant="outline" size="sm" className="gap-2"><FileText className="w-4 h-4" /> Marks</Button></Link>
-          <Link href="/teacher/timetable"><Button variant="outline" size="sm" className="gap-2"><CalendarDays className="w-4 h-4" /> Timetable</Button></Link>
-          <Link href="/teacher/arrangements"><Button variant="outline" size="sm" className="gap-2"><RefreshCw className="w-4 h-4" /> Arrangements</Button></Link>
-          <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2 text-gray-500">
-            <LogOut className="w-4 h-4" /> Sign Out
-          </Button>
-        </div>
-      </header>
-
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Homework</h1>
           <p className="text-sm text-gray-500 mt-1">Create and score homework for your assigned section and subject.</p>
@@ -465,7 +433,6 @@ export default function TeacherHomeworkPage() {
             </CardContent>
           </Card>
         </div>
-      </div>
     </div>
   );
 }
