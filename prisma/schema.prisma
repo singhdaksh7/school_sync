@@ -74,6 +74,8 @@ model School {
   classes         Class[]
   teachers        Teacher[]
   students        Student[]
+  guardians       Guardian[]
+  studentGuardians StudentGuardian[]
   invites         SchoolInvite[]
   attendances     Attendance[]
   timetableSlots  TimetableSlot[]
@@ -240,6 +242,7 @@ model Student {
   school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   attendances  Attendance[]
   examResults  ExamResult[]
+  guardianLinks   StudentGuardian[]
   feePayments      FeePayment[]
   leaveRequests    LeaveRequest[]
   sectionTransfers SectionTransfer[]
@@ -250,6 +253,42 @@ model Student {
   @@index([schoolId])
   @@index([sectionId])
   @@index([schoolId, sectionId])
+}
+
+model Guardian {
+  id            String            @id @default(cuid())
+  name          String
+  phone         String
+  email         String?
+  passwordHash  String?
+  schoolId      String
+  school        School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentLinks  StudentGuardian[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([schoolId, phone])
+  @@index([schoolId])
+  @@index([phone])
+}
+
+model StudentGuardian {
+  id           String   @id @default(cuid())
+  schoolId     String
+  school       School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardianId   String
+  guardian     Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  relationType String   @default("GUARDIAN")
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([studentId, guardianId])
+  @@index([schoolId, studentId])
+  @@index([schoolId, guardianId])
+  @@index([guardianId])
 }
 
 model Attendance {

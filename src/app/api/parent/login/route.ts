@@ -1,61 +1,70 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateParentToken } from "@/lib/parent-auth";
+import { generateParentToken, normalizePhone } from "@/lib/parent-auth";
+import bcrypt from "bcryptjs";
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json();
+    const { phone, password } = await req.json();
 
-    if (!email || !password) {
+    if (!phone || !password) {
       return NextResponse.json(
-        { error: "Student email and phone number are required" },
+        { error: "Phone and password are required" },
         { status: 400 }
       );
     }
 
-    // Look up student by their email
-    const student = await prisma.student.findFirst({
-      where: { email: email.trim().toLowerCase() },
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) {
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    }
+
+    const guardians = await prisma.guardian.findMany({
+      where: { phone: normalizedPhone },
       include: {
         school: { select: { id: true, slug: true } },
       },
     });
 
-    if (!student || !student.phone) {
+    const validGuardians = [];
+    for (const guardian of guardians) {
+      if (!guardian.passwordHash) continue;
+      if (await bcrypt.compare(password, guardian.passwordHash)) validGuardians.push(guardian);
+    }
+
+    if (validGuardians.length === 0) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    // Phone number is the password — compare after stripping whitespace
-    if (student.phone.replace(/\s+/g, "") !== password.replace(/\s+/g, "")) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-    }
-
-    if (!student.parentName) {
+    if (validGuardians.length > 1) {
       return NextResponse.json(
-        { error: "No parent name linked to this student. Please contact the school." },
-        { status: 403 }
+        { error: "Multiple guardian accounts matched this phone. Please contact the school." },
+        { status: 409 }
       );
     }
 
+    const guardian = validGuardians[0];
     const token = generateParentToken({
-      userId: student.id,
-      email: student.email ?? "",
-      name: student.parentName,
+      guardianId: guardian.id,
+      name: guardian.name,
+      phone: guardian.phone,
+      email: guardian.email ?? undefined,
       role: "PARENT",
-      schoolId: student.schoolId,
-      schoolSlug: student.school.slug,
+      schoolId: guardian.schoolId,
+      schoolSlug: guardian.school.slug,
     });
 
     return NextResponse.json({
       success: true,
       token,
       user: {
-        id: student.id,
-        name: student.parentName,
-        email: student.email,
+        id: guardian.id,
+        name: guardian.name,
+        email: guardian.email,
+        phone: guardian.phone,
         role: "PARENT",
-        schoolId: student.schoolId,
-        schoolSlug: student.school.slug,
+        schoolId: guardian.schoolId,
+        schoolSlug: guardian.school.slug,
       },
     });
   } catch (error) {

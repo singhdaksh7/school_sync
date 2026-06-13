@@ -1,22 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyParentToken } from "@/lib/parent-auth";
+import { getAuthenticatedGuardian } from "@/lib/parent-auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const token = req.headers.get("Authorization")?.replace("Bearer ", "");
-
-    if (!token) {
+    const auth = await getAuthenticatedGuardian(req);
+    if (!auth) {
       return NextResponse.json(
         { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const decoded = verifyParentToken(token);
-    if (!decoded) {
-      return NextResponse.json(
-        { error: "Invalid token" },
         { status: 401 }
       );
     }
@@ -24,7 +15,7 @@ export async function GET(req: NextRequest) {
     // Fetch announcements for the school
     const announcements = await prisma.announcement.findMany({
       where: {
-        schoolId: decoded.schoolId,
+        schoolId: auth.guardian.schoolId,
       },
       include: {
         createdBy: {

@@ -1,38 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyParentToken } from "@/lib/parent-auth";
+import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const token = req.headers.get("Authorization")?.replace("Bearer ", "");
     const studentId = req.nextUrl.searchParams.get("studentId");
 
-    if (!token || !studentId) {
+    if (!studentId) {
       return NextResponse.json(
-        { error: "Unauthorized or missing studentId" },
+        { error: "Missing studentId" },
+        { status: 400 }
+      );
+    }
+
+    const auth = await getAuthenticatedGuardian(req);
+    if (!auth) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const decoded = verifyParentToken(token);
-    if (!decoded) {
-      return NextResponse.json(
-        { error: "Invalid token" },
-        { status: 401 }
-      );
-    }
-    if (studentId !== decoded.userId) {
-      return NextResponse.json({ error: "Student not found" }, { status: 404 });
-    }
-
-    const student = await prisma.student.findFirst({
-      where: {
-        id: decoded.userId,
-        schoolId: decoded.schoolId,
-      },
-    });
-
-    if (!student) {
+    if (!(await guardianCanAccessStudent(auth.guardian.id, auth.guardian.schoolId, studentId))) {
       return NextResponse.json(
         { error: "Student not found" },
         { status: 404 }
@@ -43,8 +32,8 @@ export async function GET(req: NextRequest) {
     const marks = await prisma.examResult.findMany({
       where: {
         studentId,
-        student: { schoolId: decoded.schoolId },
-        exam: { scheme: { schoolId: decoded.schoolId } },
+        student: { schoolId: auth.guardian.schoolId },
+        exam: { scheme: { schoolId: auth.guardian.schoolId } },
       },
       include: {
         exam: {

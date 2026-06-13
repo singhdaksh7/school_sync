@@ -1,34 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyParentToken } from "@/lib/parent-auth";
+import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const token = req.headers.get("Authorization")?.replace("Bearer ", "");
     const studentId = req.nextUrl.searchParams.get("studentId");
 
-    if (!token || !studentId) {
+    if (!studentId) {
       return NextResponse.json(
-        { error: "Unauthorized or missing studentId" },
+        { error: "Missing studentId" },
+        { status: 400 }
+      );
+    }
+
+    const auth = await getAuthenticatedGuardian(req);
+    if (!auth) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const decoded = verifyParentToken(token);
-    if (!decoded) {
-      return NextResponse.json(
-        { error: "Invalid token" },
-        { status: 401 }
-      );
-    }
-    if (studentId !== decoded.userId) {
+    if (!(await guardianCanAccessStudent(auth.guardian.id, auth.guardian.schoolId, studentId))) {
       return NextResponse.json({ error: "Student not found" }, { status: 404 });
     }
 
     const student = await prisma.student.findFirst({
       where: {
-        id: decoded.userId,
-        schoolId: decoded.schoolId,
+        id: studentId,
+        schoolId: auth.guardian.schoolId,
       },
       include: {
         section: true,
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     // Fetch timetable for student's section
     const timetable = await prisma.timetableSlot.findMany({
       where: {
-        schoolId: decoded.schoolId,
+        schoolId: auth.guardian.schoolId,
         sectionId: student.sectionId,
       },
       include: {
