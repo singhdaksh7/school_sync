@@ -1,11 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { signOut } from "next-auth/react";
-import {
-  GraduationCap, LogOut, Save, Check, X, Clock, ClipboardCheck, FileText, CalendarDays, RefreshCw, BookOpenCheck,
-} from "lucide-react";
-import Link from "next/link";
+import { Save, Check, X, Clock, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -147,57 +143,7 @@ export default function TeacherAttendancePage() {
   const selfStatusConfig = selfStatus ? statusConfig[selfStatus] : null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 text-sm">SchoolSync</p>
-            {profile && <p className="text-xs text-gray-400">{profile.school.name}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          {profile && (
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-gray-800">{profile.name}</p>
-              <p className="text-xs text-gray-400">Teacher Portal</p>
-            </div>
-          )}
-          <Link href="/teacher/timetable">
-            <Button variant="outline" size="sm" className="gap-2">
-              <CalendarDays className="w-4 h-4" /> My Timetable
-            </Button>
-          </Link>
-          <Link href="/teacher/marks">
-            <Button variant="outline" size="sm" className="gap-2">
-              <FileText className="w-4 h-4" /> Enter Marks
-            </Button>
-          </Link>
-          <Link href="/teacher/homework">
-            <Button variant="outline" size="sm" className="gap-2">
-              <BookOpenCheck className="w-4 h-4" /> Homework
-            </Button>
-          </Link>
-          <Link href="/teacher/arrangements">
-            <Button variant="outline" size="sm" className="gap-2">
-              <RefreshCw className="w-4 h-4" /> Arrangements
-            </Button>
-          </Link>
-          <Link href="/teacher/leaves">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ClipboardCheck className="w-4 h-4" /> My Leaves
-            </Button>
-          </Link>
-          <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2 text-gray-500">
-            <LogOut className="w-4 h-4" /> Sign Out
-          </Button>
-        </div>
-      </header>
-
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         {profileError ? (
           <Card>
             <CardContent className="py-12 text-center">
@@ -376,7 +322,6 @@ export default function TeacherAttendancePage() {
             )}
           </>
         )}
-      </div>
     </div>
   );
 }

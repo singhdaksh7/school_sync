@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { signOut } from "next-auth/react";
-import Link from "next/link";
-import {
-  GraduationCap, LogOut, CalendarDays, ClipboardCheck,
-  FileText, RefreshCw, Bell, BookOpenCheck, DoorOpen,
-} from "lucide-react";
+import { RefreshCw, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,12 +18,6 @@ interface Arrangement {
   section: { name: string; class: { name: string } };
 }
 
-interface TeacherProfile {
-  id: string;
-  name: string;
-  school: { name: string };
-}
-
 const DAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function dateLabel(dateStr: string): { label: string; badge: string; badgeColor: string } {
@@ -40,7 +29,6 @@ function dateLabel(dateStr: string): { label: string; badge: string; badgeColor:
 }
 
 export default function TeacherArrangementsPage() {
-  const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [arrangements, setArrangements] = useState<Arrangement[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -52,7 +40,6 @@ export default function TeacherArrangementsPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/teacher/me").then((r) => r.json()).then((d) => { if (!d.error) setProfile(d); });
     const id = window.setTimeout(fetchArrangements, 0);
     return () => window.clearTimeout(id);
   }, [fetchArrangements]);
@@ -70,47 +57,7 @@ export default function TeacherArrangementsPage() {
   const hasToday = todayArrangements.length > 0;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 text-sm">SchoolSync</p>
-            {profile && <p className="text-xs text-gray-400">{profile.school.name}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {profile && (
-            <div className="text-right hidden sm:block mr-2">
-              <p className="text-sm font-medium text-gray-800">{profile.name}</p>
-              <p className="text-xs text-gray-400">Teacher Portal</p>
-            </div>
-          )}
-          <Link href="/teacher/timetable">
-            <Button variant="outline" size="sm" className="gap-2"><CalendarDays className="w-4 h-4" /> Timetable</Button>
-          </Link>
-          <Link href="/teacher/attendance">
-            <Button variant="outline" size="sm" className="gap-2"><ClipboardCheck className="w-4 h-4" /> Attendance</Button>
-          </Link>
-          <Link href="/teacher/marks">
-            <Button variant="outline" size="sm" className="gap-2"><FileText className="w-4 h-4" /> Marks</Button>
-          </Link>
-          <Link href="/teacher/homework">
-            <Button variant="outline" size="sm" className="gap-2"><BookOpenCheck className="w-4 h-4" /> Homework</Button>
-          </Link>
-          <Link href="/teacher/early-leave">
-            <Button variant="outline" size="sm" className="gap-2"><DoorOpen className="w-4 h-4" /> Early Leave</Button>
-          </Link>
-          <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2 text-gray-500">
-            <LogOut className="w-4 h-4" /> Sign Out
-          </Button>
-        </div>
-      </header>
-
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">My Arrangements</h1>
@@ -206,7 +153,6 @@ export default function TeacherArrangementsPage() {
               })}
           </div>
         )}
-      </div>
     </div>
   );
 }

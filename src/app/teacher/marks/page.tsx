@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { signOut } from "next-auth/react";
-import { GraduationCap, LogOut, Save, FileText, ChevronLeft, CalendarDays, RefreshCw, ClipboardCheck, BookOpenCheck } from "lucide-react";
+import { Save, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import Link from "next/link";
 
 interface Student { id: string; name: string; rollNo: string }
 interface TeachingSection { sectionId: string; sectionName: string; className: string; subject: string; students: Student[] }
@@ -79,52 +77,7 @@ export default function TeacherMarksPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 text-sm">SchoolSync</p>
-            {profile && <p className="text-xs text-gray-400">{profile.school.name}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href="/teacher/attendance">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ChevronLeft className="w-4 h-4" /> Attendance
-            </Button>
-          </Link>
-          <Link href="/teacher/timetable">
-            <Button variant="outline" size="sm" className="gap-2">
-              <CalendarDays className="w-4 h-4" /> My Timetable
-            </Button>
-          </Link>
-          <Link href="/teacher/homework">
-            <Button variant="outline" size="sm" className="gap-2">
-              <BookOpenCheck className="w-4 h-4" /> Homework
-            </Button>
-          </Link>
-          <Link href="/teacher/arrangements">
-            <Button variant="outline" size="sm" className="gap-2">
-              <RefreshCw className="w-4 h-4" /> Arrangements
-            </Button>
-          </Link>
-          <Link href="/teacher/leaves">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ClipboardCheck className="w-4 h-4" /> My Leaves
-            </Button>
-          </Link>
-          {profile && <p className="text-sm font-medium text-gray-700 hidden sm:block">{profile.name}</p>}
-          <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2 text-gray-500">
-            <LogOut className="w-4 h-4" /> Sign Out
-          </Button>
-        </div>
-      </header>
-
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Enter Marks</h1>
           <p className="text-sm text-gray-500 mt-1">Submit exam results for your assigned classes</p>
@@ -278,7 +231,6 @@ export default function TeacherMarksPage() {
             )}
           </>
         )}
-      </div>
     </div>
   );
 }

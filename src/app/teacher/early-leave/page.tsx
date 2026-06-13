@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { signOut } from "next-auth/react";
-import Link from "next/link";
-import {
-  GraduationCap, LogOut, CalendarDays, ClipboardCheck, FileText,
-  RefreshCw, BookOpenCheck, DoorOpen, Send, Check, X, Clock,
-} from "lucide-react";
+import { DoorOpen, Send, Check, X, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,12 +20,6 @@ interface EarlyLeave {
   createdAt: string;
 }
 
-interface TeacherProfile {
-  id: string;
-  name: string;
-  school: { name: string };
-}
-
 const STATUS_CONFIG: Record<Status, { label: string; icon: typeof Check; color: string }> = {
   PENDING: { label: "Pending", icon: Clock, color: "bg-yellow-50 text-yellow-700 border-yellow-200" },
   APPROVED: { label: "Approved", icon: Check, color: "bg-green-50 text-green-700 border-green-200" },
@@ -38,7 +27,6 @@ const STATUS_CONFIG: Record<Status, { label: string; icon: typeof Check; color: 
 };
 
 export default function TeacherEarlyLeavePage() {
-  const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [periodsPerDay, setPeriodsPerDay] = useState(6);
   const [requests, setRequests] = useState<EarlyLeave[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,7 +46,6 @@ export default function TeacherEarlyLeavePage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/teacher/me").then((r) => r.json()).then((d) => { if (!d.error) setProfile(d); });
     fetch("/api/teacher/timetable").then((r) => r.json()).then((d) => {
       if (d?.periodsPerDay) setPeriodsPerDay(d.periodsPerDay);
     });
@@ -87,46 +74,7 @@ export default function TeacherEarlyLeavePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 text-sm">SchoolSync</p>
-            {profile && <p className="text-xs text-gray-400">{profile.school.name}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {profile && (
-            <div className="text-right hidden sm:block mr-2">
-              <p className="text-sm font-medium text-gray-800">{profile.name}</p>
-              <p className="text-xs text-gray-400">Teacher Portal</p>
-            </div>
-          )}
-          <Link href="/teacher/timetable">
-            <Button variant="outline" size="sm" className="gap-2"><CalendarDays className="w-4 h-4" /> Timetable</Button>
-          </Link>
-          <Link href="/teacher/attendance">
-            <Button variant="outline" size="sm" className="gap-2"><ClipboardCheck className="w-4 h-4" /> Attendance</Button>
-          </Link>
-          <Link href="/teacher/arrangements">
-            <Button variant="outline" size="sm" className="gap-2"><RefreshCw className="w-4 h-4" /> Arrangements</Button>
-          </Link>
-          <Link href="/teacher/marks">
-            <Button variant="outline" size="sm" className="gap-2"><FileText className="w-4 h-4" /> Marks</Button>
-          </Link>
-          <Link href="/teacher/homework">
-            <Button variant="outline" size="sm" className="gap-2"><BookOpenCheck className="w-4 h-4" /> Homework</Button>
-          </Link>
-          <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2 text-gray-500">
-            <LogOut className="w-4 h-4" /> Sign Out
-          </Button>
-        </div>
-      </header>
-
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <DoorOpen className="w-6 h-6 text-blue-600" /> Early Leave
@@ -216,7 +164,6 @@ export default function TeacherEarlyLeavePage() {
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 }
