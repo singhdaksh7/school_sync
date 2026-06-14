@@ -141,6 +141,8 @@ model School {
   sectionTransfers            SectionTransfer[]
   auditLogs                   AuditLog[]
   aiInsightCache              AIInsightCache?
+  teacherCustomRoles          TeacherCustomRole[]
+  teacherRoleAssignments      TeacherRoleAssignment[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 }
@@ -211,6 +213,7 @@ model Teacher {
   arrangmentsAsAbsent     Arrangement[]              @relation("ArrangementAbsent")
   arrangmentsAsSubstitute Arrangement[]              @relation("ArrangementSubstitute")
   earlyLeaveRequests      TeacherEarlyLeaveRequest[]
+  roleAssignments         TeacherRoleAssignment[]
   createdAt               DateTime                   @default(now())
   updatedAt               DateTime                   @updatedAt
 
@@ -681,4 +684,53 @@ model TeacherEarlyLeaveRequest {
   @@index([schoolId, status])
   @@index([schoolId, date])
   @@index([teacherId])
+}
+
+// ─── Custom teacher roles & permissions ──────────────────────────────────────
+// Additive RBAC layer. The base UserRole (incl. TEACHER) keeps its existing
+// access; these models only matter where teacher-permissions.ts is consulted.
+
+model TeacherCustomRole {
+  id          String                  @id @default(cuid())
+  schoolId    String
+  school      School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  permissions TeacherPermission[]
+  assignments TeacherRoleAssignment[]
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+model TeacherPermission {
+  id      String            @id @default(cuid())
+  roleId  String
+  role    TeacherCustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  module  String // e.g. STUDENTS, ATTENDANCE, HOMEWORK, MARKS, REPORT_CARDS, FEES, TEACHERS, ANNOUNCEMENTS, SETTINGS
+  action  String // e.g. VIEW, CREATE, MARK, REPORTS, MANAGE_ALL ...
+  allowed Boolean           @default(true)
+
+  @@unique([roleId, module, action])
+  @@index([roleId])
+}
+
+model TeacherRoleAssignment {
+  id         String            @id @default(cuid())
+  teacherId  String
+  teacher    Teacher           @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  roleId     String
+  role       TeacherCustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  schoolId   String
+  school     School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classIds   Json? // optional list of class ids this assignment is scoped to; empty/null = whole school
+  sectionIds Json? // optional list of section ids this assignment is scoped to
+  createdAt  DateTime          @default(now())
+
+  @@unique([teacherId, roleId])
+  @@index([teacherId])
+  @@index([roleId])
+  @@index([schoolId])
 }
