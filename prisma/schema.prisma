@@ -72,6 +72,11 @@ enum HomeworkSubmissionMethod {
   PHYSICAL
 }
 
+enum ReportCardStatus {
+  DRAFT
+  PUBLISHED
+}
+
 model User {
   id                   String                     @id @default(cuid())
   name                 String
@@ -127,6 +132,7 @@ model School {
   holidays                    Holiday[]
   feeStructures               FeeStructure[]
   feePayments                 FeePayment[]
+  reportCards                 ReportCard[]
   leaveRequests               LeaveRequest[]
   homework                    Homework[]
   homeworkSubmissions         HomeworkSubmission[]
@@ -172,6 +178,7 @@ model Section {
   class          Class             @relation(fields: [classId], references: [id], onDelete: Cascade)
   students       Student[]
   attendances    Attendance[]
+  reportCards    ReportCard[]
   mentor         Teacher?          @relation("SectionMentor")
   timetableSlots TimetableSlot[]
   homework       Homework[]
@@ -200,6 +207,7 @@ model Teacher {
   timetableSlots          TimetableSlot[]            @relation("TeacherSlots")
   leaveRequests           LeaveRequest[]
   homework                Homework[]
+  generatedReportCards    ReportCard[]               @relation("ReportCardGenerator")
   arrangmentsAsAbsent     Arrangement[]              @relation("ArrangementAbsent")
   arrangmentsAsSubstitute Arrangement[]              @relation("ArrangementSubstitute")
   earlyLeaveRequests      TeacherEarlyLeaveRequest[]
@@ -238,13 +246,14 @@ model TimetableSlot {
 }
 
 model ExamScheme {
-  id        String   @id @default(cuid())
-  name      String
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  exams     Exam[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String       @id @default(cuid())
+  name        String
+  schoolId    String
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  exams       Exam[]
+  reportCards ReportCard[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   @@unique([name, schoolId])
 }
@@ -291,6 +300,7 @@ model Student {
   school              School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   attendances         Attendance[]
   examResults         ExamResult[]
+  reportCards         ReportCard[]
   homeworkStatuses    HomeworkStudentStatus[]
   homeworkSubmissions HomeworkSubmission[]
   guardianLinks       StudentGuardian[]
@@ -366,6 +376,49 @@ model Attendance {
   @@index([schoolId, type])
   @@index([studentId])
   @@index([teacherId])
+}
+
+model ReportCard {
+  id                   String              @id @default(cuid())
+  schoolId             String
+  school               School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId            String
+  student              Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sectionId            String
+  section              Section             @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  examSchemeId         String
+  examScheme           ExamScheme          @relation(fields: [examSchemeId], references: [id], onDelete: Cascade)
+  generatedByTeacherId String
+  generatedByTeacher   Teacher             @relation("ReportCardGenerator", fields: [generatedByTeacherId], references: [id])
+  status               ReportCardStatus    @default(DRAFT)
+  classTeacherRemark   String?
+  attendanceSummary    String
+  totalMarks           Float
+  percentage           Float
+  grade                String
+  pdfUrl               String?
+  publishedAt          DateTime?
+  subjects             ReportCardSubject[]
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@unique([studentId, examSchemeId])
+  @@index([schoolId, status])
+  @@index([schoolId, sectionId, examSchemeId])
+  @@index([generatedByTeacherId])
+}
+
+model ReportCardSubject {
+  id                   String     @id @default(cuid())
+  reportCardId         String
+  reportCard           ReportCard @relation(fields: [reportCardId], references: [id], onDelete: Cascade)
+  subject              String
+  marks                Float
+  maxMarks             Float
+  grade                String
+  subjectTeacherRemark String?
+
+  @@unique([reportCardId, subject])
 }
 
 model Announcement {

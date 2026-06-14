@@ -48,6 +48,7 @@ export default function Sidebar({ school, userRole, onClose }: SidebarProps) {
     { href: `${base}/homework`, label: "Homework", icon: BookOpenCheck, show: true },
     { href: `${base}/exam-schemes`, label: "Exam Schemes", icon: FileText, show: true },
     { href: `${base}/results`, label: "Results", icon: Award, show: true },
+    { href: `${base}/report-cards`, label: "Report Cards", icon: ClipboardList, show: true },
     { href: `${base}/fees`, label: "Fee Management", icon: IndianRupee, show: true },
     { href: `${base}/leaves`, label: "Leave Management", icon: ClipboardList, show: true },
     { href: `${base}/substitutions`, label: "Substitutions", icon: Replace, show: true },

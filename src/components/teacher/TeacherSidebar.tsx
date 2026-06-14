@@ -6,7 +6,7 @@ import { signOut } from "next-auth/react";
 import {
   GraduationCap, LayoutDashboard, ClipboardCheck, CalendarDays,
   FileText, BookOpenCheck, RefreshCw, DoorOpen, ClipboardList,
-  User, LogOut, X,
+  User, LogOut, X, Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,7 @@ export const TEACHER_NAV_ITEMS: TeacherNavItem[] = [
   { href: "/teacher/attendance", label: "Attendance", icon: ClipboardCheck },
   { href: "/teacher/timetable", label: "Timetable", icon: CalendarDays },
   { href: "/teacher/marks", label: "Marks", icon: FileText },
+  { href: "/teacher/report-cards", label: "Report Cards", icon: Award },
   { href: "/teacher/homework", label: "Homework", icon: BookOpenCheck },
   { href: "/teacher/arrangements", label: "Arrangements", icon: RefreshCw },
   { href: "/teacher/early-leave", label: "Early Leave", icon: DoorOpen },
