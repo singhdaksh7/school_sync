@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   CalendarDays, BookOpenCheck, RefreshCw, ClipboardCheck,
-  ArrowRight, Check, X, Clock,
+  ArrowRight, Check, X, Clock, DoorOpen, Award, ArrowUpRight,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,15 @@ const SELF_STATUS = {
   ABSENT: { label: "Absent", icon: X, color: "text-red-700 bg-red-50 border-red-200 dark:bg-red-950 dark:text-red-300" },
   LATE: { label: "Late", icon: Clock, color: "text-yellow-700 bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300" },
 };
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
+
+function todayLabel() {
+  return new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
 
 export default function TeacherDashboardPage() {
   const [profileName, setProfileName] = useState<string>("");
@@ -59,56 +68,68 @@ export default function TeacherDashboardPage() {
   const selfStatus = self?.attendance?.status;
   const selfCfg = selfStatus ? SELF_STATUS[selfStatus] : null;
 
-  const cards = [
+  const kpis = [
     {
       label: "Today's Classes",
       value: todaySlots.length,
-      hint: todaySlots.length ? `Next: P${todaySlots[0].period} · Class ${todaySlots[0].className}-${todaySlots[0].sectionName}` : "No classes scheduled today",
+      hint: todaySlots.length ? `Next: P${todaySlots[0].period} · ${todaySlots[0].className}-${todaySlots[0].sectionName}` : "No classes scheduled",
       icon: CalendarDays,
       href: "/teacher/timetable",
-      accent: "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400",
     },
     {
-      label: "Pending Homework Reviews",
+      label: "Homework Reviews",
       value: pendingReviews,
       hint: pendingReviews ? "Submissions awaiting review" : "All caught up",
       icon: BookOpenCheck,
       href: "/teacher/homework",
-      accent: "bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
     },
     {
-      label: "Today's Substitutions",
+      label: "Substitutions",
       value: todaySubs.length,
-      hint: todaySubs.length ? `In place of ${todaySubs[0].absentTeacher.name}` : "No arrangement duties today",
+      hint: todaySubs.length ? `In place of ${todaySubs[0].absentTeacher.name}` : "No duties today",
       icon: RefreshCw,
       href: "/teacher/arrangements",
-      accent: "bg-purple-50 text-purple-600 dark:bg-purple-950 dark:text-purple-400",
     },
   ];
 
+  const quickLinks = [
+    { label: "Early Leave", desc: "Request to leave early", icon: DoorOpen, href: "/teacher/early-leave" },
+    { label: "Report Cards", desc: "View & manage report cards", icon: Award, href: "/teacher/report-cards" },
+    { label: "Attendance", desc: "Mark class attendance", icon: ClipboardCheck, href: "/teacher/attendance" },
+  ];
+
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 md:px-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-          {profileName ? `Welcome back, ${profileName.split(" ")[0]}` : "Dashboard"}
-        </h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Here&apos;s what&apos;s happening today.</p>
+    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-6 md:py-8">
+      {/* Hero greeting */}
+      <div
+        className="relative overflow-hidden rounded-2xl border border-border p-6 md:p-7"
+        style={{ background: "linear-gradient(120deg, hsl(var(--primary) / 0.12), hsl(var(--primary) / 0.03) 60%, transparent)" }}
+      >
+        <div className="relative z-10">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary">{todayLabel()}</p>
+          <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+            {greeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""} 👋
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">Here&apos;s a snapshot of your day.</p>
+        </div>
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
       </div>
 
+      {/* KPI grid + attendance */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((c) => (
+        {kpis.map((c) => (
           <Link key={c.label} href={c.href} className="group focus-visible:outline-none">
-            <Card className="h-full transition-shadow group-hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
+            <Card className="h-full border-border transition-all group-hover:-translate-y-0.5 group-hover:shadow-md">
               <CardContent className="p-5">
                 <div className="flex items-center justify-between">
-                  <span className={cn("flex h-10 w-10 items-center justify-center rounded-lg", c.accent)}>
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <c.icon className="h-5 w-5" />
                   </span>
-                  <ArrowRight className="h-4 w-4 text-gray-300 transition-colors group-hover:text-gray-500" />
+                  <ArrowUpRight className="h-4 w-4 text-muted-foreground/40 transition-colors group-hover:text-primary" />
                 </div>
-                <p className="mt-4 text-3xl font-bold text-gray-900 dark:text-gray-100">{c.value}</p>
-                <p className="mt-1 text-sm font-medium text-gray-700 dark:text-gray-300">{c.label}</p>
-                <p className="mt-0.5 truncate text-xs text-gray-400">{c.hint}</p>
+                <p className="mt-4 text-3xl font-bold tracking-tight text-foreground">{c.value}</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{c.label}</p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">{c.hint}</p>
               </CardContent>
             </Card>
           </Link>
@@ -116,25 +137,25 @@ export default function TeacherDashboardPage() {
 
         {/* Attendance Status */}
         <Link href="/teacher/attendance" className="group focus-visible:outline-none">
-          <Card className="h-full transition-shadow group-hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
+          <Card className="h-full border-border transition-all group-hover:-translate-y-0.5 group-hover:shadow-md">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <ClipboardCheck className="h-5 w-5" />
                 </span>
-                <ArrowRight className="h-4 w-4 text-gray-300 transition-colors group-hover:text-gray-500" />
+                <ArrowUpRight className="h-4 w-4 text-muted-foreground/40 transition-colors group-hover:text-primary" />
               </div>
-              <div className="mt-4 flex items-center gap-2">
+              <div className="mt-4">
                 {selfCfg ? (
                   <span className={cn("inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-semibold", selfCfg.color)}>
                     <selfCfg.icon className="h-3.5 w-3.5" /> {selfCfg.label}
                   </span>
                 ) : (
-                  <span className="text-sm font-semibold italic text-gray-400">Not marked</span>
+                  <span className="text-lg font-semibold italic text-muted-foreground">Not marked</span>
                 )}
               </div>
-              <p className="mt-1 text-sm font-medium text-gray-700 dark:text-gray-300">Attendance Status</p>
-              <p className="mt-0.5 truncate text-xs text-gray-400">
+              <p className="mt-2 text-sm font-semibold text-foreground">My Attendance</p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 {self?.cutoffTime ? `Cutoff ${self.cutoffTime}` : "Your attendance today"}
               </p>
             </CardContent>
@@ -142,32 +163,72 @@ export default function TeacherDashboardPage() {
         </Link>
       </div>
 
-      {/* Today's schedule detail */}
-      <Card className="dark:border-gray-800 dark:bg-gray-950">
-        <CardContent className="p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Today&apos;s Classes</h2>
-            <Link href="/teacher/timetable" className="text-xs font-medium text-blue-600 hover:text-blue-700">Full timetable</Link>
-          </div>
-          {todaySlots.length === 0 ? (
-            <p className="py-6 text-center text-sm text-gray-400">No classes scheduled for today.</p>
-          ) : (
-            <div className="space-y-2">
-              {todaySlots.map((s) => (
-                <div key={`${s.dayOfWeek}-${s.period}`} className="flex items-center gap-3 rounded-lg border border-gray-100 px-3 py-2.5 dark:border-gray-800">
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50 text-sm font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                    P{s.period}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">Class {s.className} – {s.sectionName}</p>
-                    {s.subject && <p className="truncate text-xs text-gray-400">{s.subject}</p>}
-                  </div>
+      {/* Two-column: Today's Classes + Quick access */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Today's schedule detail */}
+        <Card className="border-border lg:col-span-2">
+          <CardContent className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Today&apos;s Classes</h2>
+                <p className="text-xs text-muted-foreground">{todaySlots.length} period{todaySlots.length === 1 ? "" : "s"} scheduled</p>
+              </div>
+              <Link href="/teacher/timetable" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                Full timetable <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            {todaySlots.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                  <CalendarDays className="h-5 w-5 text-muted-foreground" />
                 </div>
+                <p className="mt-3 text-sm font-medium text-foreground">No classes today</p>
+                <p className="text-xs text-muted-foreground">Enjoy the lighter schedule.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {todaySlots.map((s) => (
+                  <div key={`${s.dayOfWeek}-${s.period}`} className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2.5 transition-colors hover:bg-muted/60">
+                    <div className="flex h-10 w-10 flex-shrink-0 flex-col items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <span className="text-[9px] font-semibold leading-none">PERIOD</span>
+                      <span className="text-sm font-bold leading-none">{s.period}</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-foreground">Class {s.className} – {s.sectionName}</p>
+                      {s.subject && <p className="truncate text-xs text-muted-foreground">{s.subject}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Quick access */}
+        <Card className="border-border">
+          <CardContent className="p-5">
+            <h2 className="mb-4 text-base font-semibold text-foreground">Quick access</h2>
+            <div className="space-y-2">
+              {quickLinks.map((q) => (
+                <Link
+                  key={q.label}
+                  href={q.href}
+                  className="group flex items-center gap-3 rounded-xl border border-border p-3 transition-all hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <q.icon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-foreground">{q.label}</p>
+                    <p className="truncate text-xs text-muted-foreground">{q.desc}</p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground/40 transition-colors group-hover:text-primary" />
+                </Link>
               ))}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

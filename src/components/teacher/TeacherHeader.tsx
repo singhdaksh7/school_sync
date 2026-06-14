@@ -51,7 +51,7 @@ export default function TeacherHeader({ schoolName, teacherName, onMenuClick, on
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex flex-shrink-0 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-2.5 backdrop-blur md:px-6">
+    <header className="sticky top-0 z-30 flex h-16 flex-shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/60 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 md:px-6">
       {/* Left: menu toggles + school */}
       <div className="flex min-w-0 items-center gap-2">
         <button

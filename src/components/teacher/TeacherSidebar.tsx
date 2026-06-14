@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   GraduationCap, LayoutDashboard, ClipboardCheck, CalendarDays,
   FileText, BookOpenCheck, RefreshCw, DoorOpen, ClipboardList,
-  User, X, Award,
+  User, X, Award, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,43 +41,53 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
   return (
     <aside
       className={cn(
-        "flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-300",
+        "flex h-full flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-300 md:m-2.5 md:h-[calc(100%-1.25rem)] md:rounded-2xl md:border md:border-sidebar-border md:shadow-sm",
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Brand + mobile close */}
-      <div className={cn("flex items-center gap-2.5 px-4 py-4", collapsed && "justify-center px-0")}>
+      {/* Brand block */}
+      <div className={cn("p-3", collapsed && "px-2")}>
         <div
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
-          style={{ background: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.7))" }}
+          className={cn(
+            "flex items-center gap-3 rounded-xl p-3",
+            collapsed && "justify-center p-2"
+          )}
+          style={{ background: "linear-gradient(135deg, hsl(var(--primary) / 0.12), hsl(var(--primary) / 0.04))" }}
         >
-          <GraduationCap className="h-5 w-5" />
-        </div>
-        {!collapsed && (
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{schoolName || "SchoolSync"}</p>
-            <p className="text-[11px] text-muted-foreground">Teacher Portal</p>
-          </div>
-        )}
-        {onClose && !collapsed && (
-          <button
-            onClick={onClose}
-            className="flex-shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
-            aria-label="Close menu"
+          <div
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-white shadow-md"
+            style={{ background: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.7))" }}
           >
-            <X className="h-5 w-5" />
-          </button>
-        )}
+            <GraduationCap className="h-5 w-5" />
+          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold leading-tight">{schoolName || "SchoolSync"}</p>
+              <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                <Sparkles className="h-2.5 w-2.5" /> Teacher Portal
+              </span>
+            </div>
+          )}
+          {onClose && !collapsed && (
+            <button
+              onClick={onClose}
+              className="flex-shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground md:hidden"
+              aria-label="Close menu"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {!collapsed && (
-        <div className="px-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Teacher
+        <div className="px-5 pb-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          Menu
         </div>
       )}
 
       {/* Navigation */}
-      <nav aria-label="Teacher navigation" className="no-scrollbar flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
+      <nav aria-label="Teacher navigation" className="no-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-1">
         {TEACHER_NAV_ITEMS.map((item) => {
           const active = pathname === item.href || (item.href !== base && pathname.startsWith(item.href));
           return (
@@ -87,14 +97,17 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
               aria-current={active ? "page" : undefined}
               title={collapsed ? item.label : undefined}
               className={cn(
-                "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 collapsed && "justify-center px-0",
                 active
-                  ? "bg-primary font-medium text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-primary font-semibold text-primary-foreground shadow-md shadow-primary/25"
+                  : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
-              <item.icon className="h-4 w-4 flex-shrink-0" />
+              {active && !collapsed && (
+                <span className="absolute left-0 top-1/2 h-5 w-1 -translate-x-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden="true" />
+              )}
+              <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
               {!collapsed && <span className="truncate">{item.label}</span>}
             </Link>
           );
@@ -102,12 +115,20 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-sidebar-border p-3">
-        {!collapsed && (
-          <div className="text-center text-[10px] text-muted-foreground">
-            Powered by <span className="font-semibold text-foreground">SchoolSync</span>
-          </div>
-        )}
+      <div className="p-3">
+        <div
+          className={cn(
+            "flex items-center justify-center gap-1.5 rounded-xl border border-sidebar-border bg-muted/40 px-3 py-2.5 text-[11px] text-muted-foreground",
+            collapsed && "px-0"
+          )}
+        >
+          <Sparkles className="h-3 w-3 text-primary" />
+          {!collapsed && (
+            <span>
+              Powered by <span className="font-bold text-foreground">SchoolSync</span>
+            </span>
+          )}
+        </div>
       </div>
     </aside>
   );
