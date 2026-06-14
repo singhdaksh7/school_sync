@@ -1,4 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
+import {
+  gradeFromBands,
+  normalizeSnapshot,
+  parseGradeBands,
+  resolveTemplateForReportCard,
+  templateToSnapshot,
+} from "@/lib/report-card-templates";
 
 export function gradeForPercentage(percentage: number) {
   if (percentage >= 90) return "A+";
@@ -50,7 +58,7 @@ export async function generateReportCardForStudent(input: {
   studentId: string;
   classTeacherRemark?: string | null;
 }) {
-  const [student, scheme, attendances, examResults] = await Promise.all([
+  const [student, scheme, attendances, examResults, section] = await Promise.all([
     prisma.student.findFirst({
       where: { id: input.studentId, schoolId: input.schoolId, sectionId: input.sectionId },
       select: { id: true },
@@ -72,6 +80,10 @@ export async function generateReportCardForStudent(input: {
       include: { exam: { select: { id: true, name: true, maxMarks: true, order: true } } },
       orderBy: { exam: { order: "asc" } },
     }),
+    prisma.section.findFirst({
+      where: { id: input.sectionId, class: { schoolId: input.schoolId } },
+      select: { classId: true },
+    }),
   ]);
 
   if (!student || !scheme) return null;
@@ -88,6 +100,16 @@ export async function generateReportCardForStudent(input: {
   });
   if (publishedCard) return publishedCard;
 
+  // Phase 8: pick a template (class-assigned → school default → none) so the
+  // report card can capture an immutable snapshot of branding/layout/grading.
+  const template = await resolveTemplateForReportCard({
+    schoolId: input.schoolId,
+    classId: section?.classId ?? null,
+  });
+  const gradeBands = template ? parseGradeBands(template.gradeBands) : null;
+  const gradeFor = (pct: number) =>
+    gradeBands && gradeBands.length > 0 ? gradeFromBands(pct, gradeBands) : gradeForPercentage(pct);
+
   const resultByExamId = new Map(examResults.map((result) => [result.examId, result]));
   const subjects = scheme.exams.map((exam) => {
     const result = resultByExamId.get(exam.id);
@@ -97,13 +119,15 @@ export async function generateReportCardForStudent(input: {
       subject: exam.name,
       marks,
       maxMarks: exam.maxMarks,
-      grade: gradeForPercentage(percentage),
+      grade: gradeFor(percentage),
     };
   });
 
   const totalMarks = subjects.reduce((sum, subject) => sum + subject.marks, 0);
   const totalMax = subjects.reduce((sum, subject) => sum + subject.maxMarks, 0);
   const percentage = totalMax > 0 ? Number(((totalMarks / totalMax) * 100).toFixed(2)) : 0;
+  const templateId = template?.id ?? null;
+  const templateSnapshot = template ? templateToSnapshot(template) : null;
   const presentDays = attendances.filter((a) => a.status === "PRESENT" || a.status === "LATE").length;
   const lateDays = attendances.filter((a) => a.status === "LATE").length;
   const absentDays = attendances.filter((a) => a.status === "ABSENT").length;
@@ -128,7 +152,9 @@ export async function generateReportCardForStudent(input: {
       attendanceSummary: JSON.stringify(attendanceSummary),
       totalMarks,
       percentage,
-      grade: gradeForPercentage(percentage),
+      grade: gradeFor(percentage),
+      templateId,
+      templateSnapshot: templateSnapshot ?? Prisma.DbNull,
       subjects: { create: subjects },
     },
     update: {
@@ -140,7 +166,9 @@ export async function generateReportCardForStudent(input: {
       attendanceSummary: JSON.stringify(attendanceSummary),
       totalMarks,
       percentage,
-      grade: gradeForPercentage(percentage),
+      grade: gradeFor(percentage),
+      templateId,
+      templateSnapshot: templateSnapshot ?? Prisma.DbNull,
       subjects: {
         deleteMany: {},
         create: subjects,
@@ -171,5 +199,47 @@ export function serializeReportCard<T extends { attendanceSummary: string }>(car
   return {
     ...card,
     attendanceSummary: parseAttendanceSummary(card.attendanceSummary),
+  };
+}
+
+type CardForPdf = {
+  school: { name: string; logoUrl: string | null };
+  student: { name: string; rollNo: string; section: { name: string; class: { name: string } } };
+  examScheme: { name: string };
+  generatedByTeacher: { name: string };
+  subjects: { subject: string; marks: number; maxMarks: number; grade: string; subjectTeacherRemark?: string | null }[];
+  totalMarks: number;
+  percentage: number;
+  grade: string;
+  attendanceSummary: string;
+  classTeacherRemark: string | null;
+  publishedAt: Date | null;
+  templateSnapshot: unknown;
+};
+
+/**
+ * Build the input for {@link generateReportCardPdf} from a stored report card.
+ * Honors the immutable templateSnapshot when present; otherwise the PDF falls
+ * back to the default layout (templateSnapshot === null) — this is what keeps
+ * already-published cards stable when a template is later edited.
+ */
+export function reportCardToPdfInput(card: CardForPdf) {
+  const snapshot = normalizeSnapshot(card.templateSnapshot);
+  return {
+    schoolName: card.school.name,
+    logoUrl: card.school.logoUrl,
+    studentName: card.student.name,
+    rollNo: card.student.rollNo,
+    classSection: `${card.student.section.class.name}-${card.student.section.name}`,
+    examName: card.examScheme.name,
+    subjects: card.subjects,
+    totalMarks: card.totalMarks,
+    percentage: card.percentage,
+    grade: card.grade,
+    attendance: parseAttendanceSummary(card.attendanceSummary),
+    classTeacherRemark: card.classTeacherRemark,
+    generatedBy: card.generatedByTeacher.name,
+    publishedAt: card.publishedAt?.toISOString() ?? null,
+    template: snapshot,
   };
 }

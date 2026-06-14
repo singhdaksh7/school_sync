@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateReportCardPdf } from "@/lib/report-card-pdf";
-import { parseAttendanceSummary, reportCardInclude } from "@/lib/report-cards";
+import { reportCardInclude, reportCardToPdfInput } from "@/lib/report-cards";
 import { sessionRole } from "@/lib/tenant";
 
 export async function GET(
@@ -28,22 +28,7 @@ export async function GET(
   });
   if (!card) return NextResponse.json({ error: "Report card not found" }, { status: 404 });
 
-  const pdf = generateReportCardPdf({
-    schoolName: card.school.name,
-    logoUrl: card.school.logoUrl,
-    studentName: card.student.name,
-    rollNo: card.student.rollNo,
-    classSection: `${card.student.section.class.name}-${card.student.section.name}`,
-    examName: card.examScheme.name,
-    subjects: card.subjects,
-    totalMarks: card.totalMarks,
-    percentage: card.percentage,
-    grade: card.grade,
-    attendance: parseAttendanceSummary(card.attendanceSummary),
-    classTeacherRemark: card.classTeacherRemark,
-    generatedBy: card.generatedByTeacher.name,
-    publishedAt: card.publishedAt?.toISOString() ?? null,
-  });
+  const pdf = generateReportCardPdf(reportCardToPdfInput(card));
 
   return new Response(new Uint8Array(pdf), {
     headers: {

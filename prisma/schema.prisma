@@ -143,6 +143,7 @@ model School {
   aiInsightCache              AIInsightCache?
   teacherCustomRoles          TeacherCustomRole[]
   teacherRoleAssignments      TeacherRoleAssignment[]
+  reportCardTemplates         ReportCardTemplate[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 }
@@ -404,6 +405,9 @@ model ReportCard {
   grade                String
   pdfUrl               String?
   publishedAt          DateTime?
+  templateId           String?
+  template             ReportCardTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateSnapshot     Json?
   subjects             ReportCardSubject[]
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
@@ -412,6 +416,48 @@ model ReportCard {
   @@index([schoolId, status])
   @@index([schoolId, sectionId, examSchemeId])
   @@index([generatedByTeacherId])
+  @@index([templateId])
+}
+
+model ReportCardTemplate {
+  id                           String       @id @default(cuid())
+  schoolId                     String
+  school                       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name                         String
+  description                  String?
+  isDefault                    Boolean      @default(false)
+  assignedClassIds             Json?
+  layoutType                   String       @default("CLASSIC")
+  paperSize                    String       @default("A4_PORTRAIT")
+  logoUrl                      String?
+  principalSignatureUrl        String?
+  classTeacherSignatureEnabled Boolean      @default(true)
+  stampUrl                     String?
+  watermarkText                String?
+  backgroundImageUrl           String?
+  footerText                   String?
+  primaryColor                 String?
+  secondaryColor               String?
+  showAttendance               Boolean      @default(true)
+  showRank                     Boolean      @default(false)
+  showGrade                    Boolean      @default(true)
+  showRemarks                  Boolean      @default(true)
+  showSubjectTeacherRemarks    Boolean      @default(true)
+  showClassTeacherRemarks      Boolean      @default(true)
+  showCoCurricular             Boolean      @default(false)
+  showSkills                   Boolean      @default(false)
+  showDiscipline               Boolean      @default(false)
+  showAwards                   Boolean      @default(false)
+  showCustomFields             Boolean      @default(false)
+  gradeBands                   Json?
+  subjectGroups                Json?
+  customSections               Json?
+  reportCards                  ReportCard[]
+  createdAt                    DateTime     @default(now())
+  updatedAt                    DateTime     @updatedAt
+
+  @@index([schoolId])
+  @@index([schoolId, isDefault])
 }
 
 model ReportCardSubject {

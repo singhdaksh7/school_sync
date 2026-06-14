@@ -7,7 +7,7 @@ import {
   ClipboardCheck, Settings, UserPlus, ChevronRight,
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
-  ClipboardList, PieChart, Activity, BarChart, X, Wand2, BookOpenCheck, Replace, Palette, ShieldCheck,
+  ClipboardList, PieChart, Activity, BarChart, X, Wand2, BookOpenCheck, Replace, Palette, ShieldCheck, LayoutTemplate,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +50,7 @@ export default function Sidebar({ school, userRole, onClose }: SidebarProps) {
     { href: `${base}/exam-schemes`, label: "Exam Schemes", icon: FileText, show: true },
     { href: `${base}/results`, label: "Results", icon: Award, show: true },
     { href: `${base}/report-cards`, label: "Report Cards", icon: ClipboardList, show: true },
+    { href: `${base}/report-card-builder`, label: "Report Card Builder", icon: LayoutTemplate, show: isOwnerOrAdmin },
     { href: `${base}/fees`, label: "Fee Management", icon: IndianRupee, show: true },
     { href: `${base}/leaves`, label: "Leave Management", icon: ClipboardList, show: true },
     { href: `${base}/substitutions`, label: "Substitutions", icon: Replace, show: true },
