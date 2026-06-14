@@ -43,7 +43,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const teacherName = profile?.name;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div

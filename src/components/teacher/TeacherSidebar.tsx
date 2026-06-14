@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
 import {
   GraduationCap, LayoutDashboard, ClipboardCheck, CalendarDays,
   FileText, BookOpenCheck, RefreshCw, DoorOpen, ClipboardList,
-  User, LogOut, X, Award,
+  User, X, Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,25 +41,28 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
   return (
     <aside
       className={cn(
-        "flex h-full flex-col border-r border-gray-200 bg-white transition-[width] duration-300 dark:border-gray-800 dark:bg-gray-950",
+        "flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-300",
         collapsed ? "w-16" : "w-64"
       )}
     >
       {/* Brand + mobile close */}
-      <div className={cn("flex items-center gap-2.5 border-b border-gray-100 px-4 py-5 dark:border-gray-800", collapsed && "justify-center px-0")}>
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600">
-          <GraduationCap className="h-5 w-5 text-white" />
+      <div className={cn("flex items-center gap-2.5 px-4 py-4", collapsed && "justify-center px-0")}>
+        <div
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
+          style={{ background: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.7))" }}
+        >
+          <GraduationCap className="h-5 w-5" />
         </div>
         {!collapsed && (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-gray-900 dark:text-gray-100">{schoolName || "SchoolSync"}</p>
-            <p className="text-xs text-gray-400">Teacher Portal</p>
+            <p className="truncate text-sm font-semibold">{schoolName || "SchoolSync"}</p>
+            <p className="text-[11px] text-muted-foreground">Teacher Portal</p>
           </div>
         )}
         {onClose && !collapsed && (
           <button
             onClick={onClose}
-            className="flex-shrink-0 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 md:hidden dark:hover:bg-gray-800"
+            className="flex-shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
             aria-label="Close menu"
           >
             <X className="h-5 w-5" />
@@ -68,8 +70,14 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
         )}
       </div>
 
+      {!collapsed && (
+        <div className="px-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Teacher
+        </div>
+      )}
+
       {/* Navigation */}
-      <nav aria-label="Teacher navigation" className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
+      <nav aria-label="Teacher navigation" className="no-scrollbar flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
         {TEACHER_NAV_ITEMS.map((item) => {
           const active = pathname === item.href || (item.href !== base && pathname.startsWith(item.href));
           return (
@@ -79,38 +87,27 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
               aria-current={active ? "page" : undefined}
               title={collapsed ? item.label : undefined}
               className={cn(
-                "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+                "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 collapsed && "justify-center px-0",
                 active
-                  ? "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+                  ? "bg-primary font-medium text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
-              <item.icon
-                className={cn(
-                  "h-5 w-5 flex-shrink-0",
-                  active ? "text-blue-600 dark:text-blue-400" : "text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300"
-                )}
-              />
+              <item.icon className="h-4 w-4 flex-shrink-0" />
               {!collapsed && <span className="truncate">{item.label}</span>}
             </Link>
           );
         })}
       </nav>
 
-      {/* Logout */}
-      <div className="border-t border-gray-100 p-3 dark:border-gray-800">
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          title={collapsed ? "Logout" : undefined}
-          className={cn(
-            "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-gray-300 dark:hover:bg-red-950 dark:hover:text-red-400",
-            collapsed && "justify-center px-0"
-          )}
-        >
-          <LogOut className="h-5 w-5 flex-shrink-0 text-gray-400 group-hover:text-red-500" />
-          {!collapsed && <span>Logout</span>}
-        </button>
+      {/* Footer */}
+      <div className="border-t border-sidebar-border p-3">
+        {!collapsed && (
+          <div className="text-center text-[10px] text-muted-foreground">
+            Powered by <span className="font-semibold text-foreground">SchoolSync</span>
+          </div>
+        )}
       </div>
     </aside>
   );
