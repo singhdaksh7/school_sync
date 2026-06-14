@@ -38,38 +38,45 @@ export default async function DashboardPage({ params }: { params: Promise<{ scho
     : null;
 
   const stats = [
-    { title: "Total Teachers", value: totalTeachers, icon: Users, color: "bg-purple-100 text-purple-600" },
-    { title: "Total Students", value: totalStudents, icon: GraduationCap, color: "bg-green-100 text-green-600" },
-    { title: "Classes", value: school._count.classes, icon: BookOpen, color: "bg-blue-100 text-blue-600" },
+    { title: "Total Teachers", value: totalTeachers, icon: Users },
+    { title: "Total Students", value: totalStudents, icon: GraduationCap },
+    { title: "Classes", value: school._count.classes, icon: BookOpen },
     {
       title: "Student Attendance Today",
       value: studentAttendancePct !== null ? `${studentAttendancePct}%` : "—",
       icon: ClipboardCheck,
-      color: "bg-orange-100 text-orange-600",
       sub: studentAttendancePct !== null ? `${todayStudentPresent} of ${totalStudents} present` : "Not marked yet",
     },
   ];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-        <p className="text-gray-500 text-sm mt-1">{formatDate(new Date())} — Welcome back</p>
+    <div className="mx-auto max-w-6xl space-y-6">
+      {/* Hero greeting */}
+      <div
+        className="relative overflow-hidden rounded-2xl border border-border p-6 md:p-7"
+        style={{ background: "linear-gradient(120deg, hsl(var(--primary) / 0.12), hsl(var(--primary) / 0.03) 60%, transparent)" }}
+      >
+        <div className="relative z-10">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary">{formatDate(new Date())}</p>
+          <h2 className="mt-1.5 text-2xl font-bold tracking-tight text-foreground md:text-3xl">Welcome back to {school.name} 👋</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Here&apos;s how your school is doing today.</p>
+        </div>
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.title}>
-            <CardContent className="pt-5 pb-5">
+          <Card key={stat.title} className="border-border transition-all hover:-translate-y-0.5 hover:shadow-md">
+            <CardContent className="p-5">
               <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm text-gray-500 font-medium">{stat.title}</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                  {stat.sub && <p className="text-xs text-gray-400 mt-1">{stat.sub}</p>}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-muted-foreground">{stat.title}</p>
+                  <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">{stat.value}</p>
+                  {stat.sub && <p className="mt-1 truncate text-xs text-muted-foreground">{stat.sub}</p>}
                 </div>
-                <div className={`w-10 h-10 rounded-lg ${stat.color} flex items-center justify-center`}>
-                  <stat.icon className="w-5 h-5" />
+                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <stat.icon className="h-5 w-5" />
                 </div>
               </div>
             </CardContent>
@@ -78,40 +85,40 @@ export default async function DashboardPage({ params }: { params: Promise<{ scho
       </div>
 
       {/* Teacher attendance today */}
-      <Card>
+      <Card className="border-border">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <TrendingUp className="w-4 h-4 text-blue-600" />
+            <TrendingUp className="h-4 w-4 text-primary" />
             Today&apos;s Summary
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
-              <p className="text-sm text-gray-500 mb-1">Teacher Attendance</p>
+              <p className="mb-1 text-sm text-muted-foreground">Teacher Attendance</p>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-gray-900">{todayTeacherPresent}</span>
-                <span className="text-sm text-gray-400">of {totalTeachers} present</span>
+                <span className="text-2xl font-bold text-foreground">{todayTeacherPresent}</span>
+                <span className="text-sm text-muted-foreground">of {totalTeachers} present</span>
               </div>
               {totalTeachers > 0 && (
-                <div className="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full bg-purple-500 rounded-full transition-all"
+                    className="h-full rounded-full bg-primary transition-all"
                     style={{ width: `${Math.round((todayTeacherPresent / totalTeachers) * 100)}%` }}
                   />
                 </div>
               )}
             </div>
             <div>
-              <p className="text-sm text-gray-500 mb-1">Student Attendance</p>
+              <p className="mb-1 text-sm text-muted-foreground">Student Attendance</p>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-gray-900">{todayStudentPresent}</span>
-                <span className="text-sm text-gray-400">of {totalStudents} present</span>
+                <span className="text-2xl font-bold text-foreground">{todayStudentPresent}</span>
+                <span className="text-sm text-muted-foreground">of {totalStudents} present</span>
               </div>
               {totalStudents > 0 && (
-                <div className="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full bg-green-500 rounded-full transition-all"
+                    className="h-full rounded-full bg-primary transition-all"
                     style={{ width: `${Math.round((todayStudentPresent / totalStudents) * 100)}%` }}
                   />
                 </div>
@@ -122,25 +129,27 @@ export default async function DashboardPage({ params }: { params: Promise<{ scho
       </Card>
 
       {/* Quick actions */}
-      <Card>
+      <Card className="border-border">
         <CardHeader>
           <CardTitle className="text-base">Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { href: `/dashboard/${schoolSlug}/teachers`, label: "Add Teacher", icon: Users, color: "hover:bg-purple-50 hover:border-purple-200" },
-              { href: `/dashboard/${schoolSlug}/students`, label: "Add Student", icon: GraduationCap, color: "hover:bg-green-50 hover:border-green-200" },
-              { href: `/dashboard/${schoolSlug}/classes`, label: "Add Class", icon: BookOpen, color: "hover:bg-blue-50 hover:border-blue-200" },
-              { href: `/dashboard/${schoolSlug}/attendance`, label: "Mark Attendance", icon: ClipboardCheck, color: "hover:bg-orange-50 hover:border-orange-200" },
+              { href: `/dashboard/${schoolSlug}/teachers`, label: "Add Teacher", icon: Users },
+              { href: `/dashboard/${schoolSlug}/students`, label: "Add Student", icon: GraduationCap },
+              { href: `/dashboard/${schoolSlug}/classes`, label: "Add Class", icon: BookOpen },
+              { href: `/dashboard/${schoolSlug}/attendance`, label: "Mark Attendance", icon: ClipboardCheck },
             ].map((a) => (
               <a
                 key={a.href}
                 href={a.href}
-                className={`flex flex-col items-center gap-2 p-4 rounded-lg border border-gray-200 text-center transition-colors ${a.color}`}
+                className="group flex flex-col items-center gap-2 rounded-xl border border-border p-4 text-center transition-all hover:border-primary/40 hover:bg-primary/5"
               >
-                <a.icon className="w-5 h-5 text-gray-600" />
-                <span className="text-xs font-medium text-gray-700">{a.label}</span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors">
+                  <a.icon className="h-5 w-5" />
+                </span>
+                <span className="text-xs font-medium text-foreground">{a.label}</span>
               </a>
             ))}
           </div>

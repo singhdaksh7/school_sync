@@ -76,30 +76,30 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="flex justify-center mb-8">
-          <Link href="/" className="flex items-center gap-2">
+    <div className="gradient-mesh relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      <div className="relative z-10 w-full max-w-md">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <Link href="/" className="flex items-center gap-2.5">
             {branding.logoUrl ? (
               <div
                 aria-label={`${branding.appName} logo`}
-                className="w-10 h-10 rounded-lg bg-white border border-gray-200 bg-center bg-contain bg-no-repeat"
+                className="h-12 w-12 rounded-2xl border border-border bg-white bg-contain bg-center bg-no-repeat shadow-sm"
                 style={{ backgroundImage: `url("${branding.logoUrl}")` }}
               />
             ) : (
               <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: branding.primaryColor }}
+                className="flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-md"
+                style={{ background: `linear-gradient(135deg, ${branding.primaryColor}, ${branding.primaryColor}b3)` }}
               >
-                <GraduationCap className="w-5 h-5 text-white" />
+                <GraduationCap className="h-6 w-6" />
               </div>
             )}
-            <span className="text-xl font-bold text-gray-900">{branding.appName}</span>
+            <span className="text-2xl font-bold tracking-tight text-foreground">{branding.appName}</span>
           </Link>
         </div>
-        <Card>
+        <Card className="border-border/70 shadow-xl shadow-black/5 backdrop-blur supports-[backdrop-filter]:bg-card/80">
           <CardHeader>
-            <CardTitle>Welcome back</CardTitle>
+            <CardTitle className="text-xl">Welcome back</CardTitle>
             <CardDescription>Sign in to your {branding.schoolName} account</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
@@ -160,8 +160,8 @@ function LoginForm() {
           </form>
         </Card>
         {branding.poweredBySchoolSync && (
-          <p className="mt-5 text-center text-xs text-gray-500">
-            Powered by <span className="font-semibold text-gray-700">SchoolSync</span>
+          <p className="mt-5 text-center text-xs text-muted-foreground">
+            Powered by <span className="font-semibold text-foreground">SchoolSync</span>
           </p>
         )}
       </div>

@@ -30,7 +30,7 @@ export default function DashboardShell({ school, user, userRole, children }: Das
   }, []);
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-muted/30 text-foreground">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
