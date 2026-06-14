@@ -103,7 +103,12 @@ model School {
   phone                       String?
   email                       String?
   website                     String?
+  customDomain                String?                    @unique
   logoUrl                     String?
+  primaryColor                String?
+  secondaryColor              String?
+  appName                     String?
+  poweredBySchoolSync         Boolean                    @default(true)
   periodsPerDay               Int                        @default(6)
   teacherAttendanceCutoffTime String                     @default("09:30")
   ownerId                     String                     @unique

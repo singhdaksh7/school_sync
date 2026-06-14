@@ -9,6 +9,7 @@ function isPublicRoute(pathname: string) {
     pathname.startsWith("/invite/") ||
     pathname.startsWith("/teacher-invite/") ||
     pathname.startsWith("/api/auth/") ||
+    pathname === "/api/branding" ||
     pathname.startsWith("/api/invite/") ||
     pathname.startsWith("/api/teacher-invite/") ||
     pathname.startsWith("/api/parent/") ||
