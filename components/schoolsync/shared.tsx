@@ -1,11 +1,16 @@
 'use client'
+// SchoolSync — reusable UI building blocks shared across all portals.
+
+import type { ReactNode, ComponentType } from 'react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { motion } from 'framer-motion'
-import { ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, type LucideIcon } from 'lucide-react'
+import type { Timetable } from '@/lib/schoolsync/types'
 
-export function PageHeader({ title, subtitle, actions }) {
+interface PageHeaderProps { title: string; subtitle?: string; actions?: ReactNode }
+export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
       <div>
@@ -17,13 +22,21 @@ export function PageHeader({ title, subtitle, actions }) {
   )
 }
 
-export function KpiCard({ icon: Icon, label, value, hint, delta, accent = 'primary' }) {
+interface KpiCardProps {
+  icon: LucideIcon
+  label: string
+  value: ReactNode
+  hint?: string
+  delta?: number
+}
+export function KpiCard({ icon: Icon, label, value, hint, delta }: KpiCardProps) {
   const up = delta != null && delta >= 0
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
       <Card className="p-5 hover:shadow-md transition-shadow">
         <div className="flex items-center justify-between">
-          <div className={`size-9 rounded-lg flex items-center justify-center bg-${accent}/10 text-${accent}`} style={{ backgroundColor: 'hsl(var(--primary) / 0.1)', color: 'hsl(var(--primary))' }}>
+          <div className="size-9 rounded-lg flex items-center justify-center"
+               style={{ backgroundColor: 'hsl(var(--primary) / 0.1)', color: 'hsl(var(--primary))' }}>
             <Icon className="size-4" />
           </div>
           {delta != null && (
@@ -41,7 +54,14 @@ export function KpiCard({ icon: Icon, label, value, hint, delta, accent = 'prima
   )
 }
 
-export function SectionCard({ title, description, action, children, className = '' }) {
+interface SectionCardProps {
+  title: string
+  description?: string
+  action?: ReactNode
+  children: ReactNode
+  className?: string
+}
+export function SectionCard({ title, description, action, children, className = '' }: SectionCardProps) {
   return (
     <Card className={`p-5 ${className}`}>
       <div className="flex items-start justify-between mb-4">
@@ -56,7 +76,7 @@ export function SectionCard({ title, description, action, children, className = 
   )
 }
 
-export function StatRow({ label, value, percent }) {
+export function StatRow({ label, value, percent }: { label: string; value: string; percent: number }) {
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs">
@@ -68,7 +88,7 @@ export function StatRow({ label, value, percent }) {
   )
 }
 
-export function EmptyState({ icon: Icon, title, desc }) {
+export function EmptyState({ icon: Icon, title, desc }: { icon: ComponentType<{ className?: string }>; title: string; desc: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="size-12 rounded-full bg-muted flex items-center justify-center mb-3">
@@ -77,5 +97,38 @@ export function EmptyState({ icon: Icon, title, desc }) {
       <div className="font-medium text-sm">{title}</div>
       <div className="text-xs text-muted-foreground mt-1">{desc}</div>
     </div>
+  )
+}
+
+export function TimetableGrid({ timetable }: { timetable: Timetable }) {
+  const days = Object.keys(timetable)
+  return (
+    <Card className="p-2 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-muted-foreground">
+            <th className="text-left p-2 w-24">Day</th>
+            {[1,2,3,4,5,6,7].map(p => <th key={p} className="p-2 text-left">P{p}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {days.map(d => (
+            <tr key={d} className="border-t">
+              <td className="p-2 font-medium">{d}</td>
+              {timetable[d].map(p => (
+                <td key={p.p} className="p-1.5">
+                  {p.s === 'Break' || !p.s
+                    ? <div className="text-[11px] text-muted-foreground italic p-2">{p.s || '—'}</div>
+                    : <div className="p-2 rounded-md bg-primary/5 border border-primary/10">
+                        <div className="text-xs font-medium">{p.s}</div>
+                        <div className="text-[10px] text-muted-foreground">{p.r}</div>
+                      </div>}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
   )
 }

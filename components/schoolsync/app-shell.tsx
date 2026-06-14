@@ -1,5 +1,8 @@
 'use client'
-import { useState } from 'react'
+// SchoolSync — App shell: sidebar + topbar + responsive sheet.
+// Receives the active role's nav config and renders children inside the layout.
+
+import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -7,10 +10,19 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { useTheme } from 'next-themes'
 import { Bell, Search, Menu, Moon, Sun, ChevronsUpDown, Check, LogOut, Settings, User } from 'lucide-react'
-import { useSchool, SchoolLogo } from './theme'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useSchool, SchoolLogo } from './theme'
+import type { RoleConfig } from '@/lib/schoolsync/types'
 
-export function AppShell({ role, roleConfig, currentView, setView, onSignOut, children }) {
+interface AppShellProps {
+  roleConfig: RoleConfig
+  currentView: string
+  setView: (id: string) => void
+  onSignOut: () => void
+  children: ReactNode
+}
+
+export function AppShell({ roleConfig, currentView, setView, onSignOut, children }: AppShellProps) {
   const { school, setSchool, schools } = useSchool()
   const { theme, setTheme } = useTheme()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -21,8 +33,11 @@ export function AppShell({ role, roleConfig, currentView, setView, onSignOut, ch
         const Icon = item.icon
         const active = currentView === item.id
         return (
-          <button key={item.id} onClick={() => { setView(item.id); setMobileOpen(false) }}
-            className={`flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-all ${active ? 'bg-primary text-primary-foreground font-medium shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+          <button
+            key={item.id}
+            onClick={() => { setView(item.id); setMobileOpen(false) }}
+            className={`flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-all ${active ? 'bg-primary text-primary-foreground font-medium shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+          >
             <Icon className="size-4 shrink-0" />
             <span>{item.label}</span>
             {item.badge != null && (
@@ -75,12 +90,8 @@ export function AppShell({ role, roleConfig, currentView, setView, onSignOut, ch
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Desktop sidebar */}
       <aside className="hidden lg:flex w-64 shrink-0 sticky top-0 h-screen">{SidebarBody}</aside>
-
-      {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Top bar */}
         <header className="sticky top-0 z-30 bg-background/80 backdrop-blur border-b border-border">
           <div className="flex items-center gap-3 px-4 lg:px-6 h-14">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -89,14 +100,12 @@ export function AppShell({ role, roleConfig, currentView, setView, onSignOut, ch
               </SheetTrigger>
               <SheetContent side="left" className="p-0 w-72">{SidebarBody}</SheetContent>
             </Sheet>
-
             <div className="hidden md:flex items-center gap-2 px-3 h-9 rounded-lg bg-muted text-muted-foreground text-sm flex-1 max-w-md">
               <Search className="size-4" />
               <span>Search students, classes, homework...</span>
               <kbd className="ml-auto text-[10px] bg-background border rounded px-1.5 py-0.5">⌘K</kbd>
             </div>
             <div className="flex-1 md:hidden" />
-
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
               {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </Button>
@@ -126,9 +135,16 @@ export function AppShell({ role, roleConfig, currentView, setView, onSignOut, ch
           </div>
         </header>
         <AnimatePresence mode="wait">
-          <motion.main key={currentView}
-            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }}
-            className="p-4 lg:p-6 max-w-[1400px] mx-auto w-full">{children}</motion.main>
+          <motion.main
+            key={currentView}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="p-4 lg:p-6 max-w-[1400px] mx-auto w-full"
+          >
+            {children}
+          </motion.main>
         </AnimatePresence>
       </div>
     </div>
