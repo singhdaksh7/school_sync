@@ -1,7 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateParentToken, normalizePhone } from "@/lib/parent-auth";
+import { hostnameFromHeaders, resolveSchool } from "@/lib/school-resolver";
 import bcrypt from "bcryptjs";
+
+function requestHostname(req: NextRequest) {
+  return hostnameFromHeaders(req.headers);
+}
+
+function findGuardiansForLogin(phone: string, schoolId?: string) {
+  return prisma.guardian.findMany({
+    where: { phone, ...(schoolId ? { schoolId } : {}) },
+    include: {
+      school: { select: { id: true, slug: true } },
+    },
+  });
+}
+
+type GuardianWithSchool = Awaited<ReturnType<typeof findGuardiansForLogin>>[number];
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,14 +35,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    const guardians = await prisma.guardian.findMany({
-      where: { phone: normalizedPhone },
-      include: {
-        school: { select: { id: true, slug: true } },
-      },
-    });
+    const resolvedSchool = await resolveSchool(requestHostname(req));
+    const guardians = await findGuardiansForLogin(
+      normalizedPhone,
+      resolvedSchool?.id
+    );
 
-    const validGuardians = [];
+    const validGuardians: GuardianWithSchool[] = [];
     for (const guardian of guardians) {
       if (!guardian.passwordHash) continue;
       if (await bcrypt.compare(password, guardian.passwordHash)) validGuardians.push(guardian);

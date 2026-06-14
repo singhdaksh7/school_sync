@@ -21,6 +21,10 @@ export type BrandingResponse = {
   poweredBySchoolSync: boolean;
 };
 
+type HeaderReader = {
+  get(name: string): string | null;
+};
+
 export const DEFAULT_BRANDING: BrandingResponse = {
   schoolName: "SchoolSync",
   logoUrl: null,
@@ -49,6 +53,10 @@ export function normalizeHostname(hostname: string | null | undefined) {
   return value.includes(":") && value.indexOf(":") === value.lastIndexOf(":")
     ? value.replace(/:\d+$/, "")
     : value;
+}
+
+export function hostnameFromHeaders(headers: HeaderReader) {
+  return headers.get("host") || headers.get("x-forwarded-host");
 }
 
 export function brandingForSchool(school: BrandingSchool | null): BrandingResponse {

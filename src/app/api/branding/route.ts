@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { brandingForSchool, resolveSchool } from "@/lib/school-resolver";
+import { brandingForSchool, hostnameFromHeaders, resolveSchool } from "@/lib/school-resolver";
 
 function requestHostname(req: NextRequest) {
-  return req.headers.get("x-forwarded-host") || req.headers.get("host");
+  return hostnameFromHeaders(req.headers);
 }
 
 export async function GET(req: NextRequest) {

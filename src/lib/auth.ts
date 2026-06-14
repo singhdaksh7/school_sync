@@ -1,8 +1,15 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { authConfig } from "@/lib/auth.config";
+import { hostnameFromHeaders, resolveSchool } from "@/lib/school-resolver";
+
+async function requestHostname() {
+  const requestHeaders = await headers();
+  return hostnameFromHeaders(requestHeaders);
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -17,6 +24,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!credentials?.email || !credentials?.password) return null;
 
         try {
+          const resolvedSchool = await resolveSchool(await requestHostname());
           const user = await prisma.user.findUnique({
             where: { email: credentials.email as string },
             include: { ownedSchool: true, school: true },
@@ -41,6 +49,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               where: { userId: user.id },
               include: { school: { select: { id: true, slug: true } } },
             });
+
+            if (resolvedSchool && teacherProfile?.schoolId !== resolvedSchool.id) {
+              console.error("Login failed: teacher account does not belong to this school domain");
+              return null;
+            }
+
             return {
               id: user.id,
               name: user.name,
@@ -54,6 +68,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
 
           const school = user.ownedSchool || user.school;
+
+          if (resolvedSchool && school?.id !== resolvedSchool.id) {
+            console.error("Login failed: user account does not belong to this school domain");
+            return null;
+          }
 
           return {
             id: user.id,
