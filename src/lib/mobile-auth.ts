@@ -60,7 +60,16 @@ export async function getMobileAuth(req: Request) {
   if (decoded.role === "STUDENT") {
     const student = await prisma.student.findFirst({
       where: { id: decoded.studentId, schoolId: decoded.schoolId },
-      select: { id: true, name: true, rollNo: true, admissionNo: true, email: true, schoolId: true },
+      select: {
+        id: true,
+        name: true,
+        rollNo: true,
+        admissionNo: true,
+        email: true,
+        schoolId: true,
+        sectionId: true,
+        section: { select: { id: true, name: true, class: { select: { id: true, name: true } } } },
+      },
     });
     return student ? { decoded, school, student } : null;
   }
