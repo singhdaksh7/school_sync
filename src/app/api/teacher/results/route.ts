@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { allStudentsBelongToSchool, getExamInSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
+import {
+  assertTeacherScopeAccess,
+  getResolvedTeacherScope,
+  requireTeacherPermission,
+  scopeForbidden,
+} from "@/lib/teacher-permission-guard";
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -26,6 +32,11 @@ export async function GET(req: Request) {
   const isAssigned = teacher.mentorSectionId === sectionId ||
     (await prisma.timetableSlot.findFirst({ where: { schoolId: teacher.schoolId, teacherId: teacher.id, sectionId } })) !== null;
   if (!isAssigned) return NextResponse.json({ error: "You are not assigned to this section" }, { status: 403 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "MARKS", "VIEW");
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, sectionId)) return scopeForbidden();
 
   const results = await prisma.examResult.findMany({
     where: { examId: exam.id, student: { schoolId: teacher.schoolId, sectionId } },
@@ -53,6 +64,11 @@ export async function POST(req: Request) {
     (await prisma.timetableSlot.findFirst({ where: { schoolId: teacher.schoolId, teacherId: teacher.id, sectionId } })) !== null;
 
   if (!isAssigned) return NextResponse.json({ error: "You are not assigned to this section" }, { status: 403 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "MARKS", ["ENTER", "EDIT"]);
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, sectionId)) return scopeForbidden();
 
   const [sectionOk, exam] = await Promise.all([
     sectionBelongsToSchool(sectionId, teacher.schoolId),

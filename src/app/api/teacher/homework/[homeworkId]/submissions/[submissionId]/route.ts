@@ -8,6 +8,12 @@ import {
   parseOptionalNumber,
   validateScore,
 } from "@/lib/homework";
+import {
+  assertTeacherScopeAccess,
+  getResolvedTeacherScope,
+  requireTeacherPermission,
+  scopeForbidden,
+} from "@/lib/teacher-permission-guard";
 
 export async function PATCH(
   req: Request,
@@ -23,6 +29,11 @@ export async function PATCH(
 
   const homework = await getHomeworkForTeacherAccess(homeworkId, teacher.id, teacher.schoolId);
   if (!homework) return NextResponse.json({ error: "Homework not found" }, { status: 404 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", ["REVIEW", "MANAGE_ALL"]);
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, homework.sectionId)) return scopeForbidden();
 
   const submission = await prisma.homeworkSubmission.findFirst({
     where: {

@@ -3,6 +3,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionRole } from "@/lib/tenant";
 import { getHomeworkForTeacherAccess, getTeacherByUserId } from "@/lib/homework";
+import {
+  assertTeacherScopeAccess,
+  getResolvedTeacherScope,
+  requireTeacherPermission,
+  scopeForbidden,
+} from "@/lib/teacher-permission-guard";
 
 export async function GET(
   _req: Request,
@@ -18,6 +24,11 @@ export async function GET(
 
   const homework = await getHomeworkForTeacherAccess(homeworkId, teacher.id, teacher.schoolId);
   if (!homework) return NextResponse.json({ error: "Homework not found" }, { status: 404 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", "VIEW");
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, homework.sectionId)) return scopeForbidden();
 
   const submissions = await prisma.homeworkSubmission.findMany({
     where: {

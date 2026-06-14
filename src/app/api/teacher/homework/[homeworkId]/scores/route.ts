@@ -9,6 +9,12 @@ import {
   parseOptionalNumber,
   validateScore,
 } from "@/lib/homework";
+import {
+  assertTeacherScopeAccess,
+  getResolvedTeacherScope,
+  requireTeacherPermission,
+  scopeForbidden,
+} from "@/lib/teacher-permission-guard";
 
 const ALLOWED_SCORE_STATUSES = ["SUBMITTED", "NOT_SUBMITTED", "LATE", "CHECKED", "REJECTED"] as const;
 type ScoreStatus = (typeof ALLOWED_SCORE_STATUSES)[number];
@@ -42,6 +48,11 @@ export async function POST(
   if (homework.status === "CANCELLED") {
     return NextResponse.json({ error: "Cancelled homework cannot be scored" }, { status: 400 });
   }
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", ["REVIEW", "MANAGE_ALL"]);
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, homework.sectionId)) return scopeForbidden();
 
   const body = await req.json();
   const scores = Array.isArray(body.scores) ? (body.scores as HomeworkStudentStatusInput[]) : [];

@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { allStudentsBelongToSchool, sessionRole } from "@/lib/tenant";
+import {
+  assertTeacherScopeAccess,
+  getResolvedTeacherScope,
+  requireTeacherPermission,
+  scopeForbidden,
+} from "@/lib/teacher-permission-guard";
 
 async function getTeacher(userId: string) {
   return prisma.teacher.findUnique({ where: { userId } });
@@ -14,6 +20,11 @@ export async function GET(req: Request) {
 
   const teacher = await getTeacher(session.user.id);
   if (!teacher?.mentorSectionId) return NextResponse.json({ error: "No mentor section assigned" }, { status: 400 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "ATTENDANCE", ["VIEW", "REPORTS"]);
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, teacher.mentorSectionId)) return scopeForbidden();
 
   const url = new URL(req.url);
   const dateParam = url.searchParams.get("date") || new Date().toISOString().split("T")[0];
@@ -33,6 +44,11 @@ export async function POST(req: Request) {
 
   const teacher = await getTeacher(userId);
   if (!teacher?.mentorSectionId) return NextResponse.json({ error: "No mentor section assigned" }, { status: 400 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "ATTENDANCE", ["MARK", "EDIT"]);
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, teacher.mentorSectionId)) return scopeForbidden();
 
   try {
     const { date: dateParam, records } = await req.json();

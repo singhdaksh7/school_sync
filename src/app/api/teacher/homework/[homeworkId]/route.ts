@@ -10,6 +10,12 @@ import {
   parseRequiredDate,
   validateHomeworkTeacherAssignment,
 } from "@/lib/homework";
+import {
+  assertTeacherScopeAccess,
+  getResolvedTeacherScope,
+  requireTeacherPermission,
+  scopeForbidden,
+} from "@/lib/teacher-permission-guard";
 
 export async function PATCH(
   req: Request,
@@ -28,6 +34,11 @@ export async function PATCH(
   if (homework.status === "CANCELLED") {
     return NextResponse.json({ error: "Cancelled homework cannot be updated" }, { status: 400 });
   }
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", ["CREATE", "MANAGE_ALL"]);
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, homework.sectionId)) return scopeForbidden();
 
   const body = await req.json();
   const data: {
@@ -74,6 +85,7 @@ export async function PATCH(
   if (nextSectionId !== homework.sectionId || nextSubject.toLowerCase() !== homework.subject.toLowerCase()) {
     const assignmentError = await validateHomeworkTeacherAssignment(teacher.schoolId, teacher.id, nextSectionId, nextSubject);
     if (assignmentError) return NextResponse.json({ error: assignmentError }, { status: 403 });
+    if (!assertTeacherScopeAccess(scope, nextSectionId)) return scopeForbidden();
     data.sectionId = nextSectionId;
     data.subject = nextSubject;
   }

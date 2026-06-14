@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { generateReportCardForStudent, getTeacherForSession, serializeReportCard } from "@/lib/report-cards";
 import { sessionRole } from "@/lib/tenant";
+import {
+  assertTeacherScopeAccess,
+  getResolvedTeacherScope,
+  requireTeacherPermission,
+  scopeForbidden,
+} from "@/lib/teacher-permission-guard";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -13,6 +19,11 @@ export async function POST(req: Request) {
   if (!teacher.mentorSectionId || !teacher.mentorSection) {
     return NextResponse.json({ error: "Only class mentors can generate report cards" }, { status: 403 });
   }
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "REPORT_CARDS", "GENERATE");
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, teacher.mentorSectionId)) return scopeForbidden();
 
   const { examSchemeId, classTeacherRemark, studentIds } = await req.json();
   if (!examSchemeId) return NextResponse.json({ error: "examSchemeId is required" }, { status: 400 });

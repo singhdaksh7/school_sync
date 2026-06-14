@@ -9,6 +9,13 @@ import {
   parseRequiredDate,
   validateHomeworkTeacherAssignment,
 } from "@/lib/homework";
+import {
+  assertTeacherScopeAccess,
+  filterTeacherScope,
+  getResolvedTeacherScope,
+  requireTeacherPermission,
+  scopeForbidden,
+} from "@/lib/teacher-permission-guard";
 
 export async function GET(req: Request) {
   const teacherAuth = await getTeacherAuth(req);
@@ -16,6 +23,10 @@ export async function GET(req: Request) {
 
   const teacher = await getTeacherByUserId(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", "VIEW");
+  if (denied) return denied;
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
 
   const assignments = await getTeacherAssignments(teacher.id, teacher.schoolId);
   const accessFilters = assignments.map((assignment) => ({
@@ -26,7 +37,7 @@ export async function GET(req: Request) {
   const homework = await prisma.homework.findMany({
     where: {
       schoolId: teacher.schoolId,
-      OR: [{ teacherId: teacher.id }, ...accessFilters],
+      AND: [{ OR: [{ teacherId: teacher.id }, ...accessFilters] }, filterTeacherScope(scope)],
     },
     include: homeworkIncludeForList(),
     orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
@@ -41,6 +52,9 @@ export async function POST(req: Request) {
 
   const teacher = await getTeacherByUserId(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", "CREATE");
+  if (denied) return denied;
 
   const body = await req.json();
   const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -57,6 +71,9 @@ export async function POST(req: Request) {
 
   const assignmentError = await validateHomeworkTeacherAssignment(teacher.schoolId, teacher.id, sectionId, subject);
   if (assignmentError) return NextResponse.json({ error: assignmentError }, { status: 403 });
+
+  const scope = await getResolvedTeacherScope(teacher.id, teacher.schoolId);
+  if (!assertTeacherScopeAccess(scope, sectionId)) return scopeForbidden();
 
   const students = await prisma.student.findMany({
     where: { schoolId: teacher.schoolId, sectionId },
