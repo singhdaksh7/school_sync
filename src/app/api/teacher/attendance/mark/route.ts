@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sessionRole } from "@/lib/tenant";
+import { getTeacherAuth } from "@/lib/mobile-auth";
 import { getTodayDateOnly, hasCutoffPassed, normalizeCutoffTime } from "@/lib/teacher-attendance";
 
-export async function POST() {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function POST(req: Request) {
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const teacher = await prisma.teacher.findUnique({
-    where: { userId: session.user.id },
+    where: { id: teacherAuth.teacherId },
     include: { school: { select: { teacherAttendanceCutoffTime: true } } },
   });
   if (!teacher) return NextResponse.json({ error: "Teacher profile not found" }, { status: 404 });
@@ -44,7 +42,7 @@ export async function POST() {
       status: "PRESENT",
       teacherId: teacher.id,
       schoolId: teacher.schoolId,
-      markedById: session.user.id,
+      markedById: teacherAuth.userId,
     },
     select: { id: true, status: true, createdAt: true },
   });

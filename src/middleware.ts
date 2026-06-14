@@ -13,6 +13,7 @@ function isPublicRoute(pathname: string) {
     pathname.startsWith("/api/invite/") ||
     pathname.startsWith("/api/teacher-invite/") ||
     pathname.startsWith("/api/parent/") ||
+    pathname.startsWith("/api/mobile/") ||
     pathname.startsWith("/api/webhooks/") ||
     pathname === "/api/health"
   );

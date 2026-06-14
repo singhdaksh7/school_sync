@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sessionRole } from "@/lib/tenant";
+import { getTeacherAuth } from "@/lib/mobile-auth";
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function GET(req: Request) {
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const teacher = await prisma.teacher.findUnique({
-    where: { userId: session.user.id },
+    where: { id: teacherAuth.teacherId },
     include: {
       timetableSlots: {
         include: {
@@ -65,5 +63,5 @@ export async function GET() {
       }).then((s) => s?.periodsPerDay ?? 6)
     : 6;
 
-  return NextResponse.json({ teachingSections: Array.from(sectionMap.values()), slots, periodsPerDay: schoolPeriodsPerDay });
+  return NextResponse.json({ teachingSections: Array.from(sectionMap.values()), slots, timetable: slots, periodsPerDay: schoolPeriodsPerDay });
 }

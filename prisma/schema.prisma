@@ -290,8 +290,10 @@ model Student {
   id                  String                  @id @default(cuid())
   name                String
   rollNo              String
+  admissionNo         String?
   email               String?
   phone               String?
+  passwordHash        String?
   parentName          String?
   parentPhone         String?
   sectionId           String
@@ -311,6 +313,7 @@ model Student {
   updatedAt           DateTime                @updatedAt
 
   @@unique([rollNo, schoolId])
+  @@unique([schoolId, admissionNo])
   @@index([schoolId])
   @@index([sectionId])
   @@index([schoolId, sectionId])
