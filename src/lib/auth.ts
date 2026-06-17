@@ -44,6 +44,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             return null;
           }
 
+          if (user.role === "FOUNDER") {
+            // Founder accounts are platform-level and never tied to a school's
+            // hostname/tenant — deliberately skip the tenant cross-check below.
+            return {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              schoolId: null,
+              schoolSlug: null,
+              teacherId: null,
+              mentorSectionId: null,
+            };
+          }
+
           if (user.role === "TEACHER") {
             const teacherProfile = await prisma.teacher.findUnique({
               where: { userId: user.id },

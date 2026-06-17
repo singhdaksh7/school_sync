@@ -22,7 +22,7 @@ export const authConfig: NextAuthConfig = {
       const role = appUser(auth?.user).role;
       const pathname = nextUrl.pathname;
 
-      const publicRoutes = ["/", "/login", "/register"];
+      const publicRoutes = ["/", "/login", "/register", "/founder/login"];
       const isPublic =
         publicRoutes.includes(pathname) ||
         pathname.startsWith("/invite/") ||
@@ -32,7 +32,22 @@ export const authConfig: NextAuthConfig = {
         pathname.startsWith("/api/teacher-invite/") ||
         pathname === "/api/health";
 
+      const isFounderRoute = (pathname === "/founder" || pathname.startsWith("/founder/")) && pathname !== "/founder/login";
+
+      // Founder routes are gated independently of school-scoped auth.
+      if (isFounderRoute) {
+        if (!isLoggedIn || role !== "FOUNDER") {
+          return new Response(null, { status: 307, headers: { Location: "/founder/login" } });
+        }
+        return true;
+      }
+
       if (!isLoggedIn && !isPublic) return false;
+
+      // FOUNDER role: never allowed into school-scoped areas
+      if (isLoggedIn && role === "FOUNDER" && (pathname.startsWith("/dashboard") || pathname.startsWith("/teacher"))) {
+        return new Response(null, { status: 307, headers: { Location: "/founder/dashboard" } });
+      }
 
       // TEACHER role: block dashboard access, allow teacher pages
       if (isLoggedIn && role === "TEACHER" && pathname.startsWith("/dashboard")) {

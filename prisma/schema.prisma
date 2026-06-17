@@ -12,6 +12,12 @@ enum UserRole {
   SCHOOL_ADMIN
   VICE_PRINCIPAL
   TEACHER
+  FOUNDER
+}
+
+enum SchoolStatus {
+  ACTIVE
+  INACTIVE
 }
 
 enum AttendanceStatus {
@@ -114,6 +120,7 @@ model School {
   secondaryColor              String?
   appName                     String?
   poweredBySchoolSync         Boolean                    @default(true)
+  status                      SchoolStatus               @default(ACTIVE)
   periodsPerDay               Int                        @default(6)
   teacherAttendanceCutoffTime String                     @default("09:30")
   ownerId                     String                     @unique
