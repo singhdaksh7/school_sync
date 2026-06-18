@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "C:\\Users\\Adarsh\\AppData\\Local\\Programs\\Python\\Python310\\python.exe",
+      "args": [
+        "-m",
+        "code_review_graph",
+        "serve"
+      ],
+      "cwd": "C:\\Users\\Adarsh\\OneDrive\\Desktop\\project\\school_sync",
+      "type": "stdio"
+    }
+  }
+}

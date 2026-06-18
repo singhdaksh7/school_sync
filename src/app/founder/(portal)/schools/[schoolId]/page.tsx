@@ -2,10 +2,12 @@ import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { requireFounderSession } from "@/lib/founder";
 import { prisma } from "@/lib/prisma";
-import { formatDate, cn } from "@/lib/utils";
-import { ArrowLeft, Users, GraduationCap, UserCog, ShieldCheck, Mail, Phone } from "lucide-react";
+import { formatDate, formatCurrency, cn } from "@/lib/utils";
+import { ArrowLeft, Users, GraduationCap, UserCog, ShieldCheck, Mail, Phone, CreditCard, Flag } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import SchoolStatusControl from "./SchoolStatusControl";
+import SubscriptionEditor from "./SubscriptionEditor";
 
 const ROLE_LABELS: Record<string, string> = {
   SCHOOL_OWNER: "Owner",
@@ -34,6 +36,7 @@ export default async function FounderSchoolDetailPage({
     include: {
       owner: { select: { id: true, name: true, email: true } },
       admins: { select: { id: true, name: true, email: true, role: true } },
+      subscription: { include: { plan: true } },
     },
   });
 
@@ -94,18 +97,23 @@ export default async function FounderSchoolDetailPage({
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
               <h2 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">{school.name}</h2>
-              <Badge variant={school.status === "ACTIVE" ? "success" : "secondary"}>
-                {school.status === "ACTIVE" ? "Active" : "Inactive"}
-              </Badge>
+              <SchoolStatusControl schoolId={school.id} status={school.status} />
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               /{school.slug} &middot; Created {formatDate(school.createdAt)}
             </p>
           </div>
-          <div className="rounded-xl border border-border bg-card/80 px-4 py-3 text-sm backdrop-blur">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Owner</p>
-            <p className="mt-0.5 font-medium text-foreground">{school.owner.name}</p>
-            <p className="text-xs text-muted-foreground">{school.owner.email}</p>
+          <div className="flex flex-col items-end gap-2">
+            <div className="rounded-xl border border-border bg-card/80 px-4 py-3 text-sm backdrop-blur">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Owner</p>
+              <p className="mt-0.5 font-medium text-foreground">{school.owner.name}</p>
+              <p className="text-xs text-muted-foreground">{school.owner.email}</p>
+            </div>
+            <Button variant="outline" size="sm" asChild className="gap-1.5">
+              <Link href={`/founder/schools/${school.id}/feature-flags`}>
+                <Flag className="h-3.5 w-3.5" /> Feature Flags
+              </Link>
+            </Button>
           </div>
         </div>
       </div>
@@ -128,6 +136,61 @@ export default async function FounderSchoolDetailPage({
           </Card>
         ))}
       </div>
+
+      {/* Subscription */}
+      <Card className="border-border">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CreditCard className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            Subscription
+          </CardTitle>
+          <SubscriptionEditor
+            schoolId={school.id}
+            current={
+              school.subscription
+                ? {
+                    planId: school.subscription.planId,
+                    billingCycle: school.subscription.billingCycle,
+                    amount: school.subscription.amount.toString(),
+                    currentPeriodEnd: school.subscription.currentPeriodEnd?.toISOString() ?? null,
+                  }
+                : null
+            }
+          />
+        </CardHeader>
+        <CardContent>
+          {school.subscription ? (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plan</p>
+                <p className="mt-1 text-lg font-bold text-foreground">{school.subscription.plan.name}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Billing Cycle</p>
+                <p className="mt-1 text-lg font-bold text-foreground">
+                  {school.subscription.billingCycle === "ANNUAL" ? "Annual" : "Monthly"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Amount</p>
+                <p className="mt-1 text-lg font-bold text-foreground">{formatCurrency(school.subscription.amount.toString())}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Started</p>
+                <p className="mt-1 text-lg font-bold text-foreground">{formatDate(school.subscription.startedAt)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Renewal Date</p>
+                <p className="mt-1 text-lg font-bold text-foreground">
+                  {school.subscription.currentPeriodEnd ? formatDate(school.subscription.currentPeriodEnd) : "—"}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <EmptyState message="No subscription assigned to this school yet." />
+          )}
+        </CardContent>
+      </Card>
 
       {/* Admins & Owner */}
       <Card className="border-border">

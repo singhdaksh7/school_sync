@@ -1,12 +1,10 @@
-import { CreditCard } from "lucide-react";
-import FounderComingSoon from "@/components/founder/FounderComingSoon";
+import { redirect } from "next/navigation";
+import { requireFounderSession } from "@/lib/founder";
+import BillingPlansClient from "./BillingPlansClient";
 
-export default function FounderBillingPage() {
-  return (
-    <FounderComingSoon
-      icon={CreditCard}
-      title="Billing"
-      description="Subscription and billing management will appear here in a future phase."
-    />
-  );
+export default async function FounderBillingPage() {
+  const session = await requireFounderSession();
+  if (!session) redirect("/founder/login");
+
+  return <BillingPlansClient />;
 }

@@ -1,12 +1,10 @@
-import { Flag } from "lucide-react";
-import FounderComingSoon from "@/components/founder/FounderComingSoon";
+import { redirect } from "next/navigation";
+import { requireFounderSession } from "@/lib/founder";
+import FeatureFlagsPickerClient from "./FeatureFlagsPickerClient";
 
-export default function FounderFeatureFlagsPage() {
-  return (
-    <FounderComingSoon
-      icon={Flag}
-      title="Feature Flags"
-      description="Per-school feature flag controls will appear here in a future phase."
-    />
-  );
+export default async function FounderFeatureFlagsPage() {
+  const session = await requireFounderSession();
+  if (!session) redirect("/founder/login");
+
+  return <FeatureFlagsPickerClient />;
 }

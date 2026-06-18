@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   ShieldCheck, LayoutDashboard, Building2, PieChart,
   IndianRupee, CreditCard, Flag, Settings, ChevronRight, X,
+  Receipt, FileText, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +19,10 @@ const navItems = [
   { href: "/founder/analytics", label: "Analytics", icon: PieChart },
   { href: "/founder/revenue", label: "Revenue", icon: IndianRupee },
   { href: "/founder/billing", label: "Billing", icon: CreditCard },
+  { href: "/founder/payment-proofs", label: "Payment Proofs", icon: Receipt },
+  { href: "/founder/invoices", label: "Invoices", icon: FileText },
   { href: "/founder/feature-flags", label: "Feature Flags", icon: Flag },
+  { href: "/founder/notifications", label: "Notifications", icon: Bell },
   { href: "/founder/settings", label: "Settings", icon: Settings },
 ];
 

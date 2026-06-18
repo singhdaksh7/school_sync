@@ -19,3 +19,11 @@ export function formatDate(date: Date | string): string {
     year: "numeric",
   });
 }
+
+export function formatCurrency(amount: number | string): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number(amount));
+}

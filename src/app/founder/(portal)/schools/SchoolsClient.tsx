@@ -2,20 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Building2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Building2, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatDate, formatCurrency } from "@/lib/utils";
+import { SCHOOL_STATUSES, SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT, type SchoolStatusValue } from "@/lib/school-status";
 
 type SchoolRow = {
   id: string;
   name: string;
   slug: string;
-  status: "ACTIVE" | "INACTIVE";
+  status: SchoolStatusValue;
   createdAt: string;
   _count: { students: number; teachers: number; guardians: number; admins: number };
+  subscription: { billingCycle: "MONTHLY" | "ANNUAL"; amount: string; plan: { name: string } } | null;
 };
 
 type SchoolsResponse = {
@@ -29,27 +32,37 @@ type SchoolsResponse = {
 export default function SchoolsClient() {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<string>("ALL");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<SchoolsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => setPage(1), 0);
     return () => clearTimeout(id);
-  }, [query]);
+  }, [query, status]);
 
   useEffect(() => {
     let active = true;
     const id = setTimeout(() => {
-      if (active) setLoading(true);
+      if (active) {
+        setLoading(true);
+        setError(false);
+      }
     }, 0);
+
     const params = new URLSearchParams({ page: String(page) });
     if (query) params.set("q", query);
+    if (status !== "ALL") params.set("status", status);
 
     fetch(`/api/founder/schools?${params.toString()}`, { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json: SchoolsResponse | null) => {
-        if (active && json) setData(json);
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Request failed"))))
+      .then((json: SchoolsResponse) => {
+        if (active) setData(json);
+      })
+      .catch(() => {
+        if (active) setError(true);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -59,7 +72,7 @@ export default function SchoolsClient() {
       active = false;
       clearTimeout(id);
     };
-  }, [query, page]);
+  }, [query, status, page]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -71,19 +84,36 @@ export default function SchoolsClient() {
       <Card className="border-border">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base">All Schools{data ? ` (${data.total})` : ""}</CardTitle>
-          <div className="relative w-full sm:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search schools..."
-              className="pl-9"
-            />
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All statuses</SelectItem>
+                {SCHOOL_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {SCHOOL_STATUS_LABEL[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by name or slug..."
+                className="pl-9"
+              />
+            </div>
           </div>
         </CardHeader>
         <CardContent>
           {loading ? (
             <SkeletonTable />
+          ) : error ? (
+            <ErrorState />
           ) : !data || data.schools.length === 0 ? (
             <EmptyState query={query} />
           ) : (
@@ -94,9 +124,9 @@ export default function SchoolsClient() {
                     <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                       <th className="pb-2 pr-4 font-medium">School Name</th>
                       <th className="pb-2 pr-4 font-medium">Status</th>
+                      <th className="pb-2 pr-4 font-medium">Plan</th>
                       <th className="pb-2 pr-4 font-medium">Students</th>
                       <th className="pb-2 pr-4 font-medium">Teachers</th>
-                      <th className="pb-2 pr-4 font-medium">Parents</th>
                       <th className="pb-2 pr-4 font-medium">Admins</th>
                       <th className="pb-2 pr-4 font-medium">Created</th>
                       <th className="pb-2 font-medium"></th>
@@ -111,13 +141,22 @@ export default function SchoolsClient() {
                       >
                         <td className="py-3 pr-4 font-medium text-foreground">{school.name}</td>
                         <td className="py-3 pr-4">
-                          <Badge variant={school.status === "ACTIVE" ? "success" : "secondary"}>
-                            {school.status === "ACTIVE" ? "Active" : "Inactive"}
+                          <Badge variant={SCHOOL_STATUS_BADGE_VARIANT[school.status]}>
+                            {SCHOOL_STATUS_LABEL[school.status]}
                           </Badge>
+                        </td>
+                        <td className="py-3 pr-4 text-muted-foreground">
+                          {school.subscription ? (
+                            <span>
+                              {school.subscription.plan.name}{" "}
+                              <span className="text-xs">({formatCurrency(school.subscription.amount)}/{school.subscription.billingCycle === "ANNUAL" ? "yr" : "mo"})</span>
+                            </span>
+                          ) : (
+                            "—"
+                          )}
                         </td>
                         <td className="py-3 pr-4 text-muted-foreground">{school._count.students}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{school._count.teachers}</td>
-                        <td className="py-3 pr-4 text-muted-foreground">{school._count.guardians}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{school._count.admins}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{formatDate(school.createdAt)}</td>
                         <td className="py-3 text-right text-muted-foreground">
@@ -176,8 +215,18 @@ function EmptyState({ query }: { query: string }) {
       <Building2 className="h-8 w-8 text-muted-foreground" />
       <p className="text-sm font-medium text-foreground">No schools found</p>
       <p className="text-xs text-muted-foreground">
-        {query ? `No results for "${query}".` : "No schools have signed up yet."}
+        {query ? `No results for "${query}".` : "No schools match the selected filters."}
       </p>
+    </div>
+  );
+}
+
+function ErrorState() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-destructive/40 py-14 text-center">
+      <AlertTriangle className="h-8 w-8 text-destructive" />
+      <p className="text-sm font-medium text-foreground">Couldn&apos;t load schools</p>
+      <p className="text-xs text-muted-foreground">Something went wrong. Please refresh the page.</p>
     </div>
   );
 }

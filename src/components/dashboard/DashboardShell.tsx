@@ -4,15 +4,17 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
+import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
 
 interface DashboardShellProps {
   school: { slug: string; name: string; logoUrl?: string | null };
   user: { name?: string | null; email?: string | null };
   userRole: string;
+  featureFlags?: Record<FeatureFlagKeyValue, boolean>;
   children: React.ReactNode;
 }
 
-export default function DashboardShell({ school, user, userRole, children }: DashboardShellProps) {
+export default function DashboardShell({ school, user, userRole, featureFlags, children }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
 
@@ -46,7 +48,7 @@ export default function DashboardShell({ school, user, userRole, children }: Das
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         ].join(" ")}
       >
-        <Sidebar school={school} userRole={userRole} onClose={() => setSidebarOpen(false)} />
+        <Sidebar school={school} userRole={userRole} featureFlags={featureFlags} onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* Main area */}

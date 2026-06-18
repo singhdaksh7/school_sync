@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/utils";
+import { createNotification } from "@/lib/founder-notifications";
 import { z } from "zod";
 
 const createSchema = z.object({
@@ -43,6 +44,13 @@ export async function POST(req: Request) {
         website: data.website || null,
         ownerId: session.user.id,
       },
+    });
+
+    await createNotification({
+      type: "SCHOOL_REGISTERED",
+      title: "New school registered",
+      message: `${school.name} just signed up on the platform.`,
+      schoolId: school.id,
     });
 
     return NextResponse.json(school, { status: 201 });

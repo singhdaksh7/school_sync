@@ -5,6 +5,7 @@ import { useTheme } from "next-themes";
 import { signOut } from "next-auth/react";
 import { LogOut, ShieldCheck, Menu, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import NotificationBell from "@/components/founder/NotificationBell";
 
 interface FounderHeaderProps {
   user: { name?: string | null; email?: string | null };
@@ -42,6 +43,7 @@ export default function FounderHeader({ user, onMenuClick }: FounderHeaderProps)
             {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
         )}
+        <NotificationBell />
         <div className="flex items-center gap-2 text-sm text-foreground">
           <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white">
             <ShieldCheck className="h-4 w-4" />

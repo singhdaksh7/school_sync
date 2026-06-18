@@ -2,13 +2,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireFounderSession } from "@/lib/founder";
 import { prisma } from "@/lib/prisma";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatCurrency } from "@/lib/utils";
+import { getRevenueSummary } from "@/lib/revenue";
 import {
   Building2, GraduationCap, Users, UserCog, ShieldCheck,
-  CheckCircle2, XCircle, Activity, ArrowUpRight,
+  CheckCircle2, Hourglass, IndianRupee, Activity, ArrowUpRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT } from "@/lib/school-status";
 
 export default async function FounderDashboardPage() {
   const session = await requireFounderSession();
@@ -17,16 +19,17 @@ export default async function FounderDashboardPage() {
   const [
     totalSchools,
     activeSchools,
-    inactiveSchools,
+    trialSchools,
     totalStudents,
     totalTeachers,
     totalParents,
     totalSchoolAdmins,
     recentSchools,
+    revenue,
   ] = await Promise.all([
     prisma.school.count(),
     prisma.school.count({ where: { status: "ACTIVE" } }),
-    prisma.school.count({ where: { status: "INACTIVE" } }),
+    prisma.school.count({ where: { status: "TRIAL" } }),
     prisma.student.count(),
     prisma.teacher.count(),
     prisma.guardian.count(),
@@ -43,12 +46,14 @@ export default async function FounderDashboardPage() {
         _count: { select: { students: true, teachers: true, guardians: true, admins: true } },
       },
     }),
+    getRevenueSummary(),
   ]);
 
   const statCards = [
     { title: "Total Schools", value: totalSchools, icon: Building2 },
     { title: "Active Schools", value: activeSchools, icon: CheckCircle2 },
-    { title: "Inactive Schools", value: inactiveSchools, icon: XCircle },
+    { title: "Trial Schools", value: trialSchools, icon: Hourglass },
+    { title: "Monthly Revenue", value: formatCurrency(revenue.monthlyRevenue), icon: IndianRupee },
     { title: "Total Students", value: totalStudents, icon: GraduationCap },
     { title: "Total Teachers", value: totalTeachers, icon: Users },
     { title: "Total Parents", value: totalParents, icon: UserCog },
@@ -125,8 +130,8 @@ export default async function FounderDashboardPage() {
                       <tr key={school.id} className="border-b border-border/60 last:border-0">
                         <td className="py-2.5 pr-4 font-medium text-foreground">{school.name}</td>
                         <td className="py-2.5 pr-4">
-                          <Badge variant={school.status === "ACTIVE" ? "success" : "secondary"}>
-                            {school.status === "ACTIVE" ? "Active" : "Inactive"}
+                          <Badge variant={SCHOOL_STATUS_BADGE_VARIANT[school.status]}>
+                            {SCHOOL_STATUS_LABEL[school.status]}
                           </Badge>
                         </td>
                         <td className="py-2.5 pr-4 text-muted-foreground">{school._count.students}</td>
