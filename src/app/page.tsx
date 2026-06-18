@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   GraduationCap, Users, BookOpen, ClipboardCheck,
-  ArrowRight, School, UserCog, Briefcase, Lock,
+  ArrowRight, School, UserCog, Briefcase, Lock, ShieldCheck,
 } from "lucide-react";
 
 export default function LandingPage() {
@@ -128,6 +128,20 @@ export default function LandingPage() {
                   <p className="text-xs text-gray-400 mt-0.5">Teachers & class mentors</p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-green-500 transition-colors shrink-0" />
+              </div>
+            </Link>
+
+            {/* Founder Login */}
+            <Link href="/founder/login">
+              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer mt-3">
+                <div className="w-11 h-11 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-indigo-600 transition-colors">
+                  <ShieldCheck className="w-5 h-5 text-indigo-600 group-hover:text-white transition-colors" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm">Founder Login</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Platform-level access only</p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-indigo-500 transition-colors shrink-0" />
               </div>
             </Link>
 

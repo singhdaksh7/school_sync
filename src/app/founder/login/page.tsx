@@ -40,6 +40,13 @@ function FounderLoginForm() {
     setError("");
     setLoading(true);
     try {
+      // Clear any existing session first — otherwise a failed attempt here
+      // would leave a previously-established session active, making it
+      // look like the wrong password "worked" when it's really just stale
+      // login state from before.
+      const existing = await getSession();
+      if (existing) await signOut({ redirect: false });
+
       const result = await signIn("credentials", {
         email: form.email,
         password: form.password,

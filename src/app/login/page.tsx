@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { signIn } from "next-auth/react";
+import { signIn, signOut, getSession } from "next-auth/react";
 import { GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +56,13 @@ function LoginForm() {
     setError("");
     setLoading(true);
     try {
+      // Clear any existing session first — otherwise a failed attempt here
+      // would leave a previously-established session active, making it
+      // look like the wrong password "worked" when it's really just stale
+      // login state from before.
+      const existing = await getSession();
+      if (existing) await signOut({ redirect: false });
+
       const callbackUrl = `/api/auth/redirect?nonce=${Date.now()}`;
       const result = await signIn("credentials", {
         email: form.email,

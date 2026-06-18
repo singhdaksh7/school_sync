@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireFounderSession } from "@/lib/founder";
 import { prisma } from "@/lib/prisma";
+import { normalizeToMonthStart } from "@/lib/payment-overdue";
 
 const BILLING_CYCLES = ["MONTHLY", "ANNUAL"] as const;
 
@@ -16,7 +17,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ school
   const planId = typeof body?.planId === "string" ? body.planId : "";
   const billingCycle = body?.billingCycle;
   const amount = Number(body?.amount);
-  const currentPeriodEnd = body?.currentPeriodEnd ? new Date(body.currentPeriodEnd) : null;
+  const currentPeriodEndInput = body?.currentPeriodEnd ? new Date(body.currentPeriodEnd) : null;
 
   if (!planId) return NextResponse.json({ error: "Plan is required" }, { status: 400 });
   if (!BILLING_CYCLES.includes(billingCycle)) {
@@ -25,9 +26,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ school
   if (!Number.isFinite(amount) || amount < 0) {
     return NextResponse.json({ error: "Amount must be a non-negative number" }, { status: 400 });
   }
-  if (currentPeriodEnd && Number.isNaN(currentPeriodEnd.getTime())) {
+  if (currentPeriodEndInput && Number.isNaN(currentPeriodEndInput.getTime())) {
     return NextResponse.json({ error: "Invalid renewal date" }, { status: 400 });
   }
+
+  // Renewal dates are always the 1st of a month, whether set automatically
+  // (on payment approval) or manually here.
+  const currentPeriodEnd = currentPeriodEndInput ? normalizeToMonthStart(currentPeriodEndInput) : null;
 
   const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId }, select: { id: true } });
   if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });

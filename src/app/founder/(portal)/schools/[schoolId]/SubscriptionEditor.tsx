@@ -33,7 +33,7 @@ export default function SubscriptionEditor({
   const [planId, setPlanId] = useState(current?.planId ?? "");
   const [billingCycle, setBillingCycle] = useState<"MONTHLY" | "ANNUAL">(current?.billingCycle ?? "MONTHLY");
   const [amount, setAmount] = useState(current?.amount ?? "");
-  const [renewalDate, setRenewalDate] = useState(current?.currentPeriodEnd?.slice(0, 10) ?? "");
+  const [renewalMonth, setRenewalMonth] = useState(current?.currentPeriodEnd?.slice(0, 7) ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,7 +61,7 @@ export default function SubscriptionEditor({
           planId,
           billingCycle,
           amount: Number(amount),
-          currentPeriodEnd: renewalDate || null,
+          currentPeriodEnd: renewalMonth ? `${renewalMonth}-01` : null,
         }),
       });
       if (!res.ok) throw new Error("Request failed");
@@ -117,8 +117,9 @@ export default function SubscriptionEditor({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Renewal Date</Label>
-              <Input type="date" value={renewalDate} onChange={(e) => setRenewalDate(e.target.value)} />
+              <Label>Renewal Month</Label>
+              <Input type="month" value={renewalMonth} onChange={(e) => setRenewalMonth(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Renewal dates are always the 1st of the selected month.</p>
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}

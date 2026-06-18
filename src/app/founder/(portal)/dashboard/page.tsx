@@ -4,9 +4,10 @@ import { requireFounderSession } from "@/lib/founder";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { getRevenueSummary } from "@/lib/revenue";
+import { isSchoolPaymentOverdue } from "@/lib/payment-overdue";
 import {
   Building2, GraduationCap, Users, UserCog, ShieldCheck,
-  CheckCircle2, Hourglass, IndianRupee, Activity, ArrowUpRight,
+  CheckCircle2, Hourglass, IndianRupee, Activity, ArrowUpRight, AlertTriangle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,8 @@ export default async function FounderDashboardPage() {
     totalSchoolAdmins,
     recentSchools,
     revenue,
+    schoolsWithSubscriptions,
+    allSubmissions,
   ] = await Promise.all([
     prisma.school.count(),
     prisma.school.count({ where: { status: "ACTIVE" } }),
@@ -47,12 +50,25 @@ export default async function FounderDashboardPage() {
       },
     }),
     getRevenueSummary(),
+    prisma.school.findMany({
+      select: { id: true, subscription: { select: { currentPeriodEnd: true } } },
+    }),
+    prisma.paymentProofSubmission.findMany({ select: { schoolId: true, status: true, billingMonth: true } }),
   ]);
+
+  const submissionsBySchool = new Map<string, typeof allSubmissions>();
+  for (const s of allSubmissions) {
+    submissionsBySchool.set(s.schoolId, [...(submissionsBySchool.get(s.schoolId) ?? []), s]);
+  }
+  const overdueSchools = schoolsWithSubscriptions.filter((s) =>
+    isSchoolPaymentOverdue(s.subscription, submissionsBySchool.get(s.id) ?? [])
+  ).length;
 
   const statCards = [
     { title: "Total Schools", value: totalSchools, icon: Building2 },
     { title: "Active Schools", value: activeSchools, icon: CheckCircle2 },
     { title: "Trial Schools", value: trialSchools, icon: Hourglass },
+    { title: "Overdue Schools", value: overdueSchools, icon: AlertTriangle },
     { title: "Monthly Revenue", value: formatCurrency(revenue.monthlyRevenue), icon: IndianRupee },
     { title: "Total Students", value: totalStudents, icon: GraduationCap },
     { title: "Total Teachers", value: totalTeachers, icon: Users },

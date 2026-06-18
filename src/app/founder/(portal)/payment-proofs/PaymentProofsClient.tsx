@@ -50,7 +50,7 @@ export default function PaymentProofsClient() {
   const [reviewNotes, setReviewNotes] = useState("");
   const [actionPending, setActionPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [confirmAction, setConfirmAction] = useState<"APPROVED" | "REJECTED" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<PaymentProofStatusValue | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -91,12 +91,15 @@ export default function PaymentProofsClient() {
     setActionError(null);
     fetch(`/api/founder/payment-proofs/${id}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Request failed"))))
-      .then((json: { submission: Detail }) => setDetail(json.submission))
+      .then((json: { submission: Detail }) => {
+        setDetail(json.submission);
+        setReviewNotes(json.submission.reviewNotes ?? "");
+      })
       .catch(() => setActionError("Couldn't load this submission."))
       .finally(() => setDetailLoading(false));
   }
 
-  async function applyReview(newStatus: "APPROVED" | "REJECTED") {
+  async function applyReview(newStatus: PaymentProofStatusValue) {
     if (!selectedId) return;
     setActionPending(true);
     setActionError(null);
@@ -171,7 +174,8 @@ export default function PaymentProofsClient() {
                       <th className="pb-2 pr-4 font-medium">School</th>
                       <th className="pb-2 pr-4 font-medium">Billing Month</th>
                       <th className="pb-2 pr-4 font-medium">Amount</th>
-                      <th className="pb-2 pr-4 font-medium">Submitted</th>
+                      <th className="pb-2 pr-4 font-medium">Payment Date</th>
+                      <th className="pb-2 pr-4 font-medium">Submitted At</th>
                       <th className="pb-2 pr-4 font-medium">Status</th>
                       <th className="pb-2 font-medium"></th>
                     </tr>
@@ -186,6 +190,7 @@ export default function PaymentProofsClient() {
                         <td className="py-3 pr-4 font-medium text-foreground">{row.school.name}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{formatDate(row.billingMonth)}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{formatCurrency(row.amount)}</td>
+                        <td className="py-3 pr-4 text-muted-foreground">{formatDate(row.paymentDate)}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{formatDate(row.createdAt)}</td>
                         <td className="py-3 pr-4">
                           <Badge variant={PAYMENT_PROOF_STATUS_BADGE_VARIANT[row.status]}>{PAYMENT_PROOF_STATUS_LABEL[row.status]}</Badge>
@@ -216,7 +221,7 @@ export default function PaymentProofsClient() {
       </Card>
 
       <Dialog open={!!selectedId} onOpenChange={(open) => !open && setSelectedId(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Payment Proof Details</DialogTitle>
           </DialogHeader>
@@ -224,13 +229,10 @@ export default function PaymentProofsClient() {
           {detailLoading || !detail ? (
             <div className="h-40 w-full animate-pulse rounded-md bg-muted" />
           ) : (
-            <div className="space-y-4">
+            <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
               <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <Field label="School" value={detail.school.name} />
                 <Field label="Submitted By" value={detail.submittedBy.name} />
-                <Field label="Status">
-                  <Badge variant={PAYMENT_PROOF_STATUS_BADGE_VARIANT[detail.status]}>{PAYMENT_PROOF_STATUS_LABEL[detail.status]}</Badge>
-                </Field>
                 <Field label="Billing Month" value={formatDate(detail.billingMonth)} />
                 <Field label="Payment Date" value={formatDate(detail.paymentDate)} />
                 <Field label="Amount" value={formatCurrency(detail.amount)} />
@@ -248,33 +250,47 @@ export default function PaymentProofsClient() {
                 <ReceiptPreview detail={detail} />
               </div>
 
-              {detail.status !== "PENDING" && detail.reviewNotes && (
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Review Notes</p>
-                  <p className="mt-1 text-sm text-foreground">{detail.reviewNotes}</p>
-                </div>
-              )}
-
-              {detail.status === "PENDING" && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Review Notes (optional)</p>
-                  <Textarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} placeholder="Internal note for this decision..." />
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</p>
+                  <Select
+                    value={detail.status}
+                    onValueChange={(v) => {
+                      const next = v as PaymentProofStatusValue;
+                      if (next !== detail.status) setConfirmAction(next);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue>
+                        <Badge variant={PAYMENT_PROOF_STATUS_BADGE_VARIANT[detail.status]}>{PAYMENT_PROOF_STATUS_LABEL[detail.status]}</Badge>
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_PROOF_STATUSES.map((s) => (
+                        <SelectItem key={s} value={s}>{PAYMENT_PROOF_STATUS_LABEL[s]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
+                {detail.status === "PENDING" && (
+                  <div className="flex items-end gap-2">
+                    <Button variant="outline" onClick={() => setConfirmAction("REJECTED")} disabled={actionPending} className="flex-1 text-destructive">
+                      Reject
+                    </Button>
+                    <Button onClick={() => setConfirmAction("APPROVED")} disabled={actionPending} className="flex-1">
+                      Approve
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Review Notes (internal)</p>
+                <Textarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} placeholder="Internal note about this decision..." />
+              </div>
 
               {actionError && <p className="text-sm text-destructive">{actionError}</p>}
             </div>
-          )}
-
-          {detail?.status === "PENDING" && (
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setConfirmAction("REJECTED")} disabled={actionPending} className="text-destructive">
-                Reject
-              </Button>
-              <Button onClick={() => setConfirmAction("APPROVED")} disabled={actionPending}>
-                Approve
-              </Button>
-            </DialogFooter>
           )}
         </DialogContent>
       </Dialog>
@@ -282,9 +298,11 @@ export default function PaymentProofsClient() {
       <Dialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{confirmAction === "APPROVED" ? "Approve this submission?" : "Reject this submission?"}</DialogTitle>
+            <DialogTitle>Set status to {confirmAction ? PAYMENT_PROOF_STATUS_LABEL[confirmAction] : ""}?</DialogTitle>
             <DialogDescription>
-              This does not automatically change the school&apos;s subscription status or renewal date — update those separately if needed.
+              {confirmAction === "APPROVED"
+                ? "This will automatically advance the school's renewal date to the 1st of the month after this billing cycle. It does not change the school's status — you can still adjust the renewal date manually afterward."
+                : "This does not automatically change the school's subscription status or renewal date — update those separately if needed."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -312,17 +330,24 @@ function ReceiptPreview({ detail }: { detail: Detail }) {
   const isImage = detail.receiptMimeType?.startsWith("image/");
   if (isImage) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={detail.receiptData} alt="Payment receipt" className="max-h-80 rounded-lg border border-border object-contain" />
+      <a href={detail.receiptData} target="_blank" rel="noopener noreferrer" className="block">
+        <div className="flex h-72 w-full items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/20 sm:h-96">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={detail.receiptData} alt="Payment receipt" className="h-full w-full object-contain" />
+        </div>
+        <p className="mt-1.5 text-xs text-muted-foreground">Click to open full size in a new tab</p>
+      </a>
     );
   }
   return (
     <a
       href={detail.receiptData}
+      target="_blank"
+      rel="noopener noreferrer"
       download={detail.receiptFileName ?? "receipt.pdf"}
-      className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+      className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
     >
-      <Receipt className="h-4 w-4" /> {detail.receiptFileName ?? "Download receipt"}
+      <Receipt className="h-4 w-4 flex-shrink-0" /> {detail.receiptFileName ?? "Open receipt"}
     </a>
   );
 }

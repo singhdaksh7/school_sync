@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { getSchoolBySlug } from "@/lib/school";
 import { prisma } from "@/lib/prisma";
 import { sessionRole } from "@/lib/tenant";
+import { isSchoolPaymentOverdue } from "@/lib/payment-overdue";
 import BillingClient from "./BillingClient";
 
 export default async function SchoolBillingPage({
@@ -22,15 +23,24 @@ export default async function SchoolBillingPage({
   const school = await getSchoolBySlug(schoolSlug);
   if (!school) return null;
 
-  const subscription = await prisma.schoolSubscription.findUnique({
-    where: { schoolId: school.id },
-    include: { plan: true },
-  });
+  const [subscription, submissionsForOverdue] = await Promise.all([
+    prisma.schoolSubscription.findUnique({
+      where: { schoolId: school.id },
+      include: { plan: true },
+    }),
+    prisma.paymentProofSubmission.findMany({
+      where: { schoolId: school.id },
+      select: { status: true, billingMonth: true },
+    }),
+  ]);
+
+  const isOverdue = isSchoolPaymentOverdue(subscription, submissionsForOverdue);
 
   return (
     <BillingClient
       schoolId={school.id}
       status={school.status}
+      isOverdue={isOverdue}
       subscription={
         subscription
           ? {

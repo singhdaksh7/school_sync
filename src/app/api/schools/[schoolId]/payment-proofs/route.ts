@@ -48,7 +48,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   }
 
   const body = await req.json().catch(() => null);
-  const billingMonth = body?.billingMonth ? new Date(body.billingMonth) : null;
+  const billingMonthInput = body?.billingMonth ? new Date(body.billingMonth) : null;
+  const billingMonth = billingMonthInput && !Number.isNaN(billingMonthInput.getTime())
+    ? new Date(billingMonthInput.getFullYear(), billingMonthInput.getMonth(), 1)
+    : null;
   const paymentDate = body?.paymentDate ? new Date(body.paymentDate) : null;
   const amount = Number(body?.amount);
   const transactionRef = typeof body?.transactionRef === "string" && body.transactionRef.trim() ? body.transactionRef.trim() : null;
@@ -71,6 +74,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   }
   if (receiptData.length > MAX_RECEIPT_DATA_LENGTH) {
     return NextResponse.json({ error: "Receipt file is too large (max ~2MB)" }, { status: 400 });
+  }
+
+  const duplicate = await prisma.paymentProofSubmission.findFirst({
+    where: { schoolId, billingMonth, status: { in: ["PENDING", "APPROVED"] } },
+    select: { id: true },
+  });
+  if (duplicate) {
+    return NextResponse.json(
+      { error: "A submission for this billing month already exists and is pending or approved." },
+      { status: 409 }
+    );
   }
 
   const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { name: true } });

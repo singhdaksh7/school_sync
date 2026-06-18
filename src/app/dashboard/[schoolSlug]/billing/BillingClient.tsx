@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { CreditCard, Receipt, FileText, Plus, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CreditCard, Receipt, FileText, Plus, Upload, AlertTriangle, ShieldAlert, CheckCircle2, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,13 +45,18 @@ type InvoiceRow = {
   plan: { name: string } | null;
 };
 
+const CURRENT_MONTH_LABEL = new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+const POLL_INTERVAL_MS = 20_000;
+
 export default function BillingClient({
   schoolId,
   status,
+  isOverdue,
   subscription,
 }: {
   schoolId: string;
   status: SchoolStatusValue;
+  isOverdue: boolean;
   subscription: SubscriptionSummary;
 }) {
   const [submissions, setSubmissions] = useState<Submission[] | null>(null);
@@ -59,19 +64,47 @@ export default function BillingClient({
   const [loading, setLoading] = useState(true);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [justChanged, setJustChanged] = useState<PaymentProofStatusValue | null>(null);
+  const hasLoadedOnceRef = useRef(false);
+  const prevLastSubmissionRef = useRef<{ id: string; status: PaymentProofStatusValue } | null>(null);
+
+  // Background-refresh the submission list so an approval/rejection made by
+  // the Founder shows up here without the admin needing to manually reload.
+  useEffect(() => {
+    const interval = setInterval(() => setRefreshKey((k) => k + 1), POLL_INTERVAL_MS);
+    function handleVisibility() {
+      if (document.visibilityState === "visible") setRefreshKey((k) => k + 1);
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
+    const showSkeleton = !hasLoadedOnceRef.current;
     const id = setTimeout(() => {
-      if (active) setLoading(true);
+      if (active && showSkeleton) setLoading(true);
     }, 0);
     Promise.all([
       fetch(`/api/schools/${schoolId}/payment-proofs`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
       fetch(`/api/schools/${schoolId}/invoices`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
     ]).then(([proofs, invs]) => {
       if (!active) return;
-      setSubmissions(proofs?.submissions ?? []);
+      const newSubmissions: Submission[] = proofs?.submissions ?? [];
+      setSubmissions(newSubmissions);
       setInvoices(invs?.invoices ?? []);
+
+      const newLast = newSubmissions[0] ?? null;
+      const prev = prevLastSubmissionRef.current;
+      if (prev && newLast && prev.id === newLast.id && prev.status !== newLast.status && newLast.status !== "PENDING") {
+        setJustChanged(newLast.status);
+        setTimeout(() => setJustChanged(null), 8000);
+      }
+      prevLastSubmissionRef.current = newLast ? { id: newLast.id, status: newLast.status } : null;
+      hasLoadedOnceRef.current = true;
     }).finally(() => {
       if (active) setLoading(false);
     });
@@ -81,17 +114,55 @@ export default function BillingClient({
     };
   }, [schoolId, refreshKey]);
 
+  const lastSubmission = submissions?.[0] ?? null;
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Billing</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">Subscription Payment</h2>
           <p className="mt-1 text-sm text-muted-foreground">Your subscription, payment proofs, and invoices.</p>
         </div>
         <Button onClick={() => setSubmitOpen(true)} className="gap-1.5">
           <Plus className="h-4 w-4" /> Submit Payment Proof
         </Button>
       </div>
+
+      {justChanged && (
+        <div
+          className={`flex items-start gap-3 rounded-xl border p-4 ${
+            justChanged === "APPROVED" ? "border-green-500/40 bg-green-500/5" : "border-destructive/40 bg-destructive/5"
+          }`}
+        >
+          {justChanged === "APPROVED" ? (
+            <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-green-600 dark:text-green-400" />
+          ) : (
+            <XCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-destructive" />
+          )}
+          <div>
+            <p className={`text-sm font-semibold ${justChanged === "APPROVED" ? "text-green-700 dark:text-green-400" : "text-destructive"}`}>
+              {justChanged === "APPROVED" ? "Payment approved" : "Payment rejected"}
+            </p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {justChanged === "APPROVED"
+                ? "The Founder team has approved your latest payment submission."
+                : "The Founder team has rejected your latest payment submission. Check the review notes below."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isOverdue && (
+        <div className="flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/5 p-4">
+          <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-destructive" />
+          <div>
+            <p className="text-sm font-semibold text-destructive">Payment Overdue</p>
+            <p className="mt-0.5 text-sm text-destructive/90">
+              Your subscription renewal date has passed and no approved payment has been recorded for this cycle. Please submit payment proof to avoid service disruption.
+            </p>
+          </div>
+        </div>
+      )}
 
       <Card className="border-border">
         <CardHeader>
@@ -112,6 +183,34 @@ export default function BillingClient({
             </div>
           ) : (
             <EmptyState message="No subscription assigned yet. Contact the platform team." />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-border">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldAlert className="h-4 w-4 text-primary" /> Payment Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <SkeletonRows />
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Field label="Current Billing Month" value={CURRENT_MONTH_LABEL} />
+              <Field label="Payment Status">
+                <Badge variant={isOverdue ? "destructive" : "success"}>{isOverdue ? "Overdue" : "Up to date"}</Badge>
+              </Field>
+              <Field label="Last Submission" value={lastSubmission ? formatDate(lastSubmission.createdAt) : "—"} />
+              <Field label="Founder Review Status">
+                {lastSubmission ? (
+                  <Badge variant={PAYMENT_PROOF_STATUS_BADGE_VARIANT[lastSubmission.status]}>{PAYMENT_PROOF_STATUS_LABEL[lastSubmission.status]}</Badge>
+                ) : (
+                  "—"
+                )}
+              </Field>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -201,6 +300,7 @@ export default function BillingClient({
       <SubmitProofDialog
         schoolId={schoolId}
         open={submitOpen}
+        existingSubmissions={submissions ?? []}
         onOpenChange={setSubmitOpen}
         onSubmitted={() => setRefreshKey((k) => k + 1)}
       />
@@ -211,11 +311,13 @@ export default function BillingClient({
 function SubmitProofDialog({
   schoolId,
   open,
+  existingSubmissions,
   onOpenChange,
   onSubmitted,
 }: {
   schoolId: string;
   open: boolean;
+  existingSubmissions: Submission[];
   onOpenChange: (open: boolean) => void;
   onSubmitted: () => void;
 }) {
@@ -226,6 +328,7 @@ function SubmitProofDialog({
   const [notes, setNotes] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -236,11 +339,25 @@ function SubmitProofDialog({
     setTransactionRef("");
     setNotes("");
     setFile(null);
+    setUploadProgress(0);
     setError(null);
   }, [open]);
 
+  const duplicateBlocked = billingMonth
+    ? existingSubmissions.some((s) => {
+        const month = new Date(s.billingMonth);
+        const selected = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
+        return selected === billingMonth && (s.status === "PENDING" || s.status === "APPROVED");
+      })
+    : false;
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null;
+    if (selected && !/^image\/|^application\/pdf$/.test(selected.type)) {
+      setError("Only images and PDF files are allowed");
+      setFile(null);
+      return;
+    }
     if (selected && selected.size > MAX_FILE_BYTES) {
       setError("File is too large (max ~2MB)");
       setFile(null);
@@ -253,7 +370,13 @@ function SubmitProofDialog({
   function readFileAsDataUrl(f: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
+      reader.onprogress = (e) => {
+        if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      reader.onload = () => {
+        setUploadProgress(100);
+        resolve(reader.result as string);
+      };
       reader.onerror = reject;
       reader.readAsDataURL(f);
     });
@@ -264,7 +387,12 @@ function SubmitProofDialog({
       setError("Billing month, payment date, amount, and receipt are required");
       return;
     }
+    if (duplicateBlocked) {
+      setError("A pending or approved submission already exists for this billing month");
+      return;
+    }
     setSaving(true);
+    setUploadProgress(0);
     setError(null);
     try {
       const receiptData = await readFileAsDataUrl(file);
@@ -305,6 +433,9 @@ function SubmitProofDialog({
           <div className="space-y-1.5">
             <Label>Billing Month</Label>
             <Input type="month" value={billingMonth} onChange={(e) => setBillingMonth(e.target.value)} />
+            {duplicateBlocked && (
+              <p className="text-xs text-destructive">A pending or approved submission already exists for this month.</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Payment Date</Label>
@@ -329,13 +460,18 @@ function SubmitProofDialog({
               {file ? file.name : "Choose a file"}
               <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFileChange} />
             </label>
+            {saving && (
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }} />
+              </div>
+            )}
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>{saving ? "Submitting..." : "Submit"}</Button>
+          <Button onClick={submit} disabled={saving || duplicateBlocked}>{saving ? "Submitting..." : "Submit"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

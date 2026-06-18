@@ -19,6 +19,7 @@ type SchoolRow = {
   createdAt: string;
   _count: { students: number; teachers: number; guardians: number; admins: number };
   subscription: { billingCycle: "MONTHLY" | "ANNUAL"; amount: string; plan: { name: string } } | null;
+  isOverdue: boolean;
 };
 
 type SchoolsResponse = {
@@ -141,9 +142,12 @@ export default function SchoolsClient() {
                       >
                         <td className="py-3 pr-4 font-medium text-foreground">{school.name}</td>
                         <td className="py-3 pr-4">
-                          <Badge variant={SCHOOL_STATUS_BADGE_VARIANT[school.status]}>
-                            {SCHOOL_STATUS_LABEL[school.status]}
-                          </Badge>
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant={SCHOOL_STATUS_BADGE_VARIANT[school.status]}>
+                              {SCHOOL_STATUS_LABEL[school.status]}
+                            </Badge>
+                            {school.isOverdue && <Badge variant="destructive">Overdue</Badge>}
+                          </div>
                         </td>
                         <td className="py-3 pr-4 text-muted-foreground">
                           {school.subscription ? (

@@ -23,6 +23,10 @@ function isFounderRoute(pathname: string) {
   return (pathname === "/founder" || pathname.startsWith("/founder/")) && pathname !== "/founder/login";
 }
 
+function isFounderApiRoute(pathname: string) {
+  return pathname.startsWith("/api/founder/");
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
@@ -44,6 +48,16 @@ export async function proxy(req: NextRequest) {
     if (!token || token.role !== "FOUNDER") {
       return NextResponse.redirect(new URL("/founder/login", req.url));
     }
+    return NextResponse.next();
+  }
+
+  // Founder API routes already self-check via requireFounderSession(), but
+  // gate here too so a non-Founder request never reaches the handler and
+  // gets a clean JSON error instead of falling through to the generic
+  // HTML /login redirect below.
+  if (isFounderApiRoute(pathname)) {
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (token.role !== "FOUNDER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     return NextResponse.next();
   }
 
