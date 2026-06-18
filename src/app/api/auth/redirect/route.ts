@@ -20,6 +20,7 @@ export async function GET() {
   if (!session?.user) return noStoreRedirect("/login");
 
   const user = session.user as { role?: string; schoolSlug?: string };
+  if (user.role === "FOUNDER") return noStoreRedirect("/founder/dashboard");
   if (user.role === "TEACHER") return noStoreRedirect("/teacher/attendance");
 
   if (user.schoolSlug) return noStoreRedirect(`/dashboard/${user.schoolSlug}`);

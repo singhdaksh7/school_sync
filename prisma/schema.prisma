@@ -12,6 +12,56 @@ enum UserRole {
   SCHOOL_ADMIN
   VICE_PRINCIPAL
   TEACHER
+  FOUNDER
+}
+
+enum SchoolStatus {
+  ACTIVE
+  TRIAL
+  EXPIRED
+  SUSPENDED
+}
+
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+}
+
+enum FeatureFlagKey {
+  ATTENDANCE
+  HOMEWORK
+  FEES
+  REPORT_CARDS
+  REPORT_CARD_BUILDER
+  MOBILE_APP
+  PARENT_PORTAL
+  STUDENT_PORTAL
+  NOTIFICATIONS
+  ANALYTICS
+  WHITE_LABEL
+  TEACHER_PERMISSIONS
+  AI_FEATURES
+}
+
+enum PaymentProofStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum NotificationType {
+  SCHOOL_REGISTERED
+  PAYMENT_PROOF_SUBMITTED
+  SUBSCRIPTION_EXPIRING
+  INVOICE_OVERDUE
 }
 
 enum AttendanceStatus {
@@ -96,6 +146,9 @@ model User {
   earlyLeavesReviewed  TeacherEarlyLeaveRequest[] @relation("EarlyLeaveApprover")
   transfersBy          SectionTransfer[]          @relation("TransferBy")
   auditLogs            AuditLog[]                 @relation("AuditUser")
+  paymentProofsSubmitted PaymentProofSubmission[] @relation("PaymentProofSubmitter")
+  paymentProofsReviewed  PaymentProofSubmission[] @relation("PaymentProofReviewer")
+  invoicesCreated        Invoice[]                @relation("InvoiceCreator")
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
 }
@@ -114,6 +167,7 @@ model School {
   secondaryColor              String?
   appName                     String?
   poweredBySchoolSync         Boolean                    @default(true)
+  status                      SchoolStatus               @default(ACTIVE)
   periodsPerDay               Int                        @default(6)
   teacherAttendanceCutoffTime String                     @default("09:30")
   ownerId                     String                     @unique
@@ -144,6 +198,11 @@ model School {
   teacherCustomRoles          TeacherCustomRole[]
   teacherRoleAssignments      TeacherRoleAssignment[]
   reportCardTemplates         ReportCardTemplate[]
+  subscription                SchoolSubscription?
+  featureFlags                SchoolFeatureFlag[]
+  paymentProofs                PaymentProofSubmission[]
+  invoices                     Invoice[]
+  notifications                FounderNotification[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 }
@@ -778,5 +837,122 @@ model TeacherRoleAssignment {
   @@unique([teacherId, roleId])
   @@index([teacherId])
   @@index([roleId])
+  @@index([schoolId])
+}
+
+// ─── SaaS billing foundations (Founder portal) ───────────────────────────────
+// Schema-only foundation for Phase 2. No invoicing/payment-gateway/automation
+// yet — `amount` is a snapshot taken at assignment time so historic revenue
+// stays accurate even if a plan's price changes later.
+
+model SubscriptionPlan {
+  id            String               @id @default(cuid())
+  name          String               @unique
+  slug          String               @unique
+  priceMonthly  Decimal              @db.Decimal(10, 2)
+  priceAnnual   Decimal              @db.Decimal(10, 2)
+  maxStudents   Int?
+  isActive      Boolean              @default(true)
+  subscriptions SchoolSubscription[]
+  invoices      Invoice[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+}
+
+model SchoolSubscription {
+  id               String           @id @default(cuid())
+  schoolId         String           @unique
+  school           School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  planId           String
+  plan             SubscriptionPlan @relation(fields: [planId], references: [id])
+  billingCycle     BillingCycle     @default(MONTHLY)
+  amount           Decimal          @db.Decimal(10, 2)
+  startedAt        DateTime         @default(now())
+  currentPeriodEnd DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([planId])
+}
+
+// ─── Phase 3: feature flags, manual billing operations, notifications ───────
+// All manual/CRUD — no automated billing, no payment gateway, no cron jobs.
+
+model SchoolFeatureFlag {
+  id        String         @id @default(cuid())
+  schoolId  String
+  school    School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  key       FeatureFlagKey
+  enabled   Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([schoolId, key])
+  @@index([schoolId])
+}
+
+// receiptData stores the file as a base64 data URL directly on the row
+// (capped ~2MB at the API layer) — there is no file-storage provider
+// configured for this project yet.
+model PaymentProofSubmission {
+  id              String             @id @default(cuid())
+  schoolId        String
+  school          School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  billingMonth    DateTime           @db.Date
+  paymentDate     DateTime           @db.Date
+  amount          Decimal            @db.Decimal(10, 2)
+  transactionRef  String?
+  notes           String?
+  receiptData     String
+  receiptFileName String?
+  receiptMimeType String?
+  status          PaymentProofStatus @default(PENDING)
+  reviewNotes     String?
+  submittedById   String
+  submittedBy     User               @relation("PaymentProofSubmitter", fields: [submittedById], references: [id])
+  reviewedById    String?
+  reviewedBy      User?              @relation("PaymentProofReviewer", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId])
+}
+
+model Invoice {
+  id                 String            @id @default(cuid())
+  invoiceNumber      String            @unique
+  schoolId           String
+  school             School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  planId             String?
+  plan               SubscriptionPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  amount             Decimal           @db.Decimal(10, 2)
+  billingPeriodStart DateTime          @db.Date
+  billingPeriodEnd   DateTime          @db.Date
+  dueDate            DateTime          @db.Date
+  status             InvoiceStatus     @default(DRAFT)
+  notes              String?
+  createdById        String
+  createdBy          User              @relation("InvoiceCreator", fields: [createdById], references: [id])
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId])
+  @@index([planId])
+}
+
+model FounderNotification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  title     String
+  message   String
+  schoolId  String?
+  school    School?          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([isRead, createdAt])
   @@index([schoolId])
 }

@@ -8,12 +8,15 @@ import {
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
   ClipboardList, PieChart, Activity, BarChart, X, Wand2, BookOpenCheck, Replace, Palette, ShieldCheck, LayoutTemplate,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
 
 interface SidebarProps {
   school: { slug: string; name: string; logoUrl?: string | null };
   userRole: string;
+  featureFlags?: Record<FeatureFlagKeyValue, boolean>;
   onClose?: () => void;
 }
 
@@ -31,36 +34,41 @@ const ROLE_COLORS: Record<string, string> = {
   TEACHER: "bg-orange-100 text-orange-700",
 };
 
-export default function Sidebar({ school, userRole, onClose }: SidebarProps) {
+export default function Sidebar({ school, userRole, featureFlags, onClose }: SidebarProps) {
   const pathname = usePathname();
   const base = `/dashboard/${school.slug}`;
   const isOwnerOrAdmin = userRole === "SCHOOL_OWNER" || userRole === "SCHOOL_ADMIN";
+
+  // Absence of featureFlags (e.g. not yet wired in a caller) means everything
+  // stays visible — flags are opt-out, not opt-in.
+  const flagEnabled = (key: FeatureFlagKeyValue) => featureFlags?.[key] ?? true;
 
   const navItems = [
     { href: base, label: "Overview", icon: LayoutDashboard, show: true },
     { href: `${base}/classes`, label: "Classes & Sections", icon: BookOpen, show: true },
     { href: `${base}/teachers`, label: "Teachers", icon: Users, show: true },
-    { href: `${base}/teacher-roles`, label: "Teacher Roles & Permissions", icon: ShieldCheck, show: isOwnerOrAdmin },
+    { href: `${base}/teacher-roles`, label: "Teacher Roles & Permissions", icon: ShieldCheck, show: isOwnerOrAdmin && flagEnabled("TEACHER_PERMISSIONS") },
     { href: `${base}/students`, label: "Students", icon: GraduationCap, show: true },
-    { href: `${base}/attendance`, label: "Attendance", icon: ClipboardCheck, show: true },
-    { href: `${base}/reports`, label: "Attendance Reports", icon: BarChart2, show: true },
+    { href: `${base}/attendance`, label: "Attendance", icon: ClipboardCheck, show: flagEnabled("ATTENDANCE") },
+    { href: `${base}/reports`, label: "Attendance Reports", icon: BarChart2, show: flagEnabled("ATTENDANCE") },
     { href: `${base}/timetable`, label: "Timetable", icon: CalendarDays, show: true },
     { href: `${base}/custom-timetable`, label: "Custom Timetable", icon: Wand2, show: isOwnerOrAdmin },
-    { href: `${base}/homework`, label: "Homework", icon: BookOpenCheck, show: true },
+    { href: `${base}/homework`, label: "Homework", icon: BookOpenCheck, show: flagEnabled("HOMEWORK") },
     { href: `${base}/exam-schemes`, label: "Exam Schemes", icon: FileText, show: true },
     { href: `${base}/results`, label: "Results", icon: Award, show: true },
-    { href: `${base}/report-cards`, label: "Report Cards", icon: ClipboardList, show: true },
-    { href: `${base}/report-card-builder`, label: "Report Card Builder", icon: LayoutTemplate, show: isOwnerOrAdmin },
-    { href: `${base}/fees`, label: "Fee Management", icon: IndianRupee, show: true },
+    { href: `${base}/report-cards`, label: "Report Cards", icon: ClipboardList, show: flagEnabled("REPORT_CARDS") },
+    { href: `${base}/report-card-builder`, label: "Report Card Builder", icon: LayoutTemplate, show: isOwnerOrAdmin && flagEnabled("REPORT_CARD_BUILDER") },
+    { href: `${base}/fees`, label: "Fee Management", icon: IndianRupee, show: flagEnabled("FEES") },
     { href: `${base}/leaves`, label: "Leave Management", icon: ClipboardList, show: true },
     { href: `${base}/substitutions`, label: "Substitutions", icon: Replace, show: true },
-    { href: `${base}/analytics`, label: "Analytics", icon: PieChart, show: true },
+    { href: `${base}/analytics`, label: "Analytics", icon: PieChart, show: flagEnabled("ANALYTICS") },
     { href: `${base}/teachers/workload`, label: "Teacher Workload", icon: BarChart, show: true },
     { href: `${base}/announcements`, label: "Announcements", icon: Megaphone, show: true },
     { href: `${base}/holidays`, label: "Holiday Calendar", icon: CalendarOff, show: true },
     { href: `${base}/audit-logs`, label: "Audit Logs", icon: Activity, show: isOwnerOrAdmin },
     { href: `${base}/invite`, label: "Invite Staff", icon: UserPlus, show: userRole === "SCHOOL_OWNER" },
-    { href: `${base}/branding`, label: "Branding", icon: Palette, show: isOwnerOrAdmin },
+    { href: `${base}/branding`, label: "Branding", icon: Palette, show: isOwnerOrAdmin && flagEnabled("WHITE_LABEL") },
+    { href: `${base}/billing`, label: "Billing", icon: CreditCard, show: isOwnerOrAdmin },
     { href: `${base}/settings`, label: "Settings", icon: Settings, show: isOwnerOrAdmin },
   ].filter((item) => item.show);
 

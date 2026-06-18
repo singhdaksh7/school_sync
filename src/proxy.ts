@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const publicRoutes = ["/", "/login", "/register"];
+const publicRoutes = ["/", "/login", "/register", "/founder/login"];
 
 function isPublicRoute(pathname: string) {
   return (
@@ -19,7 +19,15 @@ function isPublicRoute(pathname: string) {
   );
 }
 
-export async function middleware(req: NextRequest) {
+function isFounderRoute(pathname: string) {
+  return (pathname === "/founder" || pathname.startsWith("/founder/")) && pathname !== "/founder/login";
+}
+
+function isFounderApiRoute(pathname: string) {
+  return pathname.startsWith("/api/founder/");
+}
+
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
 
@@ -32,6 +40,30 @@ export async function middleware(req: NextRequest) {
     secret,
     secureCookie: process.env.NODE_ENV === "production",
   });
+
+  // Founder routes are gated independently of school-scoped auth: only a
+  // FOUNDER-role token may pass, and non-public founder paths never fall
+  // through to the generic /login redirect below.
+  if (isFounderRoute(pathname)) {
+    if (!token || token.role !== "FOUNDER") {
+      return NextResponse.redirect(new URL("/founder/login", req.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Founder API routes already self-check via requireFounderSession(), but
+  // gate here too so a non-Founder request never reaches the handler and
+  // gets a clean JSON error instead of falling through to the generic
+  // HTML /login redirect below.
+  if (isFounderApiRoute(pathname)) {
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (token.role !== "FOUNDER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return NextResponse.next();
+  }
+
+  if (token?.role === "FOUNDER" && (pathname.startsWith("/dashboard") || pathname.startsWith("/teacher"))) {
+    return NextResponse.redirect(new URL("/founder/dashboard", req.url));
+  }
 
   if (!token && !isPublicRoute(pathname)) {
     return NextResponse.redirect(new URL("/login", req.url));

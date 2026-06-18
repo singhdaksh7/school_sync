@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSchoolBySlug } from "@/lib/school";
 import { sessionRole } from "@/lib/tenant";
+import { getSchoolFeatureFlags } from "@/lib/feature-flags";
 import { redirect, notFound } from "next/navigation";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 
@@ -35,8 +36,10 @@ export default async function DashboardLayout({
     redirect("/onboarding");
   }
 
+  const featureFlags = await getSchoolFeatureFlags(school.id);
+
   return (
-    <DashboardShell school={school} user={session.user} userRole={role}>
+    <DashboardShell school={school} user={session.user} userRole={role} featureFlags={featureFlags}>
       {children}
     </DashboardShell>
   );
