@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const publicRoutes = ["/", "/login", "/register", "/founder/login"];
+const publicRoutes = ["/", "/login", "/register", "/founder/login", "/forgot-password", "/reset-password"];
 
 function isPublicRoute(pathname: string) {
   return (

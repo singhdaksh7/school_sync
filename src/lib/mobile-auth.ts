@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hostnameFromHeaders, resolveSchool } from "@/lib/school-resolver";
 import { sessionRole } from "@/lib/tenant";
+import { NoAccountError, InvalidPasswordError } from "@/lib/auth-errors";
 
 export type MobileRole = "SCHOOL_OWNER" | "SCHOOL_ADMIN" | "VICE_PRINCIPAL" | "TEACHER" | "STUDENT";
 
@@ -110,8 +111,8 @@ export async function authenticateStaffForMobile(email: string, password: string
     where: { email },
     include: { ownedSchool: true, school: true },
   });
-  if (!user || !STAFF_ROLES.has(user.role)) return null;
-  if (!(await bcrypt.compare(password, user.password))) return null;
+  if (!user || !STAFF_ROLES.has(user.role)) throw new NoAccountError();
+  if (!(await bcrypt.compare(password, user.password))) throw new InvalidPasswordError();
 
   if (user.role === "TEACHER") {
     const teacher = await prisma.teacher.findUnique({
@@ -162,10 +163,12 @@ export async function authenticateStudentForMobile(identifier: string, password:
   const students = await prisma.student.findMany({
     where: {
       ...(resolvedSchool ? { schoolId: resolvedSchool.id } : {}),
-      OR: [{ admissionNo: trimmed }, { email: trimmed }],
+      OR: [{ admissionNo: trimmed }, { email: trimmed }, { rollNo: trimmed }],
     },
     include: { school: { select: { id: true, name: true, slug: true, logoUrl: true } } },
   });
+
+  if (students.length === 0) throw new NoAccountError();
 
   const valid = [];
   for (const student of students) {
@@ -173,7 +176,8 @@ export async function authenticateStudentForMobile(identifier: string, password:
     if (await bcrypt.compare(password, student.passwordHash)) valid.push(student);
   }
 
-  if (valid.length !== 1) return null;
+  if (valid.length === 0) throw new InvalidPasswordError();
+  if (valid.length > 1) return null;
   const student = valid[0];
   return {
     role: "STUDENT" as const,
@@ -184,6 +188,7 @@ export async function authenticateStudentForMobile(identifier: string, password:
       admissionNo: student.admissionNo,
       email: student.email,
       schoolId: student.schoolId,
+      sectionId: student.sectionId,
     },
     school: student.school,
     tokenPayload: {

@@ -70,8 +70,10 @@ function LoginForm() {
         redirect: false,
         callbackUrl,
       });
-      if (!result?.ok) {
-        setError("Invalid credentials or this account is not allowed for this school.");
+      if (result?.error) {
+        if (result.code === "no-account") setError("No account found with that email.");
+        else if (result.code === "invalid-password") setError("Incorrect password.");
+        else setError("Invalid credentials or this account is not allowed for this school.");
         return;
       }
       window.location.href = callbackUrl;
@@ -133,7 +135,12 @@ function LoginForm() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <Link href="/forgot-password" className="text-xs font-medium text-muted-foreground underline hover:text-foreground">
+                    Forgot password?
+                  </Link>
+                </div>
                 <Input
                   id="password"
                   type="password"

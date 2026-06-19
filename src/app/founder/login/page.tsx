@@ -52,8 +52,10 @@ function FounderLoginForm() {
         password: form.password,
         redirect: false,
       });
-      if (!result?.ok) {
-        setError("Invalid credentials.");
+      if (result?.error) {
+        if (result.code === "no-account") setError("No account found with that email.");
+        else if (result.code === "invalid-password") setError("Incorrect password.");
+        else setError("Invalid credentials.");
         return;
       }
       const session = await getSession();
@@ -112,7 +114,12 @@ function FounderLoginForm() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <a href="/forgot-password" className="text-xs font-medium text-muted-foreground underline hover:text-foreground">
+                    Forgot password?
+                  </a>
+                </div>
                 <Input
                   id="password"
                   type="password"

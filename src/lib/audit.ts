@@ -24,8 +24,7 @@ export type AuditAction =
   | "PLAN_CREATED" | "PLAN_UPDATED"
   | "INVITE_ACCEPTED"
   | "LOGIN_SUCCESS" | "LOGIN_FAILED"
-  // Reserved for when a password-reset flow ships — no route logs this yet.
-  | "PASSWORD_RESET_COMPLETED";
+  | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET_COMPLETED";
 
 export async function logAudit({
   action,

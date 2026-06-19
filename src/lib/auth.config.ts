@@ -6,6 +6,8 @@ type AppUserFields = {
   schoolSlug?: string | null;
   teacherId?: string | null;
   mentorSectionId?: string | null;
+  studentId?: string | null;
+  sectionId?: string | null;
 };
 
 function appUser(user: unknown): AppUserFields {
@@ -22,7 +24,7 @@ export const authConfig: NextAuthConfig = {
       const role = appUser(auth?.user).role;
       const pathname = nextUrl.pathname;
 
-      const publicRoutes = ["/", "/login", "/register", "/founder/login"];
+      const publicRoutes = ["/", "/login", "/register", "/founder/login", "/forgot-password", "/reset-password"];
       const isPublic =
         publicRoutes.includes(pathname) ||
         pathname.startsWith("/invite/") ||
