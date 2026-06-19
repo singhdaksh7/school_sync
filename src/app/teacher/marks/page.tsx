@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
 
 interface Student { id: string; name: string; rollNo: string }
 interface TeachingSection { sectionId: string; sectionName: string; className: string; subject: string; students: Student[] }
@@ -25,6 +26,8 @@ export default function TeacherMarksPage() {
   const [existing, setExisting] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { has: hasPermission } = useTeacherPermissions();
+  const canEnterMarks = hasPermission("MARKS", "ENTER");
 
   useEffect(() => {
     fetch("/api/teacher/me").then((r) => r.json()).then((d) => { if (!d.error) setProfile(d); });
@@ -178,7 +181,7 @@ export default function TeacherMarksPage() {
                       <span>Class {selectedSection.className} – Section {selectedSection.sectionName}</span>
                       <span className="text-gray-400 font-normal text-sm ml-2">· {selectedExam.name} (max {selectedExam.maxMarks})</span>
                     </div>
-                    <Button onClick={submitMarks} disabled={saving} className="gap-2">
+                    <Button onClick={submitMarks} disabled={saving || !canEnterMarks} className="gap-2">
                       <Save className="w-4 h-4" />
                       {saving ? "Saving..." : saved ? "Saved!" : "Submit Marks"}
                     </Button>
@@ -215,7 +218,7 @@ export default function TeacherMarksPage() {
                     ))}
                   </div>
                   <div className="mt-4 flex justify-end">
-                    <Button onClick={submitMarks} disabled={saving} className="gap-2">
+                    <Button onClick={submitMarks} disabled={saving || !canEnterMarks} className="gap-2">
                       <Save className="w-4 h-4" />
                       {saving ? "Saving..." : saved ? "Saved!" : "Submit Marks"}
                     </Button>

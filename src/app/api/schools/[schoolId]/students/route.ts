@@ -3,7 +3,9 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
-import { canAccessSchool, hasPrismaErrorCode, sectionBelongsToSchool } from "@/lib/tenant";
+import { canAccessSchool, hasPrismaErrorCode, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolAccess } from "@/lib/teacher-authorization";
+import { getClientIp } from "@/lib/request-ip";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -19,7 +21,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "STUDENTS", "VIEW");
+  if (!access.ok) return access.response;
 
   const { searchParams } = new URL(req.url);
   const sectionId = searchParams.get("sectionId");
@@ -58,7 +61,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       },
       include: { section: { include: { class: true } } },
     });
-    await logAudit({ action: "STUDENT_CREATED", entityType: "Student", entityId: student.id, metadata: { name: student.name, rollNo: student.rollNo }, userId: session.user.id, schoolId });
+    await logAudit({ action: "STUDENT_CREATED", entityType: "Student", entityId: student.id, metadata: { name: student.name, rollNo: student.rollNo }, userId: session.user.id, schoolId, actorRole: sessionRole(session.user), ipAddress: getClientIp(req) });
     return NextResponse.json(student, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTeacherAuth } from "@/lib/mobile-auth";
+import { requireTeacherPermission } from "@/lib/teacher-authorization";
+import { logAudit } from "@/lib/audit";
 import {
   getTeacherAssignments,
   getTeacherByUserId,
@@ -16,6 +18,9 @@ export async function GET(req: Request) {
 
   const teacher = await getTeacherByUserId(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", "VIEW");
+  if (denied) return denied;
 
   const assignments = await getTeacherAssignments(teacher.id, teacher.schoolId);
   const accessFilters = assignments.map((assignment) => ({
@@ -55,6 +60,9 @@ export async function POST(req: Request) {
   if (!sectionId) return NextResponse.json({ error: "Section is required" }, { status: 400 });
   if (!dueDate) return NextResponse.json({ error: "Valid due date is required" }, { status: 400 });
 
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", "CREATE", { sectionId });
+  if (denied) return denied;
+
   const assignmentError = await validateHomeworkTeacherAssignment(teacher.schoolId, teacher.id, sectionId, subject);
   if (assignmentError) return NextResponse.json({ error: assignmentError }, { status: 403 });
 
@@ -93,6 +101,17 @@ export async function POST(req: Request) {
       include: homeworkIncludeForList(),
     });
   });
+
+  if (created) {
+    await logAudit({
+      action: "HOMEWORK_CREATED",
+      entityType: "Homework",
+      entityId: created.id,
+      metadata: { title: created.title, subject: created.subject, sectionId: created.sectionId },
+      userId: teacherAuth.userId,
+      schoolId: teacher.schoolId,
+    });
+  }
 
   return NextResponse.json(created, { status: 201 });
 }

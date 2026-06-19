@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { createArrangementsForLeave } from "@/lib/arrangements";
 import { logAudit } from "@/lib/audit";
-import { canAccessSchool } from "@/lib/tenant";
+import { sessionRole } from "@/lib/tenant";
+import { requireSchoolAccess } from "@/lib/teacher-authorization";
 
 const patchSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED"]),
@@ -17,7 +18,8 @@ export async function PATCH(
   const { schoolId, leaveId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "LEAVE", "APPROVE");
+  if (!access.ok) return access.response;
 
   try {
     const body = await req.json();
@@ -61,7 +63,8 @@ export async function DELETE(
   const { schoolId, leaveId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "LEAVE", "MANAGE");
+  if (!access.ok) return access.response;
 
   await prisma.leaveRequest.deleteMany({ where: { id: leaveId, schoolId } });
   return NextResponse.json({ success: true });

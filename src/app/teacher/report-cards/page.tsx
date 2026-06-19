@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
 
 type Scheme = { id: string; name: string };
 type MentorSection = {
@@ -37,6 +38,10 @@ export default function TeacherReportCardsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const { has: hasPermission } = useTeacherPermissions();
+  const canGenerate = hasPermission("REPORT_CARDS", "GENERATE");
+  const canPublish = hasPermission("REPORT_CARDS", "PUBLISH");
+  const canDownload = hasPermission("REPORT_CARDS", "DOWNLOAD");
 
   async function loadReportCards() {
     setLoading(true);
@@ -142,7 +147,7 @@ export default function TeacherReportCardsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button onClick={generateCards} disabled={!examSchemeId || saving} className="gap-2">
+                <Button onClick={generateCards} disabled={!examSchemeId || saving || !canGenerate} className="gap-2">
                   <Wand2 className="w-4 h-4" />
                   {saving ? "Generating..." : "Generate"}
                 </Button>
@@ -192,16 +197,18 @@ export default function TeacherReportCardsPage() {
                         </td>
                         <td className="py-3 px-3">
                           <div className="flex justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-2"
-                              onClick={() => window.open(`/api/teacher/report-cards/${card.id}/pdf`, "_blank")}
-                            >
-                              <Download className="w-4 h-4" />
-                              PDF
-                            </Button>
-                            {card.status === "DRAFT" && (
+                            {canDownload && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                                onClick={() => window.open(`/api/teacher/report-cards/${card.id}/pdf`, "_blank")}
+                              >
+                                <Download className="w-4 h-4" />
+                                PDF
+                              </Button>
+                            )}
+                            {card.status === "DRAFT" && canPublish && (
                               <Button size="sm" className="gap-2" onClick={() => publishCard(card.id)}>
                                 <Send className="w-4 h-4" />
                                 Publish

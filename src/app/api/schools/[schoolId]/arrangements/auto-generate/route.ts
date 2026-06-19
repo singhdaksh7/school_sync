@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
 import { autoGenerateArrangementsForDate } from "@/lib/arrangements";
 import { logAudit } from "@/lib/audit";
+import { getClientIp } from "@/lib/request-ip";
 
 const bodySchema = z.object({
   date: z.string().optional(),
@@ -37,6 +38,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       metadata: result as unknown as Record<string, unknown>,
       userId: session.user.id,
       schoolId,
+      actorRole: role,
+      ipAddress: getClientIp(req),
     });
 
     return NextResponse.json({ success: true, ...result });

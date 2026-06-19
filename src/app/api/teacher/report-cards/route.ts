@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getTeacherForSession, reportCardInclude, serializeReportCard } from "@/lib/report-cards";
 import { sessionRole } from "@/lib/tenant";
+import { requireTeacherPermission } from "@/lib/teacher-authorization";
 
 export async function GET() {
   const session = await auth();
@@ -12,6 +13,11 @@ export async function GET() {
   const teacher = await getTeacherForSession(session.user.id);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
   if (!teacher.mentorSectionId) return NextResponse.json({ reportCards: [], mentorSection: null, schemes: [] });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "REPORT_CARDS", "VIEW", {
+    sectionId: teacher.mentorSectionId,
+  });
+  if (denied) return denied;
 
   const [reportCards, schemes] = await Promise.all([
     prisma.reportCard.findMany({

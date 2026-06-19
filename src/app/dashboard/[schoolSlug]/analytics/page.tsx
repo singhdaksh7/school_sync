@@ -1,14 +1,17 @@
 import { getSchoolBySlug } from "@/lib/school";
 import { prisma } from "@/lib/prisma";
+import { getSchoolAdminAnalyticsExtras } from "@/lib/school-analytics";
 import Link from "next/link";
 import {
   BarChart2, Users, GraduationCap, AlertTriangle,
   TrendingUp, TrendingDown, ExternalLink, Flame, BookOpen,
+  IndianRupee, BookOpenCheck, ClipboardList, Megaphone, Receipt, FileCheck2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { subDays, startOfDay, format } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import AIInsightCard from "./AIInsightCard";
+import TrendBarChart from "@/components/charts/TrendBarChart";
 
 function getGrade(pct: number) {
   if (pct >= 90) return { label: "A+", color: "text-green-600" };
@@ -79,6 +82,8 @@ export default async function AnalyticsPage({
   const thirtyDaysAgo = subDays(today, 30);
   const sevenDaysAgo = subDays(today, 6);
 
+  const extrasPromise = getSchoolAdminAnalyticsExtras(schoolId);
+
   const [
     totalStudents,
     totalTeachers,
@@ -131,6 +136,8 @@ export default async function AnalyticsPage({
       select: { studentId: true, status: true, createdAt: true },
     }),
   ]);
+
+  const extras = await extrasPromise;
 
   // ─── Today summary ──────────────────────────────────────────────────────────
   const todayPresent = todayAttendance.filter((a) => a.status === "PRESENT" || a.status === "LATE").length;
@@ -533,6 +540,203 @@ export default async function AnalyticsPage({
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Operational KPIs ── */}
+      <div>
+        <h3 className="text-base font-semibold text-gray-900 mb-3">Operations</h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
+                  <IndianRupee className="w-4 h-4 text-green-600" />
+                </div>
+                <div><p className="text-xs text-gray-500">Fees Collected</p><p className="text-xl font-bold text-gray-900">{formatCurrency(extras.kpis.feesCollected)}</p></div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center">
+                  <Receipt className="w-4 h-4 text-orange-600" />
+                </div>
+                <div><p className="text-xs text-gray-500">Fees Pending</p><p className="text-xl font-bold text-gray-900">{formatCurrency(extras.kpis.feesPending)}</p></div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <BookOpenCheck className="w-4 h-4 text-blue-600" />
+                </div>
+                <div><p className="text-xs text-gray-500">Homework Assigned</p><p className="text-xl font-bold text-gray-900">{extras.kpis.homeworkAssigned}</p></div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <ClipboardList className="w-4 h-4 text-yellow-600" />
+                </div>
+                <div><p className="text-xs text-gray-500">Homework Pending</p><p className="text-xl font-bold text-gray-900">{extras.kpis.homeworkPending}</p></div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <FileCheck2 className="w-4 h-4 text-purple-600" />
+                </div>
+                <div><p className="text-xs text-gray-500">Report Cards Published</p><p className="text-xl font-bold text-gray-900">{extras.kpis.reportCardsPublished}</p></div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* ── Operational charts ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Monthly Admissions <span className="text-xs font-normal text-gray-400">(6 mo)</span></CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <TrendBarChart data={extras.charts.monthlyAdmissions} variant="bar" color="#6366f1" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Fee Collection Trend <span className="text-xs font-normal text-gray-400">(6 mo)</span></CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <TrendBarChart data={extras.charts.feeCollectionTrend} variant="bar" color="#10b981" formatValue={(v) => formatCurrency(v)} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Homework Completion Trend <span className="text-xs font-normal text-gray-400">(6 mo, %)</span></CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <TrendBarChart data={extras.charts.homeworkCompletionTrend} variant="line" color="#f59e0b" formatValue={(v) => `${v}%`} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Class-wise Student Distribution</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <TrendBarChart data={extras.charts.classDistribution} variant="bar" color="#0ea5e9" />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Operational widgets ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Megaphone className="w-4 h-4 text-indigo-500" />
+              Recent Announcements
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {extras.operational.recentAnnouncements.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">No announcements yet</p>
+            ) : (
+              <div className="space-y-3">
+                {extras.operational.recentAnnouncements.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-900 truncate">{a.title}</p>
+                    <span className="text-xs text-gray-400 flex-shrink-0">{formatDate(a.publishedAt)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-orange-500" />
+              Fee Structures Awaiting Payment
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {extras.operational.feeStructuresAwaitingPayment.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">No pending fee structures</p>
+            ) : (
+              <div className="space-y-3">
+                {extras.operational.feeStructuresAwaitingPayment.map((fs) => (
+                  <div key={fs.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{fs.name}</p>
+                      <p className="text-xs text-gray-400">{fs.frequency} &middot; {fs.pendingCount} pending</p>
+                    </div>
+                    <span className="text-sm font-semibold text-gray-900 flex-shrink-0">{formatCurrency(fs.pendingAmount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-yellow-500" />
+              Pending Homework Reviews
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {extras.operational.pendingHomeworkReviews.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">Nothing awaiting review</p>
+            ) : (
+              <div className="space-y-3">
+                {extras.operational.pendingHomeworkReviews.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{s.title}</p>
+                      <p className="text-xs text-gray-400">{s.studentName} &middot; {s.subject}</p>
+                    </div>
+                    <span className="text-xs text-gray-400 flex-shrink-0">{formatDate(s.submittedAt)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileCheck2 className="w-4 h-4 text-purple-500" />
+              Recent Report Card Publications
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {extras.operational.recentReportCards.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">No report cards published yet</p>
+            ) : (
+              <div className="space-y-3">
+                {extras.operational.recentReportCards.map((rc) => (
+                  <div key={rc.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{rc.studentName}</p>
+                      <p className="text-xs text-gray-400">{rc.sectionLabel}</p>
+                    </div>
+                    <span className="text-xs text-gray-400 flex-shrink-0">{rc.publishedAt ? formatDate(rc.publishedAt) : "—"}</span>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

@@ -3,7 +3,9 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
-import { canAccessSchool, sectionBelongsToSchool } from "@/lib/tenant";
+import { canAccessSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolAccess } from "@/lib/teacher-authorization";
+import { getClientIp } from "@/lib/request-ip";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -19,7 +21,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const { schoolId, studentId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "STUDENTS", "VIEW");
+  if (!access.ok) return access.response;
 
   const student = await prisma.student.findUnique({
     where: { id: studentId, schoolId },
@@ -41,7 +44,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
   const { schoolId, studentId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "STUDENTS", "UPDATE");
+  if (!access.ok) return access.response;
 
   try {
     const body = await req.json();
@@ -65,7 +69,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
       where: { id: studentId, schoolId },
       include: { section: { include: { class: true } } },
     });
-    await logAudit({ action: "STUDENT_UPDATED", entityType: "Student", entityId: studentId, metadata: { name: data.name }, userId: session.user.id, schoolId });
+    await logAudit({ action: "STUDENT_UPDATED", entityType: "Student", entityId: studentId, metadata: { name: data.name }, userId: session.user.id, schoolId, actorRole: sessionRole(session.user), ipAddress: getClientIp(req) });
     return NextResponse.json(student);
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
@@ -84,7 +88,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ schoo
     const student = await prisma.student.findFirst({ where: { id: studentId, schoolId }, select: { name: true } });
     if (!student) return NextResponse.json({ error: "Not found" }, { status: 404 });
     await prisma.student.deleteMany({ where: { id: studentId, schoolId } });
-    await logAudit({ action: "STUDENT_DELETED", entityType: "Student", entityId: studentId, metadata: { name: student.name }, userId: session.user.id, schoolId });
+    await logAudit({ action: "STUDENT_DELETED", entityType: "Student", entityId: studentId, metadata: { name: student.name }, userId: session.user.id, schoolId, actorRole: sessionRole(session.user), ipAddress: getClientIp(req) });
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Delete student error:", err);

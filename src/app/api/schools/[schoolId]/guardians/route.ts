@@ -6,6 +6,7 @@ import { logAudit } from "@/lib/audit";
 import { normalizePhone } from "@/lib/parent-auth";
 import { prisma } from "@/lib/prisma";
 import { allStudentsBelongToSchool, canAccessSchool, hasPrismaErrorCode, sessionRole } from "@/lib/tenant";
+import { getClientIp } from "@/lib/request-ip";
 
 const guardianSchema = z.object({
   name: z.string().min(2),
@@ -113,6 +114,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       metadata: { name: guardian.name, phone: guardian.phone, studentIds },
       userId: session.user.id,
       schoolId,
+      actorRole: sessionRole(session.user),
+      ipAddress: getClientIp(req),
     });
 
     return NextResponse.json({ guardian, linkedStudentIds: studentIds }, { status: 201 });

@@ -2,21 +2,16 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-
-async function canAccess(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((a) => a.id === userId);
-}
+import { sessionRole } from "@/lib/tenant";
+import { requireSchoolAccess } from "@/lib/teacher-authorization";
+import { logAudit } from "@/lib/audit";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "ANNOUNCEMENTS", "VIEW");
+  if (!access.ok) return access.response;
 
   const announcements = await prisma.announcement.findMany({
     where: { schoolId },
@@ -35,7 +30,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "ANNOUNCEMENTS", "CREATE");
+  if (!access.ok) return access.response;
 
   try {
     const body = await req.json();
@@ -43,6 +39,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     const announcement = await prisma.announcement.create({
       data: { ...data, schoolId, createdById: session.user.id },
       include: { createdBy: { select: { name: true } } },
+    });
+    await logAudit({
+      action: "ANNOUNCEMENT_CREATED",
+      entityType: "Announcement",
+      entityId: announcement.id,
+      metadata: { title: announcement.title },
+      userId: session.user.id,
+      schoolId,
     });
     return NextResponse.json(announcement, { status: 201 });
   } catch (err) {

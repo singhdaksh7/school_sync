@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { canAccessSchool, studentBelongsToSchool, teacherBelongsToSchool } from "@/lib/tenant";
+import { canAccessSchool, studentBelongsToSchool, teacherBelongsToSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolAccess } from "@/lib/teacher-authorization";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "LEAVE", "VIEW");
+  if (!access.ok) return access.response;
 
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type") as "STUDENT" | "TEACHER" | null;

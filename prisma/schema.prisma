@@ -754,13 +754,16 @@ model AuditLog {
   metadata   String? // JSON string of relevant details
   userId     String
   user       User     @relation("AuditUser", fields: [userId], references: [id])
-  schoolId   String
-  school     School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  actorRole  String? // role of the user at the time of the action
+  ipAddress  String? // best-effort, from x-forwarded-for/x-real-ip
+  schoolId   String? // null for platform-level Founder actions not tied to one school (e.g. plan changes)
+  school     School?  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
 
   @@index([schoolId, createdAt])
   @@index([schoolId, entityType])
   @@index([userId])
+  @@index([createdAt])
 }
 
 model AIInsightCache {
