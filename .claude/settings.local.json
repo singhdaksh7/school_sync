@@ -64,7 +64,22 @@
       "Bash(curl *)",
       "Bash(grep -n \"class CredentialsSignin\" -A 15 node_modules/@auth/core/errors.js)",
       "Bash(grep -rn \"class CredentialsSignin\" -A 15 node_modules/@auth/core/*.js)",
-      "Bash(xargs grep -ln \"function signIn\")"
+      "Bash(xargs grep -ln \"function signIn\")",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(grep -o '^DATABASE_URL=.*@[a-zA-Z0-9.-]*' .env)",
+      "Bash(grep -o '^DATABASE_URL=.*@[a-zA-Z0-9.-]*' .env.local)",
+      "Bash(npx tsx *)",
+      "Bash(node scratch-test-login.mjs)",
+      "Bash(rm scratch-test-login.mjs)",
+      "Bash(tasklist /FI \"PID eq 27584\" /FO LIST)",
+      "PowerShell(Get-Process *)",
+      "Bash(node scratch-time-dashboard.mjs)",
+      "Bash(rm scratch-time-dashboard.mjs)",
+      "Bash(node scratch-time2.mjs)",
+      "Bash(rm scratch-time2.mjs)",
+      "Bash(node scratch-time3.mjs)",
+      "Bash(rm scratch-time3.mjs)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -13,6 +13,7 @@ enum UserRole {
   VICE_PRINCIPAL
   TEACHER
   FOUNDER
+  STUDENT
 }
 
 enum SchoolStatus {
