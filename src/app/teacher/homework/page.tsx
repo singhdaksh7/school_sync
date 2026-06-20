@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
 
 type LegacySubmissionStatus = "PENDING" | "SUBMITTED" | "NOT_SUBMITTED" | "LATE" | "CHECKED" | "REJECTED";
 type AcademicStatus = "PENDING" | "SUBMITTED" | "LATE_SUBMITTED" | "NOT_SUBMITTED" | "CHECKED" | "REJECTED";
@@ -293,7 +294,10 @@ export default function TeacherHomeworkPage() {
     return counts;
   }, [selectedHomework]);
 
-  const canEdit = selectedHomework?.status !== "CANCELLED";
+  const { has: hasPermission } = useTeacherPermissions();
+  const canCreate = hasPermission("HOMEWORK", "CREATE");
+  const canReview = hasPermission("HOMEWORK", "REVIEW");
+  const canEdit = selectedHomework?.status !== "CANCELLED" && canReview;
   const afterDeadline = selectedHomework ? new Date() > new Date(selectedHomework.deadlineAt) : false;
 
   return (
@@ -304,6 +308,7 @@ export default function TeacherHomeworkPage() {
       </div>
       {message && <p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">{message}</p>}
 
+      {canCreate && (
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Create Homework</CardTitle></CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-5">
@@ -331,6 +336,7 @@ export default function TeacherHomeworkPage() {
           />
         </CardContent>
       </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <Card>
@@ -382,7 +388,13 @@ export default function TeacherHomeworkPage() {
                   <span>-</span>
                   <span>Deadline {formatDate(selectedHomework.deadlineAt)}</span>
                 </div>
-                {!canEdit && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">Cancelled homework cannot be edited.</p>}
+                {!canEdit && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                    {selectedHomework.status === "CANCELLED"
+                      ? "Cancelled homework cannot be edited."
+                      : "You don't have permission to review homework submissions."}
+                  </p>
+                )}
 
                 <div className="flex flex-wrap gap-2">
                   {TABS.map((tab) => (

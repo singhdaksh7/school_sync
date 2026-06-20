@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const publicRoutes = ["/", "/login", "/register", "/founder/login"];
+const publicRoutes = ["/", "/login", "/register", "/founder/login", "/forgot-password", "/reset-password", "/student/login"];
 
 function isPublicRoute(pathname: string) {
   return (
@@ -25,6 +25,10 @@ function isFounderRoute(pathname: string) {
 
 function isFounderApiRoute(pathname: string) {
   return pathname.startsWith("/api/founder/");
+}
+
+function isStudentRoute(pathname: string) {
+  return (pathname === "/student" || pathname.startsWith("/student/")) && pathname !== "/student/login";
 }
 
 export async function proxy(req: NextRequest) {
@@ -61,8 +65,21 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Student routes are gated independently of school-staff auth: only a
+  // STUDENT-role token may pass, mirroring the Founder route gate above.
+  if (isStudentRoute(pathname)) {
+    if (!token || token.role !== "STUDENT") {
+      return NextResponse.redirect(new URL("/student/login", req.url));
+    }
+    return NextResponse.next();
+  }
+
   if (token?.role === "FOUNDER" && (pathname.startsWith("/dashboard") || pathname.startsWith("/teacher"))) {
     return NextResponse.redirect(new URL("/founder/dashboard", req.url));
+  }
+
+  if (token?.role === "STUDENT" && (pathname.startsWith("/dashboard") || pathname.startsWith("/teacher"))) {
+    return NextResponse.redirect(new URL("/student/dashboard", req.url));
   }
 
   if (!token && !isPublicRoute(pathname)) {

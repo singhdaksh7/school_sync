@@ -41,6 +41,10 @@ export async function POST(req: NextRequest) {
       resolvedSchool?.id
     );
 
+    if (guardians.length === 0) {
+      return NextResponse.json({ error: "No account found with that phone number." }, { status: 404 });
+    }
+
     const validGuardians: GuardianWithSchool[] = [];
     for (const guardian of guardians) {
       if (!guardian.passwordHash) continue;
@@ -48,7 +52,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (validGuardians.length === 0) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+      return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
     }
 
     if (validGuardians.length > 1) {

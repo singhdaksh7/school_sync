@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getStudentMobileAuth } from "@/lib/student-mobile-auth";
+import { getStudentAuth } from "@/lib/student-mobile-auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await getStudentMobileAuth(req);
+    const auth = await getStudentAuth(req);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // The Announcement model has no audience/section targeting, so students see

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateStaffForMobile, generateMobileToken } from "@/lib/mobile-auth";
+import { NoAccountError, InvalidPasswordError } from "@/lib/auth-errors";
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,6 +19,12 @@ export async function POST(req: NextRequest) {
       school: result.school,
     });
   } catch (error) {
+    if (error instanceof NoAccountError) {
+      return NextResponse.json({ error: "No account found with that email." }, { status: 404 });
+    }
+    if (error instanceof InvalidPasswordError) {
+      return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
+    }
     console.error("Mobile staff login error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

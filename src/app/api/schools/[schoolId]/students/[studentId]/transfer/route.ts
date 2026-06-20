@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
-import { canAccessSchool } from "@/lib/tenant";
+import { canAccessSchool, sessionRole } from "@/lib/tenant";
+import { getClientIp } from "@/lib/request-ip";
 
 const schema = z.object({
   toSectionId: z.string().min(1),
@@ -59,6 +60,8 @@ export async function POST(
       metadata: { studentName: student.name, fromSectionId: student.sectionId, toSectionId, reason },
       userId: session.user.id,
       schoolId,
+      actorRole: sessionRole(session.user),
+      ipAddress: getClientIp(req),
     });
 
     return NextResponse.json(transfer, { status: 201 });

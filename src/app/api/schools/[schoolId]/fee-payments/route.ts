@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
 import { moneyToNumber } from "@/lib/money";
-import { canAccessSchool } from "@/lib/tenant";
+import { canAccessSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolAccess } from "@/lib/teacher-authorization";
+import { getClientIp } from "@/lib/request-ip";
 
 function serializePayment<T extends { amount: unknown; feeStructure?: { amount: unknown } | null; gatewaySignature?: string | null }>(payment: T) {
   const safePayment = { ...payment };
@@ -27,7 +29,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "FEES", "VIEW");
+  if (!access.ok) return access.response;
 
   const { searchParams } = new URL(req.url);
   const studentId = searchParams.get("studentId");
@@ -110,7 +113,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
         recordedBy: { select: { name: true } },
       },
     });
-    await logAudit({ action: "FEE_PAYMENT_RECORDED", entityType: "FeePayment", entityId: payment.id, metadata: { studentName: payment.student.name, amount: moneyToNumber(feeStructure.amount), feeName: payment.feeStructure.name }, userId: session.user.id, schoolId });
+    await logAudit({ action: "FEE_PAYMENT_RECORDED", entityType: "FeePayment", entityId: payment.id, metadata: { studentName: payment.student.name, amount: moneyToNumber(feeStructure.amount), feeName: payment.feeStructure.name }, userId: session.user.id, schoolId, actorRole: sessionRole(session.user), ipAddress: getClientIp(req) });
     return NextResponse.json(serializePayment(updatedPayment), { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

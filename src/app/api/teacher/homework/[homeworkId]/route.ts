@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionRole } from "@/lib/tenant";
+import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import {
   getHomeworkForTeacherAccess,
   getTeacherByUserId,
@@ -28,6 +29,11 @@ export async function PATCH(
   if (homework.status === "CANCELLED") {
     return NextResponse.json({ error: "Cancelled homework cannot be updated" }, { status: 400 });
   }
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", "EDIT", {
+    sectionId: homework.sectionId,
+  });
+  if (denied) return denied;
 
   const body = await req.json();
   const data: {

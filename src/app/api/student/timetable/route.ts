@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getStudentMobileAuth } from "@/lib/student-mobile-auth";
+import { getStudentAuth } from "@/lib/student-mobile-auth";
 
 // Schema stores dayOfWeek as 1=Mon ... 6=Sat (7=Sun if used). JS getDay() is
 // 0=Sun ... 6=Sat, so Sunday maps to 7.
@@ -11,7 +11,7 @@ function todayDayOfWeek() {
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await getStudentMobileAuth(req);
+    const auth = await getStudentAuth(req);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const timetable = await prisma.timetableSlot.findMany({

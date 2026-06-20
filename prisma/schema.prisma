@@ -13,6 +13,7 @@ enum UserRole {
   VICE_PRINCIPAL
   TEACHER
   FOUNDER
+  STUDENT
 }
 
 enum SchoolStatus {
@@ -149,8 +150,22 @@ model User {
   paymentProofsSubmitted PaymentProofSubmission[] @relation("PaymentProofSubmitter")
   paymentProofsReviewed  PaymentProofSubmission[] @relation("PaymentProofReviewer")
   invoicesCreated        Invoice[]                @relation("InvoiceCreator")
+  passwordResetTokens    PasswordResetToken[]
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model School {
@@ -754,13 +769,16 @@ model AuditLog {
   metadata   String? // JSON string of relevant details
   userId     String
   user       User     @relation("AuditUser", fields: [userId], references: [id])
-  schoolId   String
-  school     School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  actorRole  String? // role of the user at the time of the action
+  ipAddress  String? // best-effort, from x-forwarded-for/x-real-ip
+  schoolId   String? // null for platform-level Founder actions not tied to one school (e.g. plan changes)
+  school     School?  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
 
   @@index([schoolId, createdAt])
   @@index([schoolId, entityType])
   @@index([userId])
+  @@index([createdAt])
 }
 
 model AIInsightCache {

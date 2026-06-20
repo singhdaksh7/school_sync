@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionRole } from "@/lib/tenant";
+import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import {
   getHomeworkForTeacherAccess,
   getTeacherByUserId,
@@ -23,6 +24,11 @@ export async function PATCH(
 
   const homework = await getHomeworkForTeacherAccess(homeworkId, teacher.id, teacher.schoolId);
   if (!homework) return NextResponse.json({ error: "Homework not found" }, { status: 404 });
+
+  const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", "REVIEW", {
+    sectionId: homework.sectionId,
+  });
+  if (denied) return denied;
 
   const submission = await prisma.homeworkSubmission.findFirst({
     where: {

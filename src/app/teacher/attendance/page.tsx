@@ -5,6 +5,7 @@ import { Save, Check, X, Clock, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
 
 type Status = "PRESENT" | "ABSENT" | "LATE";
 
@@ -134,6 +135,9 @@ export default function TeacherAttendancePage() {
     if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500); }
   }
 
+  const { has: hasPermission } = useTeacherPermissions();
+  const canMarkAttendance = hasPermission("ATTENDANCE", "MARK");
+
   const students = profile?.mentorSection?.students ?? [];
   const presentCount = students.filter((s) => attendance[s.id] === "PRESENT").length;
   const absentCount = students.filter((s) => attendance[s.id] === "ABSENT").length;
@@ -225,8 +229,8 @@ export default function TeacherAttendancePage() {
                     />
                   </div>
                   <div className="flex gap-2 ml-auto">
-                    <Button variant="outline" size="sm" onClick={() => markAll("PRESENT")}>All Present</Button>
-                    <Button variant="outline" size="sm" onClick={() => markAll("ABSENT")}>All Absent</Button>
+                    <Button variant="outline" size="sm" onClick={() => markAll("PRESENT")} disabled={!canMarkAttendance}>All Present</Button>
+                    <Button variant="outline" size="sm" onClick={() => markAll("ABSENT")} disabled={!canMarkAttendance}>All Absent</Button>
                   </div>
                 </div>
               </CardContent>
@@ -261,7 +265,7 @@ export default function TeacherAttendancePage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center justify-between">
                     <span>{students.length} Students</span>
-                    <Button onClick={save} disabled={saving} className="gap-2">
+                    <Button onClick={save} disabled={saving || !canMarkAttendance} className="gap-2">
                       <Save className="w-4 h-4" />
                       {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
                     </Button>
@@ -310,7 +314,7 @@ export default function TeacherAttendancePage() {
                     })}
                   </div>
                   <div className="mt-4 flex justify-end">
-                    <Button onClick={save} disabled={saving} className="gap-2">
+                    <Button onClick={save} disabled={saving || !canMarkAttendance} className="gap-2">
                       <Save className="w-4 h-4" />
                       {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
                     </Button>

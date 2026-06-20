@@ -1,4 +1,7 @@
 import { getMobileAuth } from "@/lib/mobile-auth";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { sessionRole } from "@/lib/tenant";
 
 /**
  * Narrows the shared mobile JWT auth (from /api/mobile/student/login) down to a
@@ -25,3 +28,34 @@ export async function getStudentMobileAuth(req: Request) {
 }
 
 export type StudentMobileAuth = NonNullable<Awaited<ReturnType<typeof getStudentMobileAuth>>>;
+
+/**
+ * Same as getStudentMobileAuth but also accepts a web NextAuth session
+ * (cookie-based, role STUDENT) — lets the existing /api/student/* routes
+ * serve both the mobile app (bearer token) and the new web student portal
+ * (session cookie) without any change to their bearer-token behavior.
+ */
+export async function getStudentAuth(req: Request) {
+  const mobile = await getStudentMobileAuth(req);
+  if (mobile) return mobile;
+
+  const session = await auth();
+  if (!session?.user?.id || sessionRole(session.user) !== "STUDENT") return null;
+
+  const studentId = (session.user as { studentId?: string }).studentId;
+  if (!studentId) return null;
+
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    include: { school: { select: { id: true, name: true, slug: true, logoUrl: true } } },
+  });
+  if (!student) return null;
+
+  return {
+    studentId: student.id,
+    schoolId: student.schoolId,
+    sectionId: student.sectionId,
+    student,
+    school: student.school,
+  };
+}

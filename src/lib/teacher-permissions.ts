@@ -13,16 +13,26 @@ import { prisma } from "@/lib/prisma";
  */
 
 export const PERMISSION_CATALOG = {
-  STUDENTS: ["VIEW", "CREATE", "UPDATE", "DELETE"],
-  ATTENDANCE: ["VIEW", "MARK", "EDIT", "REPORTS"],
-  HOMEWORK: ["VIEW", "CREATE", "REVIEW", "MANAGE_ALL"],
-  MARKS: ["VIEW", "ENTER", "EDIT", "REPORTS"],
+  STUDENTS: ["VIEW", "CREATE", "UPDATE", "DELETE", "EXPORT"],
+  ATTENDANCE: ["VIEW", "MARK", "EDIT", "REPORTS", "EXPORT"],
+  HOMEWORK: ["VIEW", "CREATE", "EDIT", "REVIEW", "MANAGE_ALL"],
+  MARKS: ["VIEW", "ENTER", "EDIT", "REPORTS", "PUBLISH"],
   REPORT_CARDS: ["VIEW", "GENERATE", "PUBLISH", "DOWNLOAD"],
   FEES: ["VIEW", "RECORD_PAYMENT", "DOWNLOAD_RECEIPT"],
   TEACHERS: ["VIEW", "MANAGE_LEAVES", "ASSIGN_SUBSTITUTIONS"],
-  ANNOUNCEMENTS: ["VIEW", "CREATE", "MANAGE"],
+  ANNOUNCEMENTS: ["VIEW", "CREATE", "EDIT", "DELETE", "MANAGE"],
+  LEAVE: ["VIEW", "APPROVE", "MANAGE"],
   SETTINGS: ["VIEW"],
 } as const;
+
+/**
+ * Legacy/coarse grants that should also satisfy a finer-grained action when
+ * checking permissions — e.g. an older "ANNOUNCEMENTS:MANAGE" grant should
+ * still satisfy a new "EDIT" or "DELETE" check without re-saving every role.
+ */
+const IMPLIED_BY: Record<string, Record<string, string[]>> = {
+  ANNOUNCEMENTS: { EDIT: ["MANAGE"], DELETE: ["MANAGE"] },
+};
 
 export type PermissionModule = keyof typeof PERMISSION_CATALOG;
 
@@ -94,18 +104,25 @@ export async function teacherHasPermission(
   module: string,
   action: string
 ): Promise<boolean> {
+  const impliedActions = IMPLIED_BY[module]?.[action] ?? [];
   const assignment = await prisma.teacherRoleAssignment.findFirst({
     where: {
       teacherId,
       schoolId,
       role: {
         schoolId,
-        permissions: { some: { module, action, allowed: true } },
+        permissions: { some: { module, action: { in: [action, ...impliedActions] }, allowed: true } },
       },
     },
     select: { id: true },
   });
   return Boolean(assignment);
+}
+
+/** True when the teacher has at least one custom-role assignment in this school. */
+export async function teacherHasAnyRoleAssignment(teacherId: string, schoolId: string): Promise<boolean> {
+  const count = await prisma.teacherRoleAssignment.count({ where: { teacherId, schoolId } });
+  return count > 0;
 }
 
 /**

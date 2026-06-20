@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
 import { createArrangementsForEarlyLeave } from "@/lib/arrangements";
 import { logAudit } from "@/lib/audit";
+import { getClientIp } from "@/lib/request-ip";
 
 const patchSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED"]),
@@ -64,6 +65,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ school
       metadata: { teacherId: request.teacherId, leaveAfterPeriod: request.leaveAfterPeriod, generation },
       userId: session.user.id,
       schoolId,
+      actorRole: role,
+      ipAddress: getClientIp(req),
     });
 
     return NextResponse.json({ success: true, generation });

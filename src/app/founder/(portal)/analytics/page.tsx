@@ -1,12 +1,303 @@
-import { PieChart } from "lucide-react";
-import FounderComingSoon from "@/components/founder/FounderComingSoon";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { requireFounderSession } from "@/lib/founder";
+import { getFounderAnalyticsOverview } from "@/lib/founder-analytics";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import TrendBarChart from "@/components/charts/TrendBarChart";
+import StatusDistributionBar from "@/components/charts/StatusDistributionBar";
+import AnalyticsSchoolsExplorer from "./AnalyticsSchoolsExplorer";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT } from "@/lib/school-status";
+import {
+  Building2, GraduationCap, Users, UserCog, ShieldCheck, CheckCircle2, Hourglass,
+  XCircle, Ban, IndianRupee, Wallet, CreditCard, Receipt, ArrowUpRight,
+  AlertTriangle, BellRing, CheckCircle, Clock,
+} from "lucide-react";
 
-export default function FounderAnalyticsPage() {
+const PLAN_BAR_COLORS = ["bg-indigo-600", "bg-violet-500", "bg-sky-500", "bg-emerald-500", "bg-amber-500"];
+
+export default async function FounderAnalyticsPage() {
+  const session = await requireFounderSession();
+  if (!session) redirect("/founder/login");
+
+  const { kpis, charts, statusBreakdown, revenueByPlan, revenueSummary, recentActivity } =
+    await getFounderAnalyticsOverview();
+
+  const kpiCards = [
+    { title: "Total Schools", value: kpis.totalSchools, icon: Building2 },
+    { title: "Active Schools", value: kpis.activeSchools, icon: CheckCircle2 },
+    { title: "Trial Schools", value: kpis.trialSchools, icon: Hourglass },
+    { title: "Expired Schools", value: kpis.expiredSchools, icon: XCircle },
+    { title: "Suspended Schools", value: kpis.suspendedSchools, icon: Ban },
+    { title: "Total Students", value: kpis.totalStudents, icon: GraduationCap },
+    { title: "Total Teachers", value: kpis.totalTeachers, icon: Users },
+    { title: "Total Parents", value: kpis.totalParents, icon: UserCog },
+    { title: "Total School Admins", value: kpis.totalSchoolAdmins, icon: ShieldCheck },
+    { title: "Monthly Revenue", value: formatCurrency(kpis.monthlyRevenue), icon: IndianRupee },
+    { title: "Annual Revenue", value: formatCurrency(kpis.annualRevenue), icon: Wallet },
+    { title: "Active Subscriptions", value: kpis.activeSubscriptions, icon: CreditCard },
+    { title: "Pending Verifications", value: kpis.pendingPaymentVerifications, icon: Receipt },
+  ];
+
+  const revenueSummaryCards = [
+    { title: "Total Collected", value: formatCurrency(revenueSummary.totalCollected), icon: CheckCircle },
+    { title: "Pending Revenue", value: formatCurrency(revenueSummary.pendingRevenue), icon: Clock },
+    { title: "Overdue Payments", value: formatCurrency(revenueSummary.overdueAmount), icon: AlertTriangle },
+    { title: "Renewal Reminders", value: revenueSummary.renewalRemindersCount, icon: BellRing },
+  ];
+
+  const maxPlanRevenue = Math.max(1, ...revenueByPlan.map((p) => p.monthlyRevenue));
+
   return (
-    <FounderComingSoon
-      icon={PieChart}
-      title="Analytics"
-      description="Cross-school usage and engagement analytics will appear here in a future phase."
-    />
+    <div className="mx-auto max-w-7xl space-y-6">
+      {/* Hero */}
+      <div
+        className="relative overflow-hidden rounded-2xl border border-border p-6 md:p-7"
+        style={{ background: "linear-gradient(120deg, rgba(99,102,241,0.14), rgba(99,102,241,0.03) 60%, transparent)" }}
+      >
+        <div className="relative z-10">
+          <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Analytics</p>
+          <h2 className="mt-1.5 text-2xl font-bold tracking-tight text-foreground md:text-3xl">Platform Analytics</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Cross-school growth, revenue, and operational health at a glance.</p>
+        </div>
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-indigo-500/10 blur-2xl" />
+      </div>
+
+      {/* KPI grid */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {kpiCards.map((stat) => (
+          <Card key={stat.title} className="border-border transition-all hover:-translate-y-0.5 hover:shadow-md">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-muted-foreground">{stat.title}</p>
+                  <p className="mt-1 text-2xl font-bold tracking-tight text-foreground">{stat.value}</p>
+                </div>
+                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                  <stat.icon className="h-5 w-5" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">School Growth <span className="text-xs font-normal text-muted-foreground">(cumulative, 12 mo)</span></CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TrendBarChart data={charts.schoolGrowth} variant="line" color="#6366f1" />
+          </CardContent>
+        </Card>
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">New School Registrations <span className="text-xs font-normal text-muted-foreground">(6 mo)</span></CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TrendBarChart data={charts.newRegistrations} variant="bar" color="#6366f1" />
+          </CardContent>
+        </Card>
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">Monthly Revenue Trend <span className="text-xs font-normal text-muted-foreground">(6 mo, paid invoices)</span></CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TrendBarChart
+              data={charts.revenueTrend}
+              variant="bar"
+              color="#10b981"
+              formatValue={(v) => formatCurrency(v)}
+              emptyMessage="Revenue trend will appear once invoices are recorded"
+            />
+          </CardContent>
+        </Card>
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">Student Growth <span className="text-xs font-normal text-muted-foreground">(cumulative, 12 mo)</span></CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TrendBarChart data={charts.studentGrowth} variant="line" color="#0ea5e9" />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Revenue by plan */}
+        <Card className="border-border lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Revenue by Plan</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {revenueByPlan.length === 0 ? (
+              <EmptyState message="No active subscriptions yet." />
+            ) : (
+              <div className="space-y-5">
+                {revenueByPlan.map((plan, i) => (
+                  <div key={plan.planId}>
+                    <div className="mb-1.5 flex items-baseline justify-between">
+                      <span className="text-sm font-medium text-foreground">{plan.planName}</span>
+                      <span className="text-sm text-muted-foreground">
+                        {formatCurrency(plan.monthlyRevenue)}/mo &middot; {plan.schoolCount} school{plan.schoolCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={`h-full rounded-full ${PLAN_BAR_COLORS[i % PLAN_BAR_COLORS.length]} transition-all`}
+                        style={{ width: `${Math.max(4, (plan.monthlyRevenue / maxPlanRevenue) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Status breakdown */}
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">School Status Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <StatusDistributionBar segments={statusBreakdown} emptyMessage="No schools yet." />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Revenue summary */}
+      <div>
+        <h3 className="mb-3 text-sm font-semibold text-foreground">Revenue Summary</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {revenueSummaryCards.map((stat) => (
+            <Card key={stat.title} className="border-border">
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-muted-foreground">{stat.title}</p>
+                    <p className="mt-1 text-2xl font-bold tracking-tight text-foreground">{stat.value}</p>
+                  </div>
+                  <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                    <stat.icon className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent activity */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">Recently Onboarded Schools</CardTitle>
+            <Link href="/founder/schools" className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+              View all <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {recentActivity.onboardedSchools.length === 0 ? (
+              <EmptyState message="No schools have signed up yet." />
+            ) : (
+              <ul className="space-y-3">
+                {recentActivity.onboardedSchools.map((s) => (
+                  <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="truncate font-medium text-foreground">{s.name}</span>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <Badge variant={SCHOOL_STATUS_BADGE_VARIANT[s.status]}>{SCHOOL_STATUS_LABEL[s.status]}</Badge>
+                      <span className="text-xs text-muted-foreground">{formatDate(s.createdAt)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">Recently Approved Payments</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentActivity.approvedPayments.length === 0 ? (
+              <EmptyState message="No payments approved yet." />
+            ) : (
+              <ul className="space-y-3">
+                {recentActivity.approvedPayments.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="truncate font-medium text-foreground">{p.schoolName}</span>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <span className="font-semibold text-foreground">{formatCurrency(p.amount)}</span>
+                      <span className="text-xs text-muted-foreground">{p.reviewedAt ? formatDate(p.reviewedAt) : "—"}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="text-base">Recently Expired Subscriptions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentActivity.expiredSubscriptions.length === 0 ? (
+              <EmptyState message="No expired subscriptions." />
+            ) : (
+              <ul className="space-y-3">
+                {recentActivity.expiredSubscriptions.map((s) => (
+                  <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="truncate font-medium text-foreground">{s.name}</span>
+                    <span className="text-xs text-muted-foreground">{formatDate(s.updatedAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">Awaiting Payment Verification</CardTitle>
+            <Link href="/founder/payment-proofs" className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+              Review <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {recentActivity.awaitingVerification.length === 0 ? (
+              <EmptyState message="Nothing pending review." />
+            ) : (
+              <ul className="space-y-3">
+                {recentActivity.awaitingVerification.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="truncate font-medium text-foreground">{p.schoolName}</span>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <span className="font-semibold text-foreground">{formatCurrency(p.amount)}</span>
+                      <span className="text-xs text-muted-foreground">{formatDate(p.createdAt)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filterable schools explorer */}
+      <AnalyticsSchoolsExplorer />
+    </div>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
   );
 }

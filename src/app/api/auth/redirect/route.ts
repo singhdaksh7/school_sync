@@ -21,6 +21,7 @@ export async function GET() {
 
   const user = session.user as { role?: string; schoolSlug?: string };
   if (user.role === "FOUNDER") return noStoreRedirect("/founder/dashboard");
+  if (user.role === "STUDENT") return noStoreRedirect("/student/dashboard");
   if (user.role === "TEACHER") return noStoreRedirect("/teacher/attendance");
 
   if (user.schoolSlug) return noStoreRedirect(`/dashboard/${user.schoolSlug}`);
