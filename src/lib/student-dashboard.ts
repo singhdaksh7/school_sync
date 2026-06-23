@@ -74,6 +74,7 @@ export async function getStudentDashboardData(studentId: string, schoolId: strin
     ]);
 
   if (!student) return null;
+  console.log(`[HW_DEBUG] dashboard homeworkStatuses=${homeworkStatuses.length} for studentId=${studentId} schoolId=${schoolId} sectionId=${student.section.id}`);
 
   const summarize = (records: typeof attendance) => {
     let present = 0, absent = 0, late = 0;

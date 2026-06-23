@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
 import { buildStudentPasswordHashes } from "@/lib/student-credentials";
+import { backfillHomeworkStatusForStudent } from "@/lib/homework";
 
 export async function POST(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -65,7 +66,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
 
     try {
       const { fatherPhoneHash, motherPhoneHash } = await buildStudentPasswordHashes(fatherPhone, motherPhone);
-      await prisma.student.create({
+      const student = await prisma.student.create({
         data: {
           name,
           admissionNo,
@@ -82,6 +83,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
           schoolId,
         },
       });
+      await backfillHomeworkStatusForStudent(student.id, schoolId, sectionId);
       results.push({ name, success: true });
     } catch {
       results.push({ name, success: false, error: "Duplicate roll number/admission number or invalid data" });

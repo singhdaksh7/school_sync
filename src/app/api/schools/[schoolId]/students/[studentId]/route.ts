@@ -7,6 +7,7 @@ import { canAccessSchool, hasPrismaErrorCode, sectionBelongsToSchool, sessionRol
 import { requireSchoolAccess } from "@/lib/teacher-authorization";
 import { getClientIp } from "@/lib/request-ip";
 import { buildStudentPasswordHashes } from "@/lib/student-credentials";
+import { backfillHomeworkStatusForStudent } from "@/lib/homework";
 
 const schema = z
   .object({
@@ -90,6 +91,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
       include: { section: { include: { class: true } } },
     });
     await logAudit({ action: "STUDENT_UPDATED", entityType: "Student", entityId: studentId, metadata: { name: data.name }, userId: session.user.id, schoolId, actorRole: sessionRole(session.user), ipAddress: getClientIp(req) });
+    await backfillHomeworkStatusForStudent(studentId, schoolId, data.sectionId);
     return NextResponse.json(student);
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

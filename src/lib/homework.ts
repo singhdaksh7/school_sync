@@ -118,6 +118,37 @@ export function normalizeSubject(subject: unknown) {
   return typeof subject === "string" ? subject.trim() : "";
 }
 
+/**
+ * HomeworkStudentStatus rows are a one-time snapshot taken when homework is
+ * created (see POST /api/teacher/homework) — a student who wasn't in the
+ * section at that exact moment (added later, transferred in, or the section
+ * was empty when the homework was assigned) never gets a row and silently
+ * never sees that homework, no matter how many times they refresh. Call this
+ * after any event that puts a student into a section, to backfill rows for
+ * every non-cancelled homework already assigned to that section.
+ */
+export async function backfillHomeworkStatusForStudent(studentId: string, schoolId: string, sectionId: string) {
+  const homework = await prisma.homework.findMany({
+    where: { schoolId, sectionId, status: { not: "CANCELLED" } },
+    select: { id: true },
+  });
+  if (homework.length === 0) return;
+
+  const existing = await prisma.homeworkStudentStatus.findMany({
+    where: { studentId, homeworkId: { in: homework.map((h) => h.id) } },
+    select: { homeworkId: true },
+  });
+  const covered = new Set(existing.map((e) => e.homeworkId));
+  const missing = homework.filter((h) => !covered.has(h.id));
+  if (missing.length === 0) return;
+
+  await prisma.homeworkStudentStatus.createMany({
+    data: missing.map((h) => ({ homeworkId: h.id, studentId, status: "PENDING" })),
+    skipDuplicates: true,
+  });
+  console.log(`[HW_DEBUG] backfilled ${missing.length} HomeworkStudentStatus row(s) for studentId=${studentId} sectionId=${sectionId}`);
+}
+
 export function parseRequiredDate(value: unknown) {
   if (!value || typeof value !== "string") return null;
   const parsed = new Date(value);

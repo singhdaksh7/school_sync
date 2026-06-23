@@ -7,6 +7,7 @@ import { canAccessSchool, hasPrismaErrorCode, sectionBelongsToSchool, sessionRol
 import { requireSchoolAccess } from "@/lib/teacher-authorization";
 import { getClientIp } from "@/lib/request-ip";
 import { buildStudentPasswordHashes } from "@/lib/student-credentials";
+import { backfillHomeworkStatusForStudent } from "@/lib/homework";
 
 function duplicateFieldMessage(err: unknown) {
   const target = (err as { meta?: { target?: unknown } })?.meta?.target;
@@ -86,6 +87,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       include: { section: { include: { class: true } } },
     });
     await logAudit({ action: "STUDENT_CREATED", entityType: "Student", entityId: student.id, metadata: { name: student.name, rollNo: student.rollNo, admissionNo: student.admissionNo }, userId: session.user.id, schoolId, actorRole: sessionRole(session.user), ipAddress: getClientIp(req) });
+    await backfillHomeworkStatusForStudent(student.id, schoolId, student.sectionId);
     return NextResponse.json(student, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
