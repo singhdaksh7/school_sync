@@ -93,7 +93,10 @@
       "Bash(node _tmp_check_data.mjs)",
       "Bash(timeout 40 bash -c 'until curl -sf http://localhost:3000 >/dev/null; do sleep 1; done')",
       "Bash(mv _tmp_check_data.mjs _tmp_check_data.ts)",
-      "Bash(sed -i \"s|./src/generated/prisma/client/index.js|./src/generated/prisma/client|\" _tmp_check_data.ts)"
+      "Bash(sed -i \"s|./src/generated/prisma/client/index.js|./src/generated/prisma/client|\" _tmp_check_data.ts)",
+      "Bash(node -e \"console.log\\(new Date\\(\\).toISOString\\(\\)\\)\")",
+      "Bash(taskkill //F //PID 22180)",
+      "Bash(taskkill //F //PID 14900)"
     ]
   },
   "enableAllProjectMcpServers": true,

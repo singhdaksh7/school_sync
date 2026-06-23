@@ -23,6 +23,31 @@ export async function canWriteSchool(schoolId: string, userId: string, role?: st
   return canAccessSchool(schoolId, userId);
 }
 
+const INVITABLE_ROLES = ["SCHOOL_ADMIN", "VICE_PRINCIPAL", "TEACHER"] as const;
+export type InvitableRole = (typeof INVITABLE_ROLES)[number];
+
+export function isInvitableRole(role: unknown): role is InvitableRole {
+  return (INVITABLE_ROLES as readonly string[]).includes(role as string);
+}
+
+/**
+ * Staff-invite permission matrix (re-derives role/ownership from the DB rather
+ * than trusting the caller's session, since this gates account creation):
+ *   - SCHOOL_OWNER can invite SCHOOL_ADMIN, VICE_PRINCIPAL, or TEACHER.
+ *   - SCHOOL_ADMIN can invite VICE_PRINCIPAL or TEACHER, but not another SCHOOL_ADMIN.
+ *   - VICE_PRINCIPAL, TEACHER, STUDENT, and anyone outside the school: never.
+ */
+export async function canInviteRole(schoolId: string, userId: string, targetRole: InvitableRole) {
+  const [school, user] = await Promise.all([
+    prisma.school.findUnique({ where: { id: schoolId }, select: { ownerId: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { role: true, schoolId: true } }),
+  ]);
+  if (!school || !user) return false;
+  if (school.ownerId === userId) return true;
+  if (user.role !== "SCHOOL_ADMIN" || user.schoolId !== schoolId) return false;
+  return targetRole !== "SCHOOL_ADMIN";
+}
+
 export async function sectionBelongsToSchool(sectionId: string, schoolId: string) {
   const section = await prisma.section.findFirst({
     where: { id: sectionId, class: { schoolId } },

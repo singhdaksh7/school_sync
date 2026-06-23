@@ -227,6 +227,7 @@ model School {
 
 model SchoolInvite {
   id          String    @id @default(cuid())
+  name        String?
   email       String
   token       String    @unique @default(cuid())
   role        UserRole  @default(SCHOOL_ADMIN)

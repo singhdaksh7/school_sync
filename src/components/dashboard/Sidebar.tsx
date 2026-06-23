@@ -69,7 +69,7 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
     { href: `${base}/announcements`, label: t("nav.announcements"), icon: Megaphone, show: true },
     { href: `${base}/holidays`, label: t("nav.holidayCalendar"), icon: CalendarOff, show: true },
     { href: `${base}/audit-logs`, label: t("nav.auditLogs"), icon: Activity, show: isOwnerOrAdmin },
-    { href: `${base}/invite`, label: t("nav.inviteStaff"), icon: UserPlus, show: userRole === "SCHOOL_OWNER" },
+    { href: `${base}/invite`, label: t("nav.inviteStaff"), icon: UserPlus, show: isOwnerOrAdmin },
     { href: `${base}/branding`, label: t("nav.branding"), icon: Palette, show: isOwnerOrAdmin && flagEnabled("WHITE_LABEL") },
     { href: `${base}/billing`, label: t("nav.billing"), icon: CreditCard, show: isOwnerOrAdmin },
     { href: `${base}/settings`, label: t("nav.settings"), icon: Settings, show: isOwnerOrAdmin },

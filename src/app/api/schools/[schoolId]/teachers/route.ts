@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { canWriteSchool, sessionRole } from "@/lib/tenant";
 
 async function verify(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -41,7 +42,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user)))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   try {
     const body = await req.json();

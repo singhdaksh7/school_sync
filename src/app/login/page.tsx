@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { signIn, signOut, getSession } from "next-auth/react";
 import { GraduationCap } from "lucide-react";
@@ -32,8 +31,6 @@ const DEFAULT_BRANDING: Branding = {
 
 function LoginForm() {
   const { t } = useTranslation();
-  const params = useSearchParams();
-  const registered = params.get("registered");
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -119,11 +116,6 @@ function LoginForm() {
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
-              {registered && (
-                <div className="bg-green-50 text-green-700 text-sm px-4 py-3 rounded-md border border-green-200">
-                  {t("auth.accountCreated")}
-                </div>
-              )}
               {error && (
                 <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-md border border-red-200">
                   {error}
@@ -166,16 +158,6 @@ function LoginForm() {
               >
                 {loading ? t("common.signingIn") : t("common.signIn")}
               </Button>
-              <p className="text-sm text-gray-500 text-center">
-                {t("auth.noAccount")}{" "}
-                <Link
-                  href="/register"
-                  className="hover:underline font-medium"
-                  style={{ color: branding.primaryColor }}
-                >
-                  {t("auth.createOneFree")}
-                </Link>
-              </p>
             </CardFooter>
           </form>
         </Card>
@@ -190,9 +172,5 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
-  );
+  return <LoginForm />;
 }

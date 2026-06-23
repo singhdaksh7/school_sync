@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import {
   GraduationCap, Users, BookOpen, ClipboardCheck,
   ArrowRight, School, UserCog, Briefcase, ShieldCheck,
@@ -25,11 +24,6 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
-            <Link href="/register">
-              <Button variant="outline" size="sm" className="gap-2">
-                <School className="w-4 h-4" /> {t("landing.registerSchool")}
-              </Button>
-            </Link>
           </div>
         </div>
       </nav>
@@ -55,7 +49,7 @@ export default function LandingPage() {
       <section className="px-6 pb-20">
         <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
 
-          {/* Left: Onboard a new school */}
+          {/* Left: Platform highlights */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="bg-gradient-to-br from-blue-600 to-blue-700 px-6 py-8 text-white">
               <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center mb-4">
@@ -79,13 +73,6 @@ export default function LandingPage() {
                   {item.text}
                 </div>
               ))}
-              <div className="pt-2">
-                <Link href="/register">
-                  <Button className="w-full gap-2 mt-1">
-                    {t("landing.getStartedFree")} <ArrowRight className="w-4 h-4" />
-                  </Button>
-                </Link>
-              </div>
             </div>
           </div>
 

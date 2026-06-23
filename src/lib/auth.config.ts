@@ -24,7 +24,7 @@ export const authConfig: NextAuthConfig = {
       const role = appUser(auth?.user).role;
       const pathname = nextUrl.pathname;
 
-      const publicRoutes = ["/", "/login", "/register", "/founder/login", "/forgot-password", "/reset-password", "/student/login"];
+      const publicRoutes = ["/", "/login", "/founder/login", "/forgot-password", "/reset-password", "/student/login"];
       const isPublic =
         publicRoutes.includes(pathname) ||
         pathname.startsWith("/invite/") ||

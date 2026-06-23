@@ -57,3 +57,23 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string) {
     html: `<p>We received a request to reset your SchoolSync password. Use the link below within the next 45 minutes to set a new password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
   });
 }
+
+const ROLE_LABELS: Record<string, string> = {
+  SCHOOL_ADMIN: "School Admin",
+  VICE_PRINCIPAL: "Vice Principal",
+  TEACHER: "Teacher",
+};
+
+export async function sendStaffInviteEmail(
+  to: string,
+  opts: { name: string; role: string; schoolName: string; inviteLink: string }
+) {
+  const roleLabel = ROLE_LABELS[opts.role] ?? opts.role;
+  const provider = getEmailProvider();
+  await provider.send({
+    to,
+    subject: "You're invited to join SchoolSync",
+    text: `Hello ${opts.name},\n\nYou have been invited to join ${opts.schoolName} as:\n\n${roleLabel}\n\nClick below to create your account:\n\n${opts.inviteLink}\n\nThis link expires in 7 days.`,
+    html: `<p>Hello ${opts.name},</p><p>You have been invited to join <strong>${opts.schoolName}</strong> as:</p><p><strong>${roleLabel}</strong></p><p><a href="${opts.inviteLink}">Click here to create your account</a></p><p>This link expires in 7 days.</p>`,
+  });
+}
