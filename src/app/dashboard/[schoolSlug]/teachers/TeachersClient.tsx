@@ -53,6 +53,7 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
   const [selectedClassId, setSelectedClassId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
 
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
@@ -65,9 +66,16 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
 
   async function fetchTeachers() {
     setLoading(true);
-    const res = await fetch(`/api/schools/${schoolId}/teachers`);
-    setTeachers(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/teachers`);
+      if (!res.ok) throw new Error("Failed to refresh teachers");
+      setTeachers(await res.json());
+      setRefreshError("");
+    } catch {
+      setRefreshError("Could not refresh the teacher list. Please reload the page.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openAdd() {
@@ -97,19 +105,30 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
     const data = await res.json();
     if (!res.ok) { setError(data.error); setSaving(false); return; }
     setDialogOpen(false);
-    fetchTeachers();
     setSaving(false);
+    if (editing) {
+      // Response includes mentorSection but not user/invites — merging (not
+      // replacing) keeps those fields from the existing row intact.
+      setTeachers((prev) => prev.map((t) => (t.id === data.id ? { ...t, ...data } : t)));
+    }
     if (!editing && data.inviteToken) {
       const origin = window.location.origin;
       setInviteLink(`${origin}/teacher-invite/${data.inviteToken}`);
       setInviteDialogOpen(true);
     }
+    void fetchTeachers();
   }
 
   async function deleteTeacher(id: string) {
     if (!confirm("Delete this teacher?")) return;
-    await fetch(`/api/schools/${schoolId}/teachers/${id}`, { method: "DELETE" });
-    fetchTeachers();
+    setTeachers((prev) => prev.filter((t) => t.id !== id));
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/teachers/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+    } catch {
+      setRefreshError("Could not delete the teacher. Please try again.");
+    }
+    void fetchTeachers();
   }
 
   function copyLink(link: string) {
@@ -166,6 +185,12 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
           <Button onClick={openAdd} className="gap-2"><Plus className="w-4 h-4" /> Add Teacher</Button>
         </div>
       </div>
+
+      {refreshError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+          {refreshError}
+        </div>
+      )}
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface Student { id: string; name: string; rollNo: string }
 interface TeachingSection { sectionId: string; sectionName: string; className: string; subject: string; students: Student[] }
@@ -16,6 +17,7 @@ interface Scheme { id: string; name: string; exams: Exam[] }
 interface TeacherProfile { id: string; name: string; school: { id: string; name: string; slug: string } }
 
 export default function TeacherMarksPage() {
+  const { t } = useTranslation();
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [sections, setSections] = useState<TeachingSection[]>([]);
   const [schemes, setSchemes] = useState<Scheme[]>([]);
@@ -76,22 +78,28 @@ export default function TeacherMarksPage() {
       }),
     });
     setSaving(false);
-    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500); }
+    if (res.ok) {
+      setExisting((prev) => ({
+        ...prev,
+        ...Object.fromEntries(results.map((r) => [r.studentId, r.marks])),
+      }));
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+    }
   }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Enter Marks</h1>
-          <p className="text-sm text-gray-500 mt-1">Submit exam results for your assigned classes</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t("teacherMarks.title")}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t("teacherMarks.subtitle")}</p>
         </div>
 
         {sections.length === 0 ? (
           <Card>
             <CardContent className="py-16 text-center">
               <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-700 font-semibold">No classes assigned</p>
-              <p className="text-gray-400 text-sm mt-2">You have no sections in the timetable. Contact admin.</p>
+              <p className="text-gray-700 font-semibold">{t("teacherMarks.noClassesAssigned")}</p>
+              <p className="text-gray-400 text-sm mt-2">{t("teacherMarks.noClassesAssignedHint")}</p>
             </CardContent>
           </Card>
         ) : (
@@ -101,7 +109,7 @@ export default function TeacherMarksPage() {
               <CardContent className="pt-5 pb-5">
                 <div className="flex flex-wrap gap-4 items-end">
                   <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Section</p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t("teacherMarks.section")}</p>
                     <Select
                       value={selectedSection?.sectionId || ""}
                       onValueChange={(v) => {
@@ -112,19 +120,19 @@ export default function TeacherMarksPage() {
                       }}
                     >
                       <SelectTrigger className="w-52">
-                        <SelectValue placeholder="Select section" />
+                        <SelectValue placeholder={t("teacherMarks.selectSection")} />
                       </SelectTrigger>
                       <SelectContent>
                         {sections.map((s) => (
                           <SelectItem key={s.sectionId} value={s.sectionId}>
-                            Class {s.className} – Sec {s.sectionName}{s.subject ? ` (${s.subject})` : ""}
+                            {t("teacherMarks.classSecSubject", { className: s.className, sectionName: s.sectionName, subjectSuffix: s.subject ? ` (${s.subject})` : "" })}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Exam Scheme</p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t("teacherMarks.examScheme")}</p>
                     <Select
                       value={selectedScheme?.id || ""}
                       onValueChange={(v) => {
@@ -136,7 +144,7 @@ export default function TeacherMarksPage() {
                       }}
                     >
                       <SelectTrigger className="w-52">
-                        <SelectValue placeholder="Select scheme" />
+                        <SelectValue placeholder={t("teacherMarks.selectScheme")} />
                       </SelectTrigger>
                       <SelectContent>
                         {schemes.map((s) => (
@@ -147,7 +155,7 @@ export default function TeacherMarksPage() {
                   </div>
                   {selectedScheme && (
                     <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Exam</p>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t("teacherMarks.exam")}</p>
                       <Select
                         value={selectedExam?.id || ""}
                         onValueChange={(v) => {
@@ -158,7 +166,7 @@ export default function TeacherMarksPage() {
                         }}
                       >
                         <SelectTrigger className="w-48">
-                          <SelectValue placeholder="Select exam" />
+                          <SelectValue placeholder={t("teacherMarks.selectExam")} />
                         </SelectTrigger>
                         <SelectContent>
                           {selectedScheme.exams.map((e) => (
@@ -178,12 +186,12 @@ export default function TeacherMarksPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center justify-between">
                     <div>
-                      <span>Class {selectedSection.className} – Section {selectedSection.sectionName}</span>
-                      <span className="text-gray-400 font-normal text-sm ml-2">· {selectedExam.name} (max {selectedExam.maxMarks})</span>
+                      <span>{t("teacherMarks.classSection", { className: selectedSection.className, sectionName: selectedSection.sectionName })}</span>
+                      <span className="text-gray-400 font-normal text-sm ml-2">{t("teacherMarks.examMax", { exam: selectedExam.name, max: selectedExam.maxMarks })}</span>
                     </div>
                     <Button onClick={submitMarks} disabled={saving || !canEnterMarks} className="gap-2">
                       <Save className="w-4 h-4" />
-                      {saving ? "Saving..." : saved ? "Saved!" : "Submit Marks"}
+                      {saving ? t("teacherMarks.saving") : saved ? t("teacherMarks.saved") : t("teacherMarks.submitMarks")}
                     </Button>
                   </CardTitle>
                 </CardHeader>
@@ -196,10 +204,10 @@ export default function TeacherMarksPage() {
                         </div>
                         <div className="flex-1">
                           <p className="font-medium text-gray-900 text-sm">{student.name}</p>
-                          <p className="text-xs text-gray-400">Roll: {student.rollNo}</p>
+                          <p className="text-xs text-gray-400">{t("teacherMarks.rollLabel", { roll: student.rollNo })}</p>
                         </div>
                         {existing[student.id] !== undefined && (
-                          <Badge variant="secondary" className="text-xs">prev: {existing[student.id]}</Badge>
+                          <Badge variant="secondary" className="text-xs">{t("teacherMarks.prevLabel", { marks: existing[student.id] })}</Badge>
                         )}
                         <div className="flex items-center gap-2">
                           <Input
@@ -220,7 +228,7 @@ export default function TeacherMarksPage() {
                   <div className="mt-4 flex justify-end">
                     <Button onClick={submitMarks} disabled={saving || !canEnterMarks} className="gap-2">
                       <Save className="w-4 h-4" />
-                      {saving ? "Saving..." : saved ? "Saved!" : "Submit Marks"}
+                      {saving ? t("teacherMarks.saving") : saved ? t("teacherMarks.saved") : t("teacherMarks.submitMarks")}
                     </Button>
                   </div>
                 </CardContent>
@@ -228,7 +236,7 @@ export default function TeacherMarksPage() {
             ) : (
               <Card>
                 <CardContent className="py-12 text-center">
-                  <p className="text-gray-400">Select a section, scheme, and exam above to enter marks.</p>
+                  <p className="text-gray-400">{t("teacherMarks.selectAboveToEnter")}</p>
                 </CardContent>
               </Card>
             )}

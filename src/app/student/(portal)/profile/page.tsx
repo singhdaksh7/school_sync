@@ -5,6 +5,7 @@ import { sessionRole } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/utils";
+import { getServerTranslation } from "@/lib/i18n/server";
 
 function Field({ label, value, icon: Icon }: { label: string; value: string; icon: typeof User }) {
   return (
@@ -37,8 +38,10 @@ export default async function StudentProfilePage() {
       admissionNo: true,
       email: true,
       phone: true,
-      parentName: true,
-      parentPhone: true,
+      fatherName: true,
+      fatherPhone: true,
+      motherName: true,
+      motherPhone: true,
       createdAt: true,
       section: { select: { id: true, name: true, class: { select: { id: true, name: true } } } },
       school: { select: { id: true, name: true, slug: true, logoUrl: true } },
@@ -46,13 +49,14 @@ export default async function StudentProfilePage() {
   });
   if (!student) redirect("/student/login");
 
+  const { t } = await getServerTranslation();
   const initials = student.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">My Profile</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Your personal and academic information.</p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("studentProfile.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("studentProfile.subtitle")}</p>
       </div>
 
       <Card className="overflow-hidden border-border">
@@ -78,56 +82,58 @@ export default async function StudentProfilePage() {
       <Card className="border-border">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <User className="h-4 w-4 text-primary" /> Personal Information
+            <User className="h-4 w-4 text-primary" /> {t("studentProfile.personalInformation")}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <Field label="Full Name" value={student.name} icon={User} />
-          <Field label="Email" value={student.email || "—"} icon={Mail} />
-          <Field label="Phone" value={student.phone || "—"} icon={Phone} />
-          <Field label="Joined" value={formatDate(student.createdAt)} icon={Calendar} />
+          <Field label={t("studentProfile.fullName")} value={student.name} icon={User} />
+          <Field label={t("common.email")} value={student.email || "—"} icon={Mail} />
+          <Field label={t("common.phone")} value={student.phone || "—"} icon={Phone} />
+          <Field label={t("studentProfile.joined")} value={formatDate(student.createdAt)} icon={Calendar} />
         </CardContent>
       </Card>
 
       <Card className="border-border">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4 text-primary" /> Parent / Guardian Information
+            <Users className="h-4 w-4 text-primary" /> {t("studentProfile.parentInformation")}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <Field label="Parent Name" value={student.parentName || "—"} icon={Users} />
-          <Field label="Parent Phone" value={student.parentPhone || "—"} icon={Phone} />
+          <Field label={t("studentProfile.fatherName")} value={student.fatherName || "—"} icon={Users} />
+          <Field label={t("studentProfile.fatherPhone")} value={student.fatherPhone || "—"} icon={Phone} />
+          <Field label={t("studentProfile.motherName")} value={student.motherName || "—"} icon={Users} />
+          <Field label={t("studentProfile.motherPhone")} value={student.motherPhone || "—"} icon={Phone} />
         </CardContent>
       </Card>
 
       <Card className="border-border">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <GraduationCap className="h-4 w-4 text-primary" /> Class Details
+            <GraduationCap className="h-4 w-4 text-primary" /> {t("studentProfile.classDetails")}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <Field label="Class" value={student.section.class.name} icon={GraduationCap} />
-          <Field label="Section" value={student.section.name} icon={GraduationCap} />
+          <Field label={t("studentProfile.class")} value={student.section.class.name} icon={GraduationCap} />
+          <Field label={t("studentProfile.section")} value={student.section.name} icon={GraduationCap} />
         </CardContent>
       </Card>
 
       <Card className="border-border">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <BadgeCheck className="h-4 w-4 text-primary" /> Admission Details
+            <BadgeCheck className="h-4 w-4 text-primary" /> {t("studentProfile.admissionDetails")}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <Field label="Admission Number" value={student.admissionNo || "—"} icon={BadgeCheck} />
-          <Field label="Roll Number" value={student.rollNo} icon={BadgeCheck} />
-          <Field label="School" value={student.school.name} icon={GraduationCap} />
+          <Field label={t("studentProfile.admissionNumber")} value={student.admissionNo || "—"} icon={BadgeCheck} />
+          <Field label={t("studentProfile.rollNumber")} value={student.rollNo} icon={BadgeCheck} />
+          <Field label={t("studentProfile.school")} value={student.school.name} icon={GraduationCap} />
         </CardContent>
       </Card>
 
       <p className="text-center text-xs text-muted-foreground">
-        Need to update your details? Contact your school administration — students cannot edit critical school records.
+        {t("studentProfile.contactAdminNote")}
       </p>
     </div>
   );

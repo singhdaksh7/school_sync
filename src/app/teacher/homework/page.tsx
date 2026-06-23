@@ -1,14 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookOpenCheck, CheckCircle2, ExternalLink, FileCheck2, Save, XCircle } from "lucide-react";
+import Link from "next/link";
+import { BarChart3, BookOpenCheck, CheckCircle2, ExternalLink, FileCheck2, Save, XCircle, CheckCheck, Square } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
+
+const COMPLETED_STATUSES: AcademicStatus[] = ["SUBMITTED", "LATE_SUBMITTED", "CHECKED"];
 
 type LegacySubmissionStatus = "PENDING" | "SUBMITTED" | "NOT_SUBMITTED" | "LATE" | "CHECKED" | "REJECTED";
 type AcademicStatus = "PENDING" | "SUBMITTED" | "LATE_SUBMITTED" | "NOT_SUBMITTED" | "CHECKED" | "REJECTED";
@@ -71,13 +77,13 @@ interface Homework {
   submissions: HomeworkSubmission[];
 }
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "PENDING", label: "Pending" },
-  { key: "SUBMITTED", label: "Submitted" },
-  { key: "LATE_SUBMITTED", label: "Late" },
-  { key: "NOT_SUBMITTED", label: "Not Submitted" },
-  { key: "CHECKED", label: "Checked" },
-  { key: "REJECTED", label: "Rejected" },
+const TABS: { key: TabKey; labelKey: string }[] = [
+  { key: "PENDING", labelKey: "teacherHomework.tabPending" },
+  { key: "SUBMITTED", labelKey: "teacherHomework.tabSubmitted" },
+  { key: "LATE_SUBMITTED", labelKey: "teacherHomework.tabLate" },
+  { key: "NOT_SUBMITTED", labelKey: "teacherHomework.tabNotSubmitted" },
+  { key: "CHECKED", labelKey: "teacherHomework.tabChecked" },
+  { key: "REJECTED", labelKey: "teacherHomework.tabRejected" },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -103,11 +109,17 @@ function academicLabel(status: AcademicStatus) {
 }
 
 function toDeadlineIso(value: string) {
-  const date = new Date(value);
+  // A date-only input (e.g. "2026-07-15") has no time component — default to
+  // end of day so a single date pick is enough. (A `datetime-local` input
+  // requires the user to fill in every segment, date AND time, or its value
+  // silently stays empty — switching to a plain date input avoids that trap.)
+  const withTime = value.includes("T") ? value : `${value}T23:59:00`;
+  const date = new Date(withTime);
   return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
 export default function TeacherHomeworkPage() {
+  const { t } = useTranslation();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [homework, setHomework] = useState<Homework[]>([]);
   const [selectedAssignmentKey, setSelectedAssignmentKey] = useState("");
@@ -118,6 +130,9 @@ export default function TeacherHomeworkPage() {
   const [saving, setSaving] = useState(false);
   const [rowSavingId, setRowSavingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [completionOverrides, setCompletionOverrides] = useState<Record<string, boolean>>({});
+  const [completionSavingIds, setCompletionSavingIds] = useState<Set<string>>(new Set());
+  const [bulkCompletionSaving, setBulkCompletionSaving] = useState(false);
 
   const loadHomework = useCallback(async () => {
     const homeworkRes = await fetch("/api/teacher/homework");
@@ -162,13 +177,70 @@ export default function TeacherHomeworkPage() {
     return () => window.clearTimeout(id);
   }, [selectedHomework]);
 
+  useEffect(() => {
+    const id = window.setTimeout(() => setCompletionOverrides({}), 0);
+    return () => window.clearTimeout(id);
+  }, [selectedHomework?.id]);
+
+  function isItemCompleted(item: HomeworkStudentStatus) {
+    const override = completionOverrides[item.studentId];
+    if (override !== undefined) return override;
+    return COMPLETED_STATUSES.includes(item.submissionStatus);
+  }
+
+  async function toggleCompletion(item: HomeworkStudentStatus, completed: boolean) {
+    if (!selectedHomework) return;
+    setCompletionOverrides((prev) => ({ ...prev, [item.studentId]: completed }));
+    setCompletionSavingIds((prev) => new Set(prev).add(item.studentId));
+    setMessage("");
+    const res = await fetch(`/api/teacher/homework/${selectedHomework.id}/completion`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ completions: [{ studentId: item.studentId, completed }] }),
+    });
+    setCompletionSavingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(item.studentId);
+      return next;
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      setCompletionOverrides((prev) => ({ ...prev, [item.studentId]: !completed }));
+      setMessage(data.error || t("teacherHomework.couldNotUpdateCompletion"));
+      return;
+    }
+    await loadHomework();
+  }
+
+  async function bulkSetCompletion(completed: boolean) {
+    if (!selectedHomework) return;
+    const completions = selectedHomework.studentStatuses.map((item) => ({ studentId: item.studentId, completed }));
+    setCompletionOverrides(Object.fromEntries(completions.map((c) => [c.studentId, c.completed])));
+    setBulkCompletionSaving(true);
+    setMessage("");
+    const res = await fetch(`/api/teacher/homework/${selectedHomework.id}/completion`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ completions }),
+    });
+    setBulkCompletionSaving(false);
+    if (!res.ok) {
+      const data = await res.json();
+      setCompletionOverrides({});
+      setMessage(data.error || t("teacherHomework.couldNotUpdateCompletion"));
+      return;
+    }
+    await loadHomework();
+    setMessage(completed ? t("teacherHomework.allMarkedCompleted") : t("teacherHomework.allMarkedNotCompleted"));
+  }
+
   async function createHomework() {
     if (!selectedAssignment) {
-      setMessage("Select a section and subject.");
+      setMessage(t("teacherHomework.selectSectionAndSubject"));
       return;
     }
     if (!form.title.trim() || !form.dueDate) {
-      setMessage("Title and deadline are required.");
+      setMessage(t("teacherHomework.titleAndDeadlineRequired"));
       return;
     }
 
@@ -189,14 +261,14 @@ export default function TeacherHomeworkPage() {
     const data = await res.json();
     setSaving(false);
     if (!res.ok) {
-      setMessage(data.error || "Could not create homework.");
+      setMessage(data.error || t("teacherHomework.couldNotCreate"));
       return;
     }
     setForm({ title: "", description: "", dueDate: "", attachmentUrl: "" });
     setSelectedAssignmentKey("");
     await loadHomework();
     setSelectedHomeworkId(data.id);
-    setMessage("Homework created.");
+    setMessage(t("teacherHomework.homeworkCreated"));
   }
 
   async function updateHomeworkStatus(id: string, status: HomeworkStatus) {
@@ -207,11 +279,11 @@ export default function TeacherHomeworkPage() {
     });
     const data = await res.json();
     if (!res.ok) {
-      setMessage(data.error || "Could not update homework.");
+      setMessage(data.error || t("teacherHomework.couldNotUpdate"));
       return;
     }
     await loadHomework();
-    setMessage(status === "CLOSED" ? "Homework closed." : "Homework updated.");
+    setMessage(status === "CLOSED" ? t("teacherHomework.homeworkClosed") : t("teacherHomework.homeworkUpdated"));
   }
 
   async function saveStudentStatus(item: HomeworkStudentStatus, status: "SUBMITTED" | "NOT_SUBMITTED" | "CHECKED" | "REJECTED") {
@@ -239,11 +311,11 @@ export default function TeacherHomeworkPage() {
     const data = await res.json();
     setRowSavingId(null);
     if (!res.ok) {
-      setMessage(data.error || "Could not update homework record.");
+      setMessage(data.error || t("teacherHomework.couldNotUpdateRecord"));
       return;
     }
     await loadHomework();
-    setMessage("Homework record updated.");
+    setMessage(t("teacherHomework.recordUpdated"));
   }
 
   async function saveOnlineReview(submission: HomeworkSubmission, status: "REVIEWED" | "REJECTED") {
@@ -264,11 +336,11 @@ export default function TeacherHomeworkPage() {
     const data = await res.json();
     setRowSavingId(null);
     if (!res.ok) {
-      setMessage(data.error || "Could not save submission review.");
+      setMessage(data.error || t("teacherHomework.couldNotSaveReview"));
       return;
     }
     await loadHomework();
-    setMessage("Submission review saved.");
+    setMessage(t("teacherHomework.reviewSaved"));
   }
 
   const selectedRecords = useMemo(() => {
@@ -302,35 +374,42 @@ export default function TeacherHomeworkPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Homework</h1>
-        <p className="text-sm text-gray-500 mt-1">Create homework, track online and physical submissions, and keep homework marks separate from final report cards.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{t("teacherHomework.title")}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t("teacherHomework.subtitle")}</p>
+        </div>
+        <Link href="/teacher/homework/dashboard">
+          <Button variant="outline" size="sm" className="gap-2">
+            <BarChart3 className="w-4 h-4" /> {t("teacherHomework.classDashboard")}
+          </Button>
+        </Link>
       </div>
       {message && <p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">{message}</p>}
 
       {canCreate && (
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-base">Create Homework</CardTitle></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="text-base">{t("teacherHomework.createHomework")}</CardTitle></CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-5">
           <Select value={selectedAssignmentKey} onValueChange={setSelectedAssignmentKey}>
-            <SelectTrigger><SelectValue placeholder="Section + subject" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder={t("teacherHomework.sectionSubjectPlaceholder")} /></SelectTrigger>
             <SelectContent>
               {assignments.map((assignment) => (
                 <SelectItem key={`${assignment.sectionId}|${assignment.subject}`} value={`${assignment.sectionId}|${assignment.subject}`}>
-                  Class {assignment.className}-{assignment.sectionName} - {assignment.subject}
+                  {t("teacherHomework.classSectionSubject", { className: assignment.className, sectionName: assignment.sectionName, subject: assignment.subject })}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Input placeholder="Title" value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} />
-          <Input aria-label="Deadline date and time" type="datetime-local" value={form.dueDate} onChange={(e) => setForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
-          <Input placeholder="Attachment URL" value={form.attachmentUrl} onChange={(e) => setForm((prev) => ({ ...prev, attachmentUrl: e.target.value }))} />
+          <Input placeholder={t("teacherHomework.titlePlaceholder")} value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} />
+          <Input aria-label={t("teacherHomework.dueDate")} type="date" value={form.dueDate} onChange={(e) => setForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
+          <Input placeholder={t("teacherHomework.attachmentUrlPlaceholder")} value={form.attachmentUrl} onChange={(e) => setForm((prev) => ({ ...prev, attachmentUrl: e.target.value }))} />
           <Button onClick={createHomework} disabled={saving || assignments.length === 0} className="gap-2">
-            <BookOpenCheck className="w-4 h-4" /> {saving ? "Saving..." : "Assign"}
+            <BookOpenCheck className="w-4 h-4" /> {saving ? t("teacherHomework.saving") : t("teacherHomework.assign")}
           </Button>
           <textarea
             className="md:col-span-5 min-h-20 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Description"
+            placeholder={t("teacherHomework.descriptionPlaceholder")}
             value={form.description}
             onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
           />
@@ -340,10 +419,10 @@ export default function TeacherHomeworkPage() {
 
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">Homework List</CardTitle></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-base">{t("teacherHomework.homeworkList")}</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {homework.length === 0 ? (
-              <p className="text-sm text-gray-500 py-8 text-center">No homework assigned yet.</p>
+              <p className="text-sm text-gray-500 py-8 text-center">{t("teacherHomework.noHomeworkYet")}</p>
             ) : homework.map((item) => (
               <button
                 key={item.id}
@@ -356,8 +435,8 @@ export default function TeacherHomeworkPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold text-gray-900">{item.title}</p>
-                    <p className="text-xs text-gray-500 mt-1">Class {item.section.class.name}-{item.section.name} - {item.subject}</p>
-                    <p className="text-xs text-gray-400 mt-1">Deadline {formatDate(item.deadlineAt)}</p>
+                    <p className="text-xs text-gray-500 mt-1">{t("teacherHomework.classSectionSubjectShort", { className: item.section.class.name, sectionName: item.section.name, subject: item.subject })}</p>
+                    <p className="text-xs text-gray-400 mt-1">{t("teacherHomework.deadlineLabel", { date: formatDate(item.deadlineAt) })}</p>
                   </div>
                   <Badge variant="outline" className={cn("text-xs", STATUS_COLORS[item.status])}>{item.status}</Badge>
                 </div>
@@ -369,33 +448,84 @@ export default function TeacherHomeworkPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center justify-between gap-3">
-              <span>{selectedHomework ? selectedHomework.title : "Homework Tracking"}</span>
+              <span>{selectedHomework ? selectedHomework.title : t("teacherHomework.homeworkTracking")}</span>
               {selectedHomework && selectedHomework.status === "ACTIVE" && (
-                <Button variant="outline" size="sm" onClick={() => updateHomeworkStatus(selectedHomework.id, "CLOSED")}>Close</Button>
+                <Button variant="outline" size="sm" onClick={() => updateHomeworkStatus(selectedHomework.id, "CLOSED")}>{t("teacherHomework.close")}</Button>
               )}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {!selectedHomework ? (
-              <p className="text-sm text-gray-500 py-12 text-center">Select homework to track.</p>
+              <p className="text-sm text-gray-500 py-12 text-center">{t("teacherHomework.selectHomeworkToTrack")}</p>
             ) : (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
                   <Badge variant="outline" className={cn(STATUS_COLORS[selectedHomework.status])}>{selectedHomework.status}</Badge>
-                  <span>Class {selectedHomework.section.class.name}-{selectedHomework.section.name}</span>
+                  <span>{t("teacherHomework.classSectionSubjectShort", { className: selectedHomework.section.class.name, sectionName: selectedHomework.section.name, subject: selectedHomework.subject })}</span>
                   <span>-</span>
-                  <span>{selectedHomework.subject}</span>
-                  <span>-</span>
-                  <span>Deadline {formatDate(selectedHomework.deadlineAt)}</span>
+                  <span>{t("teacherHomework.deadlineLabel", { date: formatDate(selectedHomework.deadlineAt) })}</span>
                 </div>
                 {!canEdit && (
                   <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
                     {selectedHomework.status === "CANCELLED"
-                      ? "Cancelled homework cannot be edited."
-                      : "You don't have permission to review homework submissions."}
+                      ? t("teacherHomework.cancelledCannotEdit")
+                      : t("teacherHomework.noPermissionToReview")}
                   </p>
                 )}
 
+                <Tabs defaultValue="completion">
+                  <TabsList>
+                    <TabsTrigger value="completion">{t("teacherHomework.quickCompletion")}</TabsTrigger>
+                    <TabsTrigger value="review">{t("teacherHomework.submissionsAndScores")}</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="completion">
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          {t("teacherHomework.checkOnceVerified")}
+                        </p>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => bulkSetCompletion(true)} disabled={!canEdit || bulkCompletionSaving} className="gap-1">
+                            <CheckCheck className="w-3.5 h-3.5" /> {t("teacherHomework.markAllCompleted")}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => bulkSetCompletion(false)} disabled={!canEdit || bulkCompletionSaving} className="gap-1">
+                            <Square className="w-3.5 h-3.5" /> {t("teacherHomework.markAllNotCompleted")}
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
+                        {selectedHomework.studentStatuses.map((item) => {
+                          const completed = isItemCompleted(item);
+                          const saving = completionSavingIds.has(item.studentId);
+                          return (
+                            <label
+                              key={item.id}
+                              className={cn(
+                                "flex items-center justify-between gap-3 px-4 py-3 text-sm transition-colors",
+                                canEdit && !saving && "cursor-pointer hover:bg-gray-50"
+                              )}
+                            >
+                              <div>
+                                <p className="font-medium text-gray-900">{item.student.name}</p>
+                                <p className="text-xs text-gray-400">{t("teacherHomework.rollLabel", { roll: item.student.rollNo })}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {saving && <span className="text-xs text-gray-400">{t("teacherHomework.saving")}</span>}
+                                <Checkbox
+                                  checked={completed}
+                                  disabled={!canEdit || saving}
+                                  onCheckedChange={(checked) => toggleCompletion(item, checked === true)}
+                                />
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="review">
                 <div className="flex flex-wrap gap-2">
                   {TABS.map((tab) => (
                     <button
@@ -406,14 +536,14 @@ export default function TeacherHomeworkPage() {
                         activeTab === tab.key ? "border-blue-300 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                       )}
                     >
-                      {tab.label} <span className="ml-1 text-xs text-gray-400">{tabCounts[tab.key]}</span>
+                      {t(tab.labelKey)} <span className="ml-1 text-xs text-gray-400">{tabCounts[tab.key]}</span>
                     </button>
                   ))}
                 </div>
 
                 <div className="space-y-3">
                   {selectedRecords.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-gray-200 py-10 text-center text-sm text-gray-400">No students in this tab.</p>
+                    <p className="rounded-lg border border-dashed border-gray-200 py-10 text-center text-sm text-gray-400">{t("teacherHomework.noStudentsInTab")}</p>
                   ) : selectedRecords.map(({ item, submission, status, method }) => {
                     const draft = drafts[item.studentId] || { score: "", maxScore: "", teacherRemark: "" };
                     const savingRow = rowSavingId === item.studentId;
@@ -422,7 +552,7 @@ export default function TeacherHomeworkPage() {
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-gray-900">{item.student.name}</p>
-                            <p className="text-xs text-gray-400">Roll {item.student.rollNo}</p>
+                            <p className="text-xs text-gray-400">{t("teacherHomework.rollLabel", { roll: item.student.rollNo })}</p>
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <Badge variant="outline" className={cn("text-xs", STATUS_COLORS[status])}>{academicLabel(status)}</Badge>
@@ -431,15 +561,15 @@ export default function TeacherHomeworkPage() {
                         </div>
 
                         <div className="grid gap-3 text-xs text-gray-500 md:grid-cols-3">
-                          <div><span className="font-medium text-gray-700">Submitted:</span> {formatDate(submission?.submittedAt ?? item.submittedAt)}</div>
-                          <div><span className="font-medium text-gray-700">Checked:</span> {formatDate(submission?.checkedAt ?? item.checkedAt)}</div>
+                          <div><span className="font-medium text-gray-700">{t("teacherHomework.submittedLabel")}</span> {formatDate(submission?.submittedAt ?? item.submittedAt)}</div>
+                          <div><span className="font-medium text-gray-700">{t("teacherHomework.checkedLabel")}</span> {formatDate(submission?.checkedAt ?? item.checkedAt)}</div>
                           <div>
                             {submission?.attachmentUrl ? (
                               <a href={submission.attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700">
-                                <ExternalLink className="w-3 h-3" /> {submission.fileName || "Attachment"}
+                                <ExternalLink className="w-3 h-3" /> {submission.fileName || t("teacherHomework.attachment")}
                               </a>
                             ) : (
-                              <span className="text-gray-400">No attachment</span>
+                              <span className="text-gray-400">{t("teacherHomework.noAttachment")}</span>
                             )}
                           </div>
                         </div>
@@ -448,7 +578,7 @@ export default function TeacherHomeworkPage() {
                           <Input
                             type="number"
                             min={0}
-                            placeholder="Score"
+                            placeholder={t("teacherHomework.scorePlaceholder")}
                             value={draft.score}
                             onChange={(e) => setDrafts((prev) => ({ ...prev, [item.studentId]: { ...draft, score: e.target.value } }))}
                             disabled={!canEdit || savingRow}
@@ -456,40 +586,40 @@ export default function TeacherHomeworkPage() {
                           <Input
                             type="number"
                             min={0}
-                            placeholder="Max"
+                            placeholder={t("teacherHomework.maxPlaceholder")}
                             value={draft.maxScore}
                             onChange={(e) => setDrafts((prev) => ({ ...prev, [item.studentId]: { ...draft, maxScore: e.target.value } }))}
                             disabled={!canEdit || savingRow}
                           />
                           <Input
-                            placeholder="Remark"
+                            placeholder={t("teacherHomework.remarkPlaceholder")}
                             value={draft.teacherRemark}
                             onChange={(e) => setDrafts((prev) => ({ ...prev, [item.studentId]: { ...draft, teacherRemark: e.target.value } }))}
                             disabled={!canEdit || savingRow}
                           />
                           <div className="flex flex-wrap gap-2 justify-end">
                             <Button size="sm" variant="outline" onClick={() => saveStudentStatus(item, "SUBMITTED")} disabled={!canEdit || method === "ONLINE" || savingRow} className="gap-1">
-                              <FileCheck2 className="w-3.5 h-3.5" /> Physical
+                              <FileCheck2 className="w-3.5 h-3.5" /> {t("teacherHomework.physical")}
                             </Button>
                             <Button size="sm" variant="outline" onClick={() => saveStudentStatus(item, "NOT_SUBMITTED")} disabled={!canEdit || !afterDeadline || savingRow}>
-                              Not Submitted
+                              {t("teacherHomework.notSubmitted")}
                             </Button>
                             {submission?.submissionMethod === "ONLINE" ? (
                               <>
                                 <Button size="sm" onClick={() => saveOnlineReview(submission, "REVIEWED")} disabled={!canEdit || savingRow} className="gap-1">
-                                  <CheckCircle2 className="w-3.5 h-3.5" /> Check
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> {t("teacherHomework.check")}
                                 </Button>
                                 <Button size="sm" variant="destructive" onClick={() => saveOnlineReview(submission, "REJECTED")} disabled={!canEdit || savingRow} className="gap-1">
-                                  <XCircle className="w-3.5 h-3.5" /> Reject
+                                  <XCircle className="w-3.5 h-3.5" /> {t("teacherHomework.reject")}
                                 </Button>
                               </>
                             ) : (
                               <>
                                 <Button size="sm" onClick={() => saveStudentStatus(item, "CHECKED")} disabled={!canEdit || savingRow} className="gap-1">
-                                  <Save className="w-3.5 h-3.5" /> Check
+                                  <Save className="w-3.5 h-3.5" /> {t("teacherHomework.check")}
                                 </Button>
                                 <Button size="sm" variant="destructive" onClick={() => saveStudentStatus(item, "REJECTED")} disabled={!canEdit || savingRow} className="gap-1">
-                                  <XCircle className="w-3.5 h-3.5" /> Reject
+                                  <XCircle className="w-3.5 h-3.5" /> {t("teacherHomework.reject")}
                                 </Button>
                               </>
                             )}
@@ -499,6 +629,8 @@ export default function TeacherHomeworkPage() {
                     );
                   })}
                 </div>
+                  </TabsContent>
+                </Tabs>
               </div>
             )}
           </CardContent>

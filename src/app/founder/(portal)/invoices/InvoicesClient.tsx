@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { INVOICE_STATUSES, INVOICE_STATUS_LABEL, INVOICE_STATUS_BADGE_VARIANT, type InvoiceStatusValue } from "@/lib/billing-status";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type Row = {
   id: string;
@@ -33,6 +34,7 @@ type SchoolOption = { id: string; name: string };
 type PlanOption = { id: string; name: string };
 
 export default function InvoicesClient() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState("ALL");
   const [school, setSchool] = useState("");
   const [page, setPage] = useState(1);
@@ -84,24 +86,24 @@ export default function InvoicesClient() {
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Invoices</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Manually create and track invoices. No automatic generation.</p>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">{t("nav.invoices")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t("founder.invoicesDescription")}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-          <Plus className="h-4 w-4" /> Create Invoice
+          <Plus className="h-4 w-4" /> {t("founder.createInvoice")}
         </Button>
       </div>
 
       <Card className="border-border">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">Invoices{data ? ` (${data.total})` : ""}</CardTitle>
+          <CardTitle className="text-base">{t("nav.invoices")}{data ? ` (${data.total})` : ""}</CardTitle>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={t("founder.status")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All statuses</SelectItem>
+                <SelectItem value="ALL">{t("founder.allStatuses")}</SelectItem>
                 {INVOICE_STATUSES.map((s) => (
                   <SelectItem key={s} value={s}>{INVOICE_STATUS_LABEL[s]}</SelectItem>
                 ))}
@@ -109,7 +111,7 @@ export default function InvoicesClient() {
             </Select>
             <div className="relative w-full sm:w-64">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={school} onChange={(e) => setSchool(e.target.value)} placeholder="Filter by school..." className="pl-9" />
+              <Input value={school} onChange={(e) => setSchool(e.target.value)} placeholder={t("founder.filterBySchool")} className="pl-9" />
             </div>
           </div>
         </CardHeader>
@@ -123,12 +125,12 @@ export default function InvoicesClient() {
           ) : error ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-destructive/40 py-14 text-center">
               <AlertTriangle className="h-8 w-8 text-destructive" />
-              <p className="text-sm font-medium text-foreground">Couldn&apos;t load invoices</p>
+              <p className="text-sm font-medium text-foreground">{t("founder.couldntLoadInvoices")}</p>
             </div>
           ) : !data || data.invoices.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-14 text-center">
               <FileText className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">No invoices found</p>
+              <p className="text-sm font-medium text-foreground">{t("founder.noInvoicesFound")}</p>
             </div>
           ) : (
             <>
@@ -136,11 +138,11 @@ export default function InvoicesClient() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <th className="pb-2 pr-4 font-medium">Invoice #</th>
-                      <th className="pb-2 pr-4 font-medium">School</th>
-                      <th className="pb-2 pr-4 font-medium">Amount</th>
-                      <th className="pb-2 pr-4 font-medium">Due Date</th>
-                      <th className="pb-2 pr-4 font-medium">Status</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.invoiceNumber")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("nav.schools")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.amount")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.dueDate")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.status")}</th>
                       <th className="pb-2 font-medium"></th>
                     </tr>
                   </thead>
@@ -168,7 +170,7 @@ export default function InvoicesClient() {
               </div>
 
               <div className="mt-4 flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">Page {data.page} of {data.totalPages}</p>
+                <p className="text-xs text-muted-foreground">{t("founder.pageOf", { page: data.page, totalPages: data.totalPages })}</p>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" disabled={data.page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                     <ChevronLeft className="h-4 w-4" />
@@ -199,6 +201,7 @@ export default function InvoicesClient() {
 }
 
 function SchoolPicker({ value, onSelect }: { value: SchoolOption | null; onSelect: (s: SchoolOption) => void }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SchoolOption[]>([]);
 
@@ -220,7 +223,7 @@ function SchoolPicker({ value, onSelect }: { value: SchoolOption | null; onSelec
       <div className="flex items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm">
         <span className="font-medium text-foreground">{value.name}</span>
         <button type="button" onClick={() => onSelect({ id: "", name: "" })} className="text-xs text-muted-foreground hover:text-foreground">
-          Change
+          {t("founder.change")}
         </button>
       </div>
     );
@@ -228,7 +231,7 @@ function SchoolPicker({ value, onSelect }: { value: SchoolOption | null; onSelec
 
   return (
     <div className="space-y-1">
-      <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search schools..." />
+      <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("founder.searchSchools")} />
       {results.length > 0 && (
         <div className="max-h-40 overflow-y-auto rounded-md border border-border">
           {results.map((s) => (
@@ -260,6 +263,7 @@ function CreateInvoiceDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
+  const { t } = useTranslation();
   const [schoolSel, setSchoolSel] = useState<SchoolOption | null>(null);
   const [plans, setPlans] = useState<PlanOption[]>([]);
   const [planId, setPlanId] = useState("");
@@ -290,11 +294,11 @@ function CreateInvoiceDialog({
 
   async function save() {
     if (!schoolSel?.id) {
-      setError("Select a school");
+      setError(t("founder.selectASchool"));
       return;
     }
     if (!invoiceNumber.trim()) {
-      setError("Invoice number is required");
+      setError(t("founder.invoiceNumberRequired"));
       return;
     }
     setSaving(true);
@@ -315,11 +319,11 @@ function CreateInvoiceDialog({
         }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Request failed");
+      if (!res.ok) throw new Error(json?.error || t("founder.requestFailed"));
       onOpenChange(false);
       onCreated();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
+      setError(e instanceof Error ? e.message : t("auth.somethingWentWrong"));
     } finally {
       setSaving(false);
     }
@@ -329,23 +333,23 @@ function CreateInvoiceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create Invoice</DialogTitle>
-          <DialogDescription>Manually issue an invoice for a school. Nothing is sent automatically.</DialogDescription>
+          <DialogTitle>{t("founder.createInvoice")}</DialogTitle>
+          <DialogDescription>{t("founder.createInvoiceDescription")}</DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
           <div className="space-y-1.5">
-            <Label>School</Label>
+            <Label>{t("nav.schools")}</Label>
             <SchoolPicker value={schoolSel} onSelect={setSchoolSel} />
           </div>
           <div className="space-y-1.5">
-            <Label>Invoice Number</Label>
+            <Label>{t("founder.invoiceNumber")}</Label>
             <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Plan (optional)</Label>
+            <Label>{t("founder.planOptional")}</Label>
             <Select value={planId} onValueChange={setPlanId}>
-              <SelectTrigger><SelectValue placeholder="No plan" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t("founder.noPlan")} /></SelectTrigger>
               <SelectContent>
                 {plans.map((plan) => (
                   <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>
@@ -354,33 +358,33 @@ function CreateInvoiceDialog({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Amount (₹)</Label>
+            <Label>{t("founder.amountInRupees")}</Label>
             <Input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Billing Period Start</Label>
+              <Label>{t("founder.billingPeriodStart")}</Label>
               <Input type="date" value={billingPeriodStart} onChange={(e) => setBillingPeriodStart(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Billing Period End</Label>
+              <Label>{t("founder.billingPeriodEnd")}</Label>
               <Input type="date" value={billingPeriodEnd} onChange={(e) => setBillingPeriodEnd(e.target.value)} />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Due Date</Label>
+            <Label>{t("founder.dueDate")}</Label>
             <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Notes (optional)</Label>
+            <Label>{t("founder.notesOptional")}</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving}>{saving ? "Creating..." : "Create"}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>{t("common.cancel")}</Button>
+          <Button onClick={save} disabled={saving}>{saving ? t("founder.creating") : t("founder.create")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -396,6 +400,7 @@ function InvoiceDetailDialog({
   onOpenChange: (open: boolean) => void;
   onUpdated: () => void;
 }) {
+  const { t } = useTranslation();
   const [pendingStatus, setPendingStatus] = useState<InvoiceStatusValue | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -411,12 +416,12 @@ function InvoiceDetailDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (!res.ok) throw new Error("Request failed");
+      if (!res.ok) throw new Error(t("founder.requestFailed"));
       setPendingStatus(null);
       onOpenChange(false);
       onUpdated();
     } catch {
-      setError("Couldn't update status. Please try again.");
+      setError(t("founder.couldntUpdateStatus"));
     } finally {
       setSaving(false);
     }
@@ -432,20 +437,20 @@ function InvoiceDetailDialog({
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <Field label="Amount" value={formatCurrency(invoice.amount)} />
-            <Field label="Plan" value={invoice.plan?.name ?? "—"} />
-            <Field label="Billing Period" value={`${formatDate(invoice.billingPeriodStart)} – ${formatDate(invoice.billingPeriodEnd)}`} />
-            <Field label="Due Date" value={formatDate(invoice.dueDate)} />
+            <Field label={t("founder.amount")} value={formatCurrency(invoice.amount)} />
+            <Field label={t("founder.plan")} value={invoice.plan?.name ?? "—"} />
+            <Field label={t("founder.billingPeriod")} value={`${formatDate(invoice.billingPeriodStart)} – ${formatDate(invoice.billingPeriodEnd)}`} />
+            <Field label={t("founder.dueDate")} value={formatDate(invoice.dueDate)} />
           </div>
           {invoice.notes && (
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("founder.notes")}</p>
               <p className="mt-1 text-sm text-foreground">{invoice.notes}</p>
             </div>
           )}
 
           <div className="space-y-1.5">
-            <Label>Status</Label>
+            <Label>{t("founder.status")}</Label>
             <Select value={invoice.status} onValueChange={(v) => setPendingStatus(v as InvoiceStatusValue)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -460,9 +465,9 @@ function InvoiceDetailDialog({
 
         {pendingStatus && pendingStatus !== invoice.status && (
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingStatus(null)} disabled={saving}>Cancel</Button>
+            <Button variant="outline" onClick={() => setPendingStatus(null)} disabled={saving}>{t("common.cancel")}</Button>
             <Button onClick={() => applyStatus(pendingStatus)} disabled={saving}>
-              {saving ? "Saving..." : `Set to ${INVOICE_STATUS_LABEL[pendingStatus]}`}
+              {saving ? t("common.saving") : t("founder.setToStatus", { status: INVOICE_STATUS_LABEL[pendingStatus] })}
             </Button>
           </DialogFooter>
         )}

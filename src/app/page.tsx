@@ -1,11 +1,16 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   GraduationCap, Users, BookOpen, ClipboardCheck,
-  ArrowRight, School, UserCog, Briefcase, Lock, ShieldCheck,
+  ArrowRight, School, UserCog, Briefcase, ShieldCheck,
 } from "lucide-react";
+import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 export default function LandingPage() {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
 
@@ -18,11 +23,14 @@ export default function LandingPage() {
             </div>
             <span className="text-xl font-bold text-gray-900">SchoolSync</span>
           </div>
-          <Link href="/register">
-            <Button variant="outline" size="sm" className="gap-2">
-              <School className="w-4 h-4" /> Register School
-            </Button>
-          </Link>
+          <div className="flex items-center gap-3">
+            <LanguageSwitcher />
+            <Link href="/register">
+              <Button variant="outline" size="sm" className="gap-2">
+                <School className="w-4 h-4" /> {t("landing.registerSchool")}
+              </Button>
+            </Link>
+          </div>
         </div>
       </nav>
 
@@ -31,15 +39,14 @@ export default function LandingPage() {
         <div className="max-w-2xl mx-auto">
           <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
             <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-            School Management Platform
+            {t("landing.badge")}
           </div>
           <h1 className="text-5xl font-bold text-gray-900 leading-tight mb-5">
-            Welcome to<br />
-            <span className="text-blue-600">SchoolSync</span>
+            {t("landing.title1")}<br />
+            <span className="text-blue-600">{t("landing.title2")}</span>
           </h1>
           <p className="text-lg text-gray-500 leading-relaxed">
-            One platform for teachers, students, and school administration.
-            Attendance, timetables, results — all in one place.
+            {t("landing.subtitle")}
           </p>
         </div>
       </section>
@@ -54,16 +61,16 @@ export default function LandingPage() {
               <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center mb-4">
                 <School className="w-6 h-6 text-white" />
               </div>
-              <h2 className="text-2xl font-bold mb-2">Register Your School</h2>
+              <h2 className="text-2xl font-bold mb-2">{t("landing.registerYourSchool")}</h2>
               <p className="text-blue-100 text-sm leading-relaxed">
-                Set up your school&apos;s management system in minutes. Add classes, teachers, students, and go live immediately.
+                {t("landing.registerDescription")}
               </p>
             </div>
             <div className="px-6 py-6 space-y-4">
               {[
-                { icon: Users, text: "Add teachers & assign classes" },
-                { icon: BookOpen, text: "Manage students with CSV import" },
-                { icon: ClipboardCheck, text: "Daily attendance & exam results" },
+                { icon: Users, text: t("landing.featureTeachers") },
+                { icon: BookOpen, text: t("landing.featureStudents") },
+                { icon: ClipboardCheck, text: t("landing.featureAttendance") },
               ].map((item) => (
                 <div key={item.text} className="flex items-center gap-3 text-sm text-gray-600">
                   <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
@@ -75,7 +82,7 @@ export default function LandingPage() {
               <div className="pt-2">
                 <Link href="/register">
                   <Button className="w-full gap-2 mt-1">
-                    Get Started Free <ArrowRight className="w-4 h-4" />
+                    {t("landing.getStartedFree")} <ArrowRight className="w-4 h-4" />
                   </Button>
                 </Link>
               </div>
@@ -85,8 +92,8 @@ export default function LandingPage() {
           {/* Right: Portal logins */}
           <div className="space-y-4">
             <div className="px-1">
-              <h2 className="text-xl font-bold text-gray-900">Portal Login</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Sign in to your respective portal below</p>
+              <h2 className="text-xl font-bold text-gray-900">{t("landing.portalLogin")}</h2>
+              <p className="text-sm text-gray-500 mt-0.5">{t("landing.portalLoginSubtitle")}</p>
             </div>
 
             {/* Admin Login */}
@@ -96,8 +103,8 @@ export default function LandingPage() {
                   <UserCog className="w-5 h-5 text-blue-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm">Admin Login</p>
-                  <p className="text-xs text-gray-400 mt-0.5">School owners & administrators</p>
+                  <p className="font-semibold text-gray-900 text-sm">{t("landing.adminLogin")}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.adminLoginDesc")}</p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-blue-500 transition-colors shrink-0" />
               </div>
@@ -110,8 +117,8 @@ export default function LandingPage() {
                   <Briefcase className="w-5 h-5 text-purple-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm">Principal Login</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Principal & Vice Principal access</p>
+                  <p className="font-semibold text-gray-900 text-sm">{t("landing.principalLogin")}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.principalLoginDesc")}</p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-purple-500 transition-colors shrink-0" />
               </div>
@@ -124,8 +131,8 @@ export default function LandingPage() {
                   <GraduationCap className="w-5 h-5 text-green-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm">Faculty Login</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Teachers & class mentors</p>
+                  <p className="font-semibold text-gray-900 text-sm">{t("landing.facultyLogin")}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.facultyLoginDesc")}</p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-green-500 transition-colors shrink-0" />
               </div>
@@ -138,26 +145,26 @@ export default function LandingPage() {
                   <ShieldCheck className="w-5 h-5 text-indigo-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm">Founder Login</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Platform-level access only</p>
+                  <p className="font-semibold text-gray-900 text-sm">{t("landing.founderLogin")}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.founderLoginDesc")}</p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-indigo-500 transition-colors shrink-0" />
               </div>
             </Link>
 
-            {/* Student Login — coming soon */}
-            <div className="bg-gray-50 rounded-xl border border-dashed border-gray-200 px-5 py-4 flex items-center gap-4 opacity-70 mt-3 select-none">
-              <div className="w-11 h-11 bg-gray-100 rounded-xl flex items-center justify-center shrink-0">
-                <Lock className="w-5 h-5 text-gray-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-gray-500 text-sm">Student Login</p>
-                  <span className="text-xs bg-amber-100 text-amber-700 font-medium px-2 py-0.5 rounded-full">Coming Soon</span>
+            {/* Student Login */}
+            <Link href="/student/login">
+              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer mt-3">
+                <div className="w-11 h-11 bg-amber-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-amber-600 transition-colors">
+                  <GraduationCap className="w-5 h-5 text-amber-600 group-hover:text-white transition-colors" />
                 </div>
-                <p className="text-xs text-gray-400 mt-0.5">Student portal — results, attendance & more</p>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm">{t("landing.studentLogin")}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.studentLoginDesc")}</p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-amber-500 transition-colors shrink-0" />
               </div>
-            </div>
+            </Link>
 
           </div>
         </div>
@@ -172,7 +179,7 @@ export default function LandingPage() {
             </div>
             <span className="font-semibold text-gray-600">SchoolSync</span>
           </div>
-          <p>School management platform</p>
+          <p>{t("landing.footerTagline")}</p>
         </div>
       </footer>
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type Status = "PRESENT" | "ABSENT" | "LATE";
 
@@ -30,12 +31,13 @@ interface TeacherSelfAttendance {
 }
 
 const statusConfig = {
-  PRESENT: { label: "Present", icon: Check, color: "bg-green-100 text-green-700 border-green-300" },
-  ABSENT: { label: "Absent", icon: X, color: "bg-red-100 text-red-700 border-red-300" },
-  LATE: { label: "Late", icon: Clock, color: "bg-yellow-100 text-yellow-700 border-yellow-300" },
+  PRESENT: { labelKey: "common.present", icon: Check, color: "bg-green-100 text-green-700 border-green-300" },
+  ABSENT: { labelKey: "common.absent", icon: X, color: "bg-red-100 text-red-700 border-red-300" },
+  LATE: { labelKey: "common.late", icon: Clock, color: "bg-yellow-100 text-yellow-700 border-yellow-300" },
 };
 
 export default function TeacherAttendancePage() {
+  const { t } = useTranslation();
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [profileError, setProfileError] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
@@ -68,7 +70,7 @@ export default function TeacherAttendancePage() {
       setSelfError("");
       return;
     }
-    setSelfError(data.error || "Unable to load today's attendance");
+    setSelfError(data.error || t("teacherAttendance.unableToLoadTodayAttendance"));
   }, []);
 
   useEffect(() => {
@@ -84,11 +86,11 @@ export default function TeacherAttendancePage() {
     const data = await res.json();
     setSelfMarking(false);
     if (res.ok) {
-      setSelfMessage("Your attendance has been marked present");
+      setSelfMessage(t("teacherAttendance.markedPresentSuccess"));
       fetchSelfAttendance();
       return;
     }
-    setSelfError(data.error || "Unable to mark attendance");
+    setSelfError(data.error || t("teacherAttendance.unableToMarkAttendance"));
   }
 
   const fetchAttendance = useCallback(async (d: string) => {
@@ -155,22 +157,22 @@ export default function TeacherAttendancePage() {
             </CardContent>
           </Card>
         ) : !profile ? (
-          <div className="text-center py-20 text-gray-400">Loading...</div>
+          <div className="text-center py-20 text-gray-400">{t("common.loading")}</div>
         ) : (
           <>
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center justify-between">
-                  <span>My Attendance Today</span>
+                  <span>{t("teacherAttendance.myAttendanceToday")}</span>
                   {selfLoading ? (
-                    <span className="text-xs text-gray-400">Loading...</span>
+                    <span className="text-xs text-gray-400">{t("common.loading")}</span>
                   ) : selfStatusConfig ? (
                     <span className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium", selfStatusConfig.color)}>
                       <selfStatusConfig.icon className="w-3 h-3" />
-                      {selfStatusConfig.label}
+                      {t(selfStatusConfig.labelKey)}
                     </span>
                   ) : (
-                    <span className="text-xs text-gray-400 italic">Not marked</span>
+                    <span className="text-xs text-gray-400 italic">{t("teacherAttendance.notMarked")}</span>
                   )}
                 </CardTitle>
               </CardHeader>
@@ -178,17 +180,17 @@ export default function TeacherAttendancePage() {
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <p className="text-sm text-gray-700">
-                      Cutoff time: <span className="font-semibold">{selfAttendance?.cutoffTime ?? "09:30"}</span>
+                      {t("teacherAttendance.cutoffTime", { time: selfAttendance?.cutoffTime ?? "09:30" })}
                     </p>
                     {selfAttendance?.cutoffPassed && !selfAttendance.attendance && (
-                      <p className="text-sm text-red-600 mt-1">Cutoff has passed. Admin can run auto-absent for unmarked teachers.</p>
+                      <p className="text-sm text-red-600 mt-1">{t("teacherAttendance.cutoffPassedNote")}</p>
                     )}
                     {selfMessage && <p className="text-sm text-green-700 mt-1">{selfMessage}</p>}
                     {selfError && <p className="text-sm text-red-600 mt-1">{selfError}</p>}
                   </div>
                   <Button onClick={markSelfPresent} disabled={selfMarking || !selfAttendance?.canMarkPresent} className="gap-2">
                     <Check className="w-4 h-4" />
-                    {selfMarking ? "Marking..." : "Mark Present"}
+                    {selfMarking ? t("teacherAttendance.marking") : t("teacherAttendance.markPresent")}
                   </Button>
                 </div>
               </CardContent>
@@ -198,9 +200,9 @@ export default function TeacherAttendancePage() {
               <Card>
                 <CardContent className="py-16 text-center">
                   <ClipboardCheck className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-700 font-semibold text-lg">No class assigned yet</p>
+                  <p className="text-gray-700 font-semibold text-lg">{t("teacherAttendance.noClassAssigned")}</p>
                   <p className="text-gray-400 text-sm mt-2">
-                    You can still mark your own attendance here. Student attendance needs a class section assignment.
+                    {t("teacherAttendance.noClassAssignedHint")}
                   </p>
                 </CardContent>
               </Card>
@@ -208,10 +210,9 @@ export default function TeacherAttendancePage() {
               <>
             {/* Section Info */}
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Attendance</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{t("teacherAttendance.title")}</h1>
               <p className="text-sm text-gray-500 mt-1">
-                Class {profile.mentorSection.class.name} — Section {profile.mentorSection.name} &middot;{" "}
-                {students.length} students
+                {t("teacherAttendance.classSectionStudents", { className: profile.mentorSection.class.name, sectionName: profile.mentorSection.name, count: students.length })}
               </p>
             </div>
 
@@ -220,7 +221,7 @@ export default function TeacherAttendancePage() {
               <CardContent className="pt-5 pb-5">
                 <div className="flex flex-wrap gap-4 items-end">
                   <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Date</p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t("common.date")}</p>
                     <input
                       type="date"
                       value={date}
@@ -229,8 +230,8 @@ export default function TeacherAttendancePage() {
                     />
                   </div>
                   <div className="flex gap-2 ml-auto">
-                    <Button variant="outline" size="sm" onClick={() => markAll("PRESENT")} disabled={!canMarkAttendance}>All Present</Button>
-                    <Button variant="outline" size="sm" onClick={() => markAll("ABSENT")} disabled={!canMarkAttendance}>All Absent</Button>
+                    <Button variant="outline" size="sm" onClick={() => markAll("PRESENT")} disabled={!canMarkAttendance}>{t("teacherAttendance.allPresent")}</Button>
+                    <Button variant="outline" size="sm" onClick={() => markAll("ABSENT")} disabled={!canMarkAttendance}>{t("teacherAttendance.allAbsent")}</Button>
                   </div>
                 </div>
               </CardContent>
@@ -239,10 +240,10 @@ export default function TeacherAttendancePage() {
             {/* Summary */}
             <div className="grid grid-cols-4 gap-3">
               {[
-                { label: "Present", value: presentCount, color: "bg-green-50 border-green-200 text-green-700" },
-                { label: "Absent", value: absentCount, color: "bg-red-50 border-red-200 text-red-700" },
-                { label: "Late", value: lateCount, color: "bg-yellow-50 border-yellow-200 text-yellow-700" },
-                { label: "Unmarked", value: unmarkedCount, color: "bg-gray-50 border-gray-200 text-gray-600" },
+                { label: t("common.present"), value: presentCount, color: "bg-green-50 border-green-200 text-green-700" },
+                { label: t("common.absent"), value: absentCount, color: "bg-red-50 border-red-200 text-red-700" },
+                { label: t("common.late"), value: lateCount, color: "bg-yellow-50 border-yellow-200 text-yellow-700" },
+                { label: t("teacherAttendance.unmarked"), value: unmarkedCount, color: "bg-gray-50 border-gray-200 text-gray-600" },
               ].map((s) => (
                 <div key={s.label} className={`rounded-lg border px-4 py-3 ${s.color}`}>
                   <p className="text-2xl font-bold">{s.value}</p>
@@ -253,21 +254,21 @@ export default function TeacherAttendancePage() {
 
             {/* Student List */}
             {loading ? (
-              <div className="text-center py-12 text-gray-400">Loading attendance...</div>
+              <div className="text-center py-12 text-gray-400">{t("teacherAttendance.loadingAttendance")}</div>
             ) : students.length === 0 ? (
               <Card>
                 <CardContent className="py-16 text-center">
-                  <p className="text-gray-400">No students in this section yet.</p>
+                  <p className="text-gray-400">{t("teacherAttendance.noStudents")}</p>
                 </CardContent>
               </Card>
             ) : (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center justify-between">
-                    <span>{students.length} Students</span>
+                    <span>{t("teacherAttendance.studentsCount", { count: students.length })}</span>
                     <Button onClick={save} disabled={saving || !canMarkAttendance} className="gap-2">
                       <Save className="w-4 h-4" />
-                      {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
+                      {saving ? t("teacherAttendance.saving") : saved ? t("teacherAttendance.saved") : t("teacherAttendance.saveAttendance")}
                     </Button>
                   </CardTitle>
                 </CardHeader>
@@ -286,7 +287,7 @@ export default function TeacherAttendancePage() {
                             </div>
                             <div>
                               <p className="font-medium text-gray-900 text-sm">{student.name}</p>
-                              <p className="text-xs text-gray-400">Roll: {student.rollNo}</p>
+                              <p className="text-xs text-gray-400">{t("teacherAttendance.rollLabel", { roll: student.rollNo })}</p>
                             </div>
                           </div>
                           <div className="flex gap-2">
@@ -304,7 +305,7 @@ export default function TeacherAttendancePage() {
                                   )}
                                 >
                                   <cfg.icon className="w-3 h-3" />
-                                  <span className="hidden sm:inline">{cfg.label}</span>
+                                  <span className="hidden sm:inline">{t(cfg.labelKey)}</span>
                                 </button>
                               );
                             })}
@@ -316,7 +317,7 @@ export default function TeacherAttendancePage() {
                   <div className="mt-4 flex justify-end">
                     <Button onClick={save} disabled={saving || !canMarkAttendance} className="gap-2">
                       <Save className="w-4 h-4" />
-                      {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
+                      {saving ? t("teacherAttendance.saving") : saved ? t("teacherAttendance.saved") : t("teacherAttendance.saveAttendance")}
                     </Button>
                   </div>
                 </CardContent>

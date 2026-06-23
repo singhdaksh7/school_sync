@@ -15,7 +15,10 @@ export default async function ClassesPage({
     where: { schoolId: school.id },
     include: {
       sections: {
-        include: { _count: { select: { students: true } } },
+        include: {
+          _count: { select: { students: true } },
+          students: { orderBy: { rollNo: "asc" }, select: { id: true, name: true, rollNo: true } },
+        },
         orderBy: { name: "asc" },
       },
     },

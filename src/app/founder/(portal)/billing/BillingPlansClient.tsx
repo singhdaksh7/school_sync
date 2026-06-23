@@ -11,6 +11,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type Plan = {
   id: string;
@@ -27,6 +28,7 @@ type FormState = { name: string; priceMonthly: string; priceAnnual: string; maxS
 const EMPTY_FORM: FormState = { name: "", priceMonthly: "", priceAnnual: "", maxStudents: "", isActive: true };
 
 export default function BillingPlansClient() {
+  const { t } = useTranslation();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -72,7 +74,7 @@ export default function BillingPlansClient() {
 
   async function save() {
     if (!form.name.trim()) {
-      setFormError("Name is required");
+      setFormError(t("founder.nameIsRequired"));
       return;
     }
     setSaving(true);
@@ -93,11 +95,11 @@ export default function BillingPlansClient() {
         body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Request failed");
+      if (!res.ok) throw new Error(json?.error || t("founder.requestFailed"));
       setDialogOpen(false);
       load();
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Something went wrong");
+      setFormError(e instanceof Error ? e.message : t("auth.somethingWentWrong"));
     } finally {
       setSaving(false);
     }
@@ -107,17 +109,17 @@ export default function BillingPlansClient() {
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Billing Plans</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Manage the subscription plan catalog. No payment gateway involved — assignment is manual.</p>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">{t("founder.billingPlans")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t("founder.billingPlansDescription")}</p>
         </div>
         <Button onClick={openCreate} className="gap-1.5">
-          <Plus className="h-4 w-4" /> Create Plan
+          <Plus className="h-4 w-4" /> {t("founder.createPlan")}
         </Button>
       </div>
 
       <Card className="border-border">
         <CardHeader>
-          <CardTitle className="text-base">Plans{plans ? ` (${plans.length})` : ""}</CardTitle>
+          <CardTitle className="text-base">{t("founder.plans")}{plans ? ` (${plans.length})` : ""}</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -128,24 +130,24 @@ export default function BillingPlansClient() {
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-destructive/40 py-14 text-center">
-              <p className="text-sm font-medium text-foreground">Couldn&apos;t load plans</p>
+              <p className="text-sm font-medium text-foreground">{t("founder.couldntLoadPlans")}</p>
             </div>
           ) : !plans || plans.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-14 text-center">
               <CreditCard className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">No plans yet</p>
+              <p className="text-sm font-medium text-foreground">{t("founder.noPlansYet")}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="pb-2 pr-4 font-medium">Plan</th>
-                    <th className="pb-2 pr-4 font-medium">Monthly</th>
-                    <th className="pb-2 pr-4 font-medium">Annual</th>
-                    <th className="pb-2 pr-4 font-medium">Max Students</th>
-                    <th className="pb-2 pr-4 font-medium">Schools</th>
-                    <th className="pb-2 pr-4 font-medium">Status</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.plan")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.monthly")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.annual")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.maxStudents")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("nav.schools")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.status")}</th>
                     <th className="pb-2 font-medium"></th>
                   </tr>
                 </thead>
@@ -155,14 +157,14 @@ export default function BillingPlansClient() {
                       <td className="py-3 pr-4 font-medium text-foreground">{plan.name}</td>
                       <td className="py-3 pr-4 text-muted-foreground">{formatCurrency(plan.priceMonthly)}</td>
                       <td className="py-3 pr-4 text-muted-foreground">{formatCurrency(plan.priceAnnual)}</td>
-                      <td className="py-3 pr-4 text-muted-foreground">{plan.maxStudents ?? "Unlimited"}</td>
+                      <td className="py-3 pr-4 text-muted-foreground">{plan.maxStudents ?? t("founder.unlimited")}</td>
                       <td className="py-3 pr-4 text-muted-foreground">{plan._count.subscriptions}</td>
                       <td className="py-3 pr-4">
-                        <Badge variant={plan.isActive ? "success" : "secondary"}>{plan.isActive ? "Active" : "Inactive"}</Badge>
+                        <Badge variant={plan.isActive ? "success" : "secondary"}>{plan.isActive ? t("founder.active") : t("founder.inactive")}</Badge>
                       </td>
                       <td className="py-3 text-right">
                         <Button variant="outline" size="sm" onClick={() => openEdit(plan)} className="gap-1.5">
-                          <Pencil className="h-3.5 w-3.5" /> Edit
+                          <Pencil className="h-3.5 w-3.5" /> {t("common.edit")}
                         </Button>
                       </td>
                     </tr>
@@ -177,32 +179,32 @@ export default function BillingPlansClient() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingPlan ? "Edit Plan" : "Create Plan"}</DialogTitle>
-            <DialogDescription>Set pricing for this plan. Existing assignments keep their original amount until reassigned.</DialogDescription>
+            <DialogTitle>{editingPlan ? t("founder.editPlan") : t("founder.createPlan")}</DialogTitle>
+            <DialogDescription>{t("founder.setPricingDescription")}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Name</Label>
+              <Label>{t("founder.name")}</Label>
               <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Basic" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Monthly Price (₹)</Label>
+                <Label>{t("founder.monthlyPrice")}</Label>
                 <Input type="number" min="0" step="0.01" value={form.priceMonthly} onChange={(e) => setForm((f) => ({ ...f, priceMonthly: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
-                <Label>Annual Price (₹)</Label>
+                <Label>{t("founder.annualPrice")}</Label>
                 <Input type="number" min="0" step="0.01" value={form.priceAnnual} onChange={(e) => setForm((f) => ({ ...f, priceAnnual: e.target.value }))} />
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>Max Students (optional)</Label>
-              <Input type="number" min="0" value={form.maxStudents} onChange={(e) => setForm((f) => ({ ...f, maxStudents: e.target.value }))} placeholder="Leave blank for unlimited" />
+              <Label>{t("founder.maxStudentsOptional")}</Label>
+              <Input type="number" min="0" value={form.maxStudents} onChange={(e) => setForm((f) => ({ ...f, maxStudents: e.target.value }))} placeholder={t("founder.leaveBlankUnlimited")} />
             </div>
             {editingPlan && (
               <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
-                <Label className="!mb-0">Active (assignable to schools)</Label>
+                <Label className="!mb-0">{t("founder.activeAssignable")}</Label>
                 <input
                   type="checkbox"
                   checked={form.isActive}
@@ -215,8 +217,8 @@ export default function BillingPlansClient() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>{t("common.cancel")}</Button>
+            <Button onClick={save} disabled={saving}>{saving ? t("common.saving") : t("common.save")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -8,8 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 export default function RegisterPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
@@ -27,19 +30,22 @@ export default function RegisterPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Registration failed");
+        setError(data.error || t("auth.registrationFailed"));
         return;
       }
       router.push("/login?registered=1");
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError(t("auth.somethingWentWrong"));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+    <div className="relative min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="absolute left-1/2 top-4 -translate-x-1/2 z-20">
+        <LanguageSwitcher />
+      </div>
       <div className="w-full max-w-md">
         <div className="flex justify-center mb-8">
           <Link href="/" className="flex items-center gap-2">
@@ -51,8 +57,8 @@ export default function RegisterPage() {
         </div>
         <Card>
           <CardHeader>
-            <CardTitle>Create your account</CardTitle>
-            <CardDescription>Start managing your school for free</CardDescription>
+            <CardTitle>{t("auth.createAccountTitle")}</CardTitle>
+            <CardDescription>{t("auth.createAccountSubtitle")}</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
@@ -62,7 +68,7 @@ export default function RegisterPage() {
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label htmlFor="name">Full name</Label>
+                <Label htmlFor="name">{t("auth.fullName")}</Label>
                 <Input
                   id="name"
                   placeholder="John Doe"
@@ -72,7 +78,7 @@ export default function RegisterPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="email">Email address</Label>
+                <Label htmlFor="email">{t("common.email")}</Label>
                 <Input
                   id="email"
                   type="email"
@@ -83,7 +89,7 @@ export default function RegisterPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">{t("common.password")}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -97,12 +103,12 @@ export default function RegisterPage() {
             </CardContent>
             <CardFooter className="flex-col gap-3">
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Creating account..." : "Create account"}
+                {loading ? t("common.creatingAccount") : t("common.createAccount")}
               </Button>
               <p className="text-sm text-gray-500 text-center">
-                Already have an account?{" "}
+                {t("auth.alreadyHaveAccount")}{" "}
                 <Link href="/login" className="text-blue-600 hover:underline font-medium">
-                  Sign in
+                  {t("common.signIn")}
                 </Link>
               </p>
             </CardFooter>

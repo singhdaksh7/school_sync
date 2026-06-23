@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { PAYMENT_PROOF_STATUSES, PAYMENT_PROOF_STATUS_LABEL, PAYMENT_PROOF_STATUS_BADGE_VARIANT, type PaymentProofStatusValue } from "@/lib/billing-status";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type Row = {
   id: string;
@@ -37,6 +38,7 @@ type Detail = Row & {
 type ListResponse = { submissions: Row[]; total: number; page: number; totalPages: number };
 
 export default function PaymentProofsClient() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState("ALL");
   const [school, setSchool] = useState("");
   const [page, setPage] = useState(1);
@@ -95,7 +97,7 @@ export default function PaymentProofsClient() {
         setDetail(json.submission);
         setReviewNotes(json.submission.reviewNotes ?? "");
       })
-      .catch(() => setActionError("Couldn't load this submission."))
+      .catch(() => setActionError(t("founder.couldntLoadSubmission")))
       .finally(() => setDetailLoading(false));
   }
 
@@ -109,12 +111,12 @@ export default function PaymentProofsClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus, reviewNotes: reviewNotes || undefined }),
       });
-      if (!res.ok) throw new Error("Request failed");
+      if (!res.ok) throw new Error(t("founder.requestFailed"));
       setSelectedId(null);
       setConfirmAction(null);
       setRefreshKey((k) => k + 1);
     } catch {
-      setActionError("Couldn't save your decision. Please try again.");
+      setActionError(t("founder.couldntSaveDecision"));
     } finally {
       setActionPending(false);
     }
@@ -123,20 +125,20 @@ export default function PaymentProofsClient() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Payment Proofs</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Review manually submitted payment proofs from schools.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">{t("nav.paymentProofs")}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t("founder.paymentProofsDescription")}</p>
       </div>
 
       <Card className="border-border">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">Submissions{data ? ` (${data.total})` : ""}</CardTitle>
+          <CardTitle className="text-base">{t("founder.submissions")}{data ? ` (${data.total})` : ""}</CardTitle>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={t("founder.status")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All statuses</SelectItem>
+                <SelectItem value="ALL">{t("founder.allStatuses")}</SelectItem>
                 {PAYMENT_PROOF_STATUSES.map((s) => (
                   <SelectItem key={s} value={s}>{PAYMENT_PROOF_STATUS_LABEL[s]}</SelectItem>
                 ))}
@@ -144,7 +146,7 @@ export default function PaymentProofsClient() {
             </Select>
             <div className="relative w-full sm:w-64">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={school} onChange={(e) => setSchool(e.target.value)} placeholder="Filter by school..." className="pl-9" />
+              <Input value={school} onChange={(e) => setSchool(e.target.value)} placeholder={t("founder.filterBySchool")} className="pl-9" />
             </div>
           </div>
         </CardHeader>
@@ -158,12 +160,12 @@ export default function PaymentProofsClient() {
           ) : error ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-destructive/40 py-14 text-center">
               <AlertTriangle className="h-8 w-8 text-destructive" />
-              <p className="text-sm font-medium text-foreground">Couldn&apos;t load submissions</p>
+              <p className="text-sm font-medium text-foreground">{t("founder.couldntLoadSubmissions")}</p>
             </div>
           ) : !data || data.submissions.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-14 text-center">
               <Receipt className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">No submissions found</p>
+              <p className="text-sm font-medium text-foreground">{t("founder.noSubmissionsFound")}</p>
             </div>
           ) : (
             <>
@@ -171,12 +173,12 @@ export default function PaymentProofsClient() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <th className="pb-2 pr-4 font-medium">School</th>
-                      <th className="pb-2 pr-4 font-medium">Billing Month</th>
-                      <th className="pb-2 pr-4 font-medium">Amount</th>
-                      <th className="pb-2 pr-4 font-medium">Payment Date</th>
-                      <th className="pb-2 pr-4 font-medium">Submitted At</th>
-                      <th className="pb-2 pr-4 font-medium">Status</th>
+                      <th className="pb-2 pr-4 font-medium">{t("nav.schools")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.billingMonth")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.amount")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.paymentDate")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.submittedAt")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.status")}</th>
                       <th className="pb-2 font-medium"></th>
                     </tr>
                   </thead>
@@ -205,7 +207,7 @@ export default function PaymentProofsClient() {
               </div>
 
               <div className="mt-4 flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">Page {data.page} of {data.totalPages}</p>
+                <p className="text-xs text-muted-foreground">{t("founder.pageOf", { page: data.page, totalPages: data.totalPages })}</p>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" disabled={data.page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                     <ChevronLeft className="h-4 w-4" />
@@ -223,7 +225,7 @@ export default function PaymentProofsClient() {
       <Dialog open={!!selectedId} onOpenChange={(open) => !open && setSelectedId(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Payment Proof Details</DialogTitle>
+            <DialogTitle>{t("founder.paymentProofDetails")}</DialogTitle>
           </DialogHeader>
 
           {detailLoading || !detail ? (
@@ -231,28 +233,28 @@ export default function PaymentProofsClient() {
           ) : (
             <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
               <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-                <Field label="School" value={detail.school.name} />
-                <Field label="Submitted By" value={detail.submittedBy.name} />
-                <Field label="Billing Month" value={formatDate(detail.billingMonth)} />
-                <Field label="Payment Date" value={formatDate(detail.paymentDate)} />
-                <Field label="Amount" value={formatCurrency(detail.amount)} />
-                <Field label="Transaction Ref" value={detail.transactionRef || "—"} />
+                <Field label={t("nav.schools")} value={detail.school.name} />
+                <Field label={t("founder.submittedBy")} value={detail.submittedBy.name} />
+                <Field label={t("founder.billingMonth")} value={formatDate(detail.billingMonth)} />
+                <Field label={t("founder.paymentDate")} value={formatDate(detail.paymentDate)} />
+                <Field label={t("founder.amount")} value={formatCurrency(detail.amount)} />
+                <Field label={t("founder.transactionRef")} value={detail.transactionRef || "—"} />
               </div>
               {detail.notes && (
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">School Notes</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("founder.schoolNotes")}</p>
                   <p className="mt-1 text-sm text-foreground">{detail.notes}</p>
                 </div>
               )}
 
               <div>
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Receipt</p>
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("founder.receipt")}</p>
                 <ReceiptPreview detail={detail} />
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("founder.status")}</p>
                   <Select
                     value={detail.status}
                     onValueChange={(v) => {
@@ -275,18 +277,18 @@ export default function PaymentProofsClient() {
                 {detail.status === "PENDING" && (
                   <div className="flex items-end gap-2">
                     <Button variant="outline" onClick={() => setConfirmAction("REJECTED")} disabled={actionPending} className="flex-1 text-destructive">
-                      Reject
+                      {t("founder.reject")}
                     </Button>
                     <Button onClick={() => setConfirmAction("APPROVED")} disabled={actionPending} className="flex-1">
-                      Approve
+                      {t("founder.approve")}
                     </Button>
                   </div>
                 )}
               </div>
 
               <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Review Notes (internal)</p>
-                <Textarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} placeholder="Internal note about this decision..." />
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("founder.reviewNotesInternal")}</p>
+                <Textarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} placeholder={t("founder.internalNotePlaceholder")} />
               </div>
 
               {actionError && <p className="text-sm text-destructive">{actionError}</p>}
@@ -298,17 +300,17 @@ export default function PaymentProofsClient() {
       <Dialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Set status to {confirmAction ? PAYMENT_PROOF_STATUS_LABEL[confirmAction] : ""}?</DialogTitle>
+            <DialogTitle>{t("founder.setStatusToQuestion", { status: confirmAction ? PAYMENT_PROOF_STATUS_LABEL[confirmAction] : "" })}</DialogTitle>
             <DialogDescription>
               {confirmAction === "APPROVED"
-                ? "This will automatically advance the school's renewal date to the 1st of the month after this billing cycle. It does not change the school's status — you can still adjust the renewal date manually afterward."
-                : "This does not automatically change the school's subscription status or renewal date — update those separately if needed."}
+                ? t("founder.approveRenewalNote")
+                : t("founder.rejectRenewalNote")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmAction(null)} disabled={actionPending}>Cancel</Button>
+            <Button variant="outline" onClick={() => setConfirmAction(null)} disabled={actionPending}>{t("common.cancel")}</Button>
             <Button onClick={() => confirmAction && applyReview(confirmAction)} disabled={actionPending}>
-              {actionPending ? "Saving..." : "Confirm"}
+              {actionPending ? t("common.saving") : t("founder.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -327,15 +329,16 @@ function Field({ label, value, children }: { label: string; value?: string; chil
 }
 
 function ReceiptPreview({ detail }: { detail: Detail }) {
+  const { t } = useTranslation();
   const isImage = detail.receiptMimeType?.startsWith("image/");
   if (isImage) {
     return (
       <a href={detail.receiptData} target="_blank" rel="noopener noreferrer" className="block">
         <div className="flex h-72 w-full items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/20 sm:h-96">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={detail.receiptData} alt="Payment receipt" className="h-full w-full object-contain" />
+          <img src={detail.receiptData} alt={t("founder.paymentReceiptAlt")} className="h-full w-full object-contain" />
         </div>
-        <p className="mt-1.5 text-xs text-muted-foreground">Click to open full size in a new tab</p>
+        <p className="mt-1.5 text-xs text-muted-foreground">{t("founder.clickToOpenFullSize")}</p>
       </a>
     );
   }
@@ -347,7 +350,7 @@ function ReceiptPreview({ detail }: { detail: Detail }) {
       download={detail.receiptFileName ?? "receipt.pdf"}
       className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
     >
-      <Receipt className="h-4 w-4 flex-shrink-0" /> {detail.receiptFileName ?? "Open receipt"}
+      <Receipt className="h-4 w-4 flex-shrink-0" /> {detail.receiptFileName ?? t("founder.openReceipt")}
     </a>
   );
 }

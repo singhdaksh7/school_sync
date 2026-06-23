@@ -8,6 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { CircularProgress } from "@/components/ui/circular-progress";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+
+interface HomeworkSummary {
+  totalAssigned: number;
+  completedCount: number;
+  missedCount: number;
+  completionPercentage: number | null;
+}
 
 interface HomeworkItem {
   id: string;
@@ -29,12 +39,18 @@ export default function StudentHomeworkPage() {
   const [subject, setSubject] = useState("ALL");
   const [category, setCategory] = useState<Category>("ALL");
   const [selected, setSelected] = useState<HomeworkItem | null>(null);
+  const [summary, setSummary] = useState<HomeworkSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/student/homework")
       .then((r) => r.json())
       .then((d) => { if (!d.error) setHomework(d.homework || []); })
       .finally(() => setLoading(false));
+    fetch("/api/student/homework-summary")
+      .then((r) => r.json())
+      .then((d) => { if (!d.error) setSummary(d); })
+      .finally(() => setSummaryLoading(false));
   }, []);
 
   const subjects = useMemo(() => Array.from(new Set(homework.map((h) => h.subject))).sort(), [homework]);
@@ -69,6 +85,23 @@ export default function StudentHomeworkPage() {
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Homework</h1>
         <p className="mt-1 text-sm text-muted-foreground">View homework assigned to your class. Submissions are managed by your teacher.</p>
       </div>
+
+      {summaryLoading ? (
+        <Skeleton className="h-28" />
+      ) : summary && summary.totalAssigned > 0 ? (
+        <Card className="border-border">
+          <CardContent className="flex flex-wrap items-center gap-6 p-4">
+            <CircularProgress value={summary.completionPercentage ?? 0} size={84} strokeWidth={9} />
+            <div className="flex-1 min-w-[200px] space-y-2">
+              <p className="text-sm font-semibold text-foreground">
+                {summary.completedCount}/{summary.totalAssigned} homework completed
+              </p>
+              <Progress value={summary.completionPercentage ?? 0} toned />
+              <p className="text-xs text-muted-foreground">{summary.missedCount} missed</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

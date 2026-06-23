@@ -5,6 +5,7 @@ import { signOut } from "next-auth/react";
 import { User, Building2, Users, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface TeacherProfile {
   name: string;
@@ -14,6 +15,7 @@ interface TeacherProfile {
 }
 
 export default function TeacherProfilePage() {
+  const { t } = useTranslation();
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [error, setError] = useState("");
 
@@ -21,8 +23,8 @@ export default function TeacherProfilePage() {
     fetch("/api/teacher/me")
       .then((r) => r.json())
       .then((d) => { if (d.error) setError(d.error); else setProfile(d); })
-      .catch(() => setError("Unable to load profile"));
-  }, []);
+      .catch(() => setError(t("teacherProfile.unableToLoad")));
+  }, [t]);
 
   const initials = (profile?.name || "")
     .split(" ")
@@ -34,8 +36,8 @@ export default function TeacherProfilePage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-8 md:px-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Profile</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Your account and assignment details.</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t("teacherProfile.title")}</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t("teacherProfile.subtitle")}</p>
       </div>
 
       {error ? (
@@ -43,7 +45,7 @@ export default function TeacherProfilePage() {
           <CardContent className="py-12 text-center text-red-600">{error}</CardContent>
         </Card>
       ) : !profile ? (
-        <div className="py-20 text-center text-gray-400">Loading...</div>
+        <div className="py-20 text-center text-gray-400">{t("common.loading")}</div>
       ) : (
         <>
           <Card className="dark:border-gray-800 dark:bg-gray-950">
@@ -53,28 +55,28 @@ export default function TeacherProfilePage() {
               </span>
               <div className="min-w-0">
                 <p className="truncate text-lg font-semibold text-gray-900 dark:text-gray-100">{profile.name}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Teacher{profile.subject ? ` · ${profile.subject}` : ""}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t("teacherProfile.teacherLabel")}{profile.subject ? ` · ${profile.subject}` : ""}</p>
               </div>
             </CardContent>
           </Card>
 
           <Card className="dark:border-gray-800 dark:bg-gray-950">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Details</CardTitle>
+              <CardTitle className="text-base">{t("teacherProfile.details")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 pt-0">
               <div className="flex items-center gap-3 text-sm">
                 <Building2 className="h-4 w-4 flex-shrink-0 text-gray-400" />
-                <span className="text-gray-500 dark:text-gray-400">School</span>
+                <span className="text-gray-500 dark:text-gray-400">{t("teacherProfile.school")}</span>
                 <span className="ml-auto font-medium text-gray-900 dark:text-gray-100">{profile.school.name}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Users className="h-4 w-4 flex-shrink-0 text-gray-400" />
-                <span className="text-gray-500 dark:text-gray-400">Mentor Class</span>
+                <span className="text-gray-500 dark:text-gray-400">{t("teacherProfile.mentorClass")}</span>
                 <span className="ml-auto font-medium text-gray-900 dark:text-gray-100">
                   {profile.mentorSection
-                    ? `Class ${profile.mentorSection.class.name} – ${profile.mentorSection.name} (${profile.mentorSection.students.length} students)`
-                    : "Not assigned"}
+                    ? t("teacherProfile.mentorClassValue", { className: profile.mentorSection.class.name, sectionName: profile.mentorSection.name, count: profile.mentorSection.students.length })
+                    : t("teacherProfile.notAssigned")}
                 </span>
               </div>
             </CardContent>
@@ -82,7 +84,7 @@ export default function TeacherProfilePage() {
 
           <div className="flex justify-end">
             <Button variant="outline" onClick={() => signOut({ callbackUrl: "/login" })} className="gap-2">
-              <LogOut className="h-4 w-4" /> Logout
+              <LogOut className="h-4 w-4" /> {t("common.logout")}
             </Button>
           </div>
         </>

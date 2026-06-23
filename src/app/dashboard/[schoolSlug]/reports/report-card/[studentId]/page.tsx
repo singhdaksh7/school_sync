@@ -97,7 +97,7 @@ export default async function ReportCardPage({
             <div><span className="text-gray-500">Roll Number:</span> <span className="font-semibold text-gray-900">{student.rollNo}</span></div>
             <div><span className="text-gray-500">Class:</span> <span className="font-semibold text-gray-900">{student.section.class.name}</span></div>
             <div><span className="text-gray-500">Section:</span> <span className="font-semibold text-gray-900">{student.section.name}</span></div>
-            {student.parentName && <div><span className="text-gray-500">Parent/Guardian:</span> <span className="font-semibold text-gray-900">{student.parentName}</span></div>}
+            {(student.fatherName || student.motherName) && <div><span className="text-gray-500">Parent/Guardian:</span> <span className="font-semibold text-gray-900">{student.fatherName || student.motherName}</span></div>}
             {student.email && <div><span className="text-gray-500">Email:</span> <span className="font-semibold text-gray-900">{student.email}</span></div>}
           </div>
         </div>

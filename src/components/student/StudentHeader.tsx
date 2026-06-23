@@ -5,6 +5,8 @@ import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { Menu, PanelLeft, Bell, User, LogOut, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface StudentHeaderProps {
   schoolName?: string;
@@ -14,7 +16,10 @@ interface StudentHeaderProps {
 }
 
 function todayLabel() {
-  return new Date().toLocaleDateString(undefined, {
+  // Pinned locale (not `undefined`) — the default locale can differ between
+  // the server's runtime and the browser, which produces a server/client
+  // hydration mismatch since the two would format this differently.
+  return new Date().toLocaleDateString("en-GB", {
     weekday: "long",
     day: "numeric",
     month: "short",
@@ -23,6 +28,7 @@ function todayLabel() {
 }
 
 export default function StudentHeader({ schoolName, studentName, onMenuClick, onCollapseToggle }: StudentHeaderProps) {
+  const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -50,19 +56,19 @@ export default function StudentHeader({ schoolName, studentName, onMenuClick, on
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 flex-shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/60 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 md:px-6">
+    <header className="sticky top-0 z-30 flex h-16 flex-shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/60 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 md:px-6 relative">
       <div className="flex min-w-0 items-center gap-2">
         <button
           onClick={onMenuClick}
           className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
-          aria-label="Open menu"
+          aria-label={t("common.openMenu")}
         >
           <Menu className="h-5 w-5" />
         </button>
         <button
           onClick={onCollapseToggle}
           className="hidden rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:inline-flex"
-          aria-label="Toggle sidebar"
+          aria-label={t("common.toggleSidebar")}
         >
           <PanelLeft className="h-5 w-5" />
         </button>
@@ -70,12 +76,15 @@ export default function StudentHeader({ schoolName, studentName, onMenuClick, on
           <h1 className="truncate text-sm font-semibold text-foreground">{schoolName || "SchoolSync"}</h1>
           <p className="hidden text-xs text-muted-foreground sm:block">{todayLabel()}</p>
         </div>
+        <LanguageSwitcher className="sm:hidden" />
       </div>
+
+      <LanguageSwitcher className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 sm:flex" />
 
       <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">
         <button
           className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Notifications"
+          aria-label={t("common.notifications")}
         >
           <Bell className="h-5 w-5" />
         </button>
@@ -86,12 +95,12 @@ export default function StudentHeader({ schoolName, studentName, onMenuClick, on
             className="flex items-center gap-2 rounded-lg p-1 pr-2 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            aria-label="Profile menu"
+            aria-label={t("common.profileMenu")}
           >
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
               {initials || <User className="h-4 w-4" />}
             </span>
-            <span className="hidden text-sm font-medium text-foreground sm:block">{studentName || "Student"}</span>
+            <span className="hidden text-sm font-medium text-foreground sm:block">{studentName || t("common.studentFallback")}</span>
             <ChevronDown className={cn("hidden h-4 w-4 text-muted-foreground transition-transform sm:block", menuOpen && "rotate-180")} />
           </button>
 
@@ -101,7 +110,7 @@ export default function StudentHeader({ schoolName, studentName, onMenuClick, on
               className="absolute right-0 z-50 mt-2 w-52 overflow-hidden rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-lg"
             >
               <div className="border-b border-border px-3 py-2">
-                <p className="truncate text-sm font-medium text-foreground">{studentName || "Student"}</p>
+                <p className="truncate text-sm font-medium text-foreground">{studentName || t("common.studentFallback")}</p>
                 <p className="truncate text-xs text-muted-foreground">{schoolName}</p>
               </div>
               <Link
@@ -110,14 +119,14 @@ export default function StudentHeader({ schoolName, studentName, onMenuClick, on
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
               >
-                <User className="h-4 w-4 text-muted-foreground" /> My Profile
+                <User className="h-4 w-4 text-muted-foreground" /> {t("common.myProfile")}
               </Link>
               <button
                 role="menuitem"
                 onClick={() => signOut({ callbackUrl: "/student/login" })}
                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none"
               >
-                <LogOut className="h-4 w-4" /> Logout
+                <LogOut className="h-4 w-4" /> {t("common.logout")}
               </button>
             </div>
           )}

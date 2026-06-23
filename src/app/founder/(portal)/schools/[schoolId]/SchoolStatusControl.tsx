@@ -9,8 +9,10 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SCHOOL_STATUSES, SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT, type SchoolStatusValue } from "@/lib/school-status";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 export default function SchoolStatusControl({ schoolId, status }: { schoolId: string; status: SchoolStatusValue }) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<SchoolStatusValue>(status);
@@ -32,11 +34,11 @@ export default function SchoolStatusControl({ schoolId, status }: { schoolId: st
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: pendingStatus }),
       });
-      if (!res.ok) throw new Error("Request failed");
+      if (!res.ok) throw new Error(t("founder.requestFailed"));
       setOpen(false);
       router.refresh();
     } catch {
-      setError("Couldn't update status. Please try again.");
+      setError(t("founder.couldntUpdateStatus"));
     } finally {
       setSaving(false);
     }
@@ -48,7 +50,7 @@ export default function SchoolStatusControl({ schoolId, status }: { schoolId: st
         <Badge variant={SCHOOL_STATUS_BADGE_VARIANT[status]}>{SCHOOL_STATUS_LABEL[status]}</Badge>
         <Select value={status} onValueChange={(v) => startChange(v as SchoolStatusValue)}>
           <SelectTrigger className="h-8 w-36 text-xs">
-            <SelectValue placeholder="Change status" />
+            <SelectValue placeholder={t("founder.changeStatus")} />
           </SelectTrigger>
           <SelectContent>
             {SCHOOL_STATUSES.map((s) => (
@@ -61,15 +63,15 @@ export default function SchoolStatusControl({ schoolId, status }: { schoolId: st
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Change school status?</DialogTitle>
+            <DialogTitle>{t("founder.changeSchoolStatusQuestion")}</DialogTitle>
             <DialogDescription>
-              This will set the status to <strong>{SCHOOL_STATUS_LABEL[pendingStatus]}</strong>. This is a manual override and does not affect billing automatically.
+              {t("founder.changeStatusNotePrefix")} <strong>{SCHOOL_STATUS_LABEL[pendingStatus]}</strong>. {t("founder.changeStatusNoteSuffix")}
             </DialogDescription>
           </DialogHeader>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={confirm} disabled={saving}>{saving ? "Saving..." : "Confirm"}</Button>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>{t("common.cancel")}</Button>
+            <Button onClick={confirm} disabled={saving}>{saving ? t("common.saving") : t("founder.confirm")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

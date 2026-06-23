@@ -2,18 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Mail, Phone, User, BookOpen, ClipboardCheck, Award, GraduationCap, FileText, ArrowRightLeft, X, History } from "lucide-react";
+import { ArrowLeft, Mail, Phone, User, BookOpen, ClipboardCheck, Award, GraduationCap, FileText, ArrowRightLeft, X, History, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { CircularProgress } from "@/components/ui/circular-progress";
 import { cn, formatDate } from "@/lib/utils";
 
 interface AttendanceRecord { id: string; date: string; status: "PRESENT" | "ABSENT" | "LATE" }
 interface ExamResult { id: string; marks: number; exam: { id: string; name: string; maxMarks: number; order: number; scheme: { id: string; name: string } } }
 interface StudentDetail {
-  id: string; name: string; rollNo: string; email: string | null; phone: string | null;
-  parentName: string | null; parentPhone: string | null;
+  id: string; name: string; admissionNo: string | null; rollNo: string; email: string | null; phone: string | null;
+  fatherName: string | null; fatherPhone: string | null;
+  motherName: string | null; motherPhone: string | null;
   section: { id: string; name: string; class: { name: string } };
   attendances: AttendanceRecord[];
   examResults: ExamResult[];
@@ -57,10 +60,15 @@ interface HomeworkSummary {
   lateSubmittedCount: number;
   notSubmittedCount: number;
   checkedCount: number;
+  completedCount: number;
+  missedCount: number;
+  completionPercentage: number | null;
   averageScore: number | null;
   subjectWiseSummary: HomeworkSubjectSummary[];
   recentHomeworkRecords: HomeworkRecord[];
 }
+
+const COMPLETED_SUBMISSION_STATUSES = new Set(["SUBMITTED", "LATE_SUBMITTED", "CHECKED"]);
 
 const STATUS_CONFIG = {
   PRESENT: { label: "P", color: "bg-green-100 text-green-700 border-green-200" },
@@ -220,6 +228,7 @@ export default function StudentProfileClient({ initialStudent, initialClasses, i
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-2xl font-bold text-gray-900">{student.name}</h2>
                 <Badge variant="outline" className="font-mono">Roll: {student.rollNo}</Badge>
+                {student.admissionNo && <Badge variant="outline" className="font-mono">Adm. No: {student.admissionNo}</Badge>}
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <BookOpen className="w-4 h-4 text-gray-400" />
@@ -228,10 +237,16 @@ export default function StudentProfileClient({ initialStudent, initialClasses, i
               <div className="flex flex-wrap gap-4 mt-3">
                 {student.email && <div className="flex items-center gap-1.5 text-sm text-gray-500"><Mail className="w-3.5 h-3.5 text-gray-400" /> {student.email}</div>}
                 {student.phone && <div className="flex items-center gap-1.5 text-sm text-gray-500"><Phone className="w-3.5 h-3.5 text-gray-400" /> {student.phone}</div>}
-                {student.parentName && (
+                {(student.fatherName || student.fatherPhone) && (
                   <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                    <User className="w-3.5 h-3.5 text-gray-400" /> {student.parentName}
-                    {student.parentPhone && <span>· {student.parentPhone}</span>}
+                    <User className="w-3.5 h-3.5 text-gray-400" /> Father: {student.fatherName}
+                    {student.fatherPhone && <span>· {student.fatherPhone}</span>}
+                  </div>
+                )}
+                {(student.motherName || student.motherPhone) && (
+                  <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                    <User className="w-3.5 h-3.5 text-gray-400" /> Mother: {student.motherName}
+                    {student.motherPhone && <span>· {student.motherPhone}</span>}
                   </div>
                 )}
               </div>
@@ -262,6 +277,20 @@ export default function StudentProfileClient({ initialStudent, initialClasses, i
             <p className="text-sm text-gray-400 py-6 text-center">Loading homework performance...</p>
           ) : homeworkSummary ? (
             <>
+              <div className="flex flex-wrap items-center gap-6 rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-4">
+                <CircularProgress value={homeworkSummary.completionPercentage ?? 0} size={88} strokeWidth={9} />
+                <div className="flex-1 min-w-[200px] space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-semibold text-gray-900">
+                      {homeworkSummary.completedCount}/{homeworkSummary.totalAssigned} completed
+                    </span>
+                    <TrendIndicator summary={homeworkSummary} />
+                  </div>
+                  <Progress value={homeworkSummary.completionPercentage ?? 0} toned />
+                  <p className="text-xs text-gray-400">{homeworkSummary.missedCount} missed</p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   ["Total assigned", homeworkSummary.totalAssigned],
@@ -448,5 +477,34 @@ export default function StudentProfileClient({ initialStudent, initialClasses, i
         />
       )}
     </div>
+  );
+}
+
+function TrendIndicator({ summary }: { summary: HomeworkSummary }) {
+  const records = summary.recentHomeworkRecords;
+  if (records.length < 2 || summary.completionPercentage === null) return null;
+
+  const recentSlice = records.slice(0, Math.min(5, records.length));
+  const recentRate = (recentSlice.filter((r) => COMPLETED_SUBMISSION_STATUSES.has(r.submissionStatus)).length / recentSlice.length) * 100;
+  const diff = recentRate - summary.completionPercentage;
+
+  if (Math.abs(diff) < 5) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-400">
+        <Minus className="w-3.5 h-3.5" /> Steady
+      </span>
+    );
+  }
+  if (diff > 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
+        <TrendingUp className="w-3.5 h-3.5" /> Improving
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
+      <TrendingDown className="w-3.5 h-3.5" /> Declining
+    </span>
   );
 }

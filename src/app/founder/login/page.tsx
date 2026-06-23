@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
-function ThemeToggle() {
+function ThemeToggle({ label }: { label: string }) {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -22,7 +24,7 @@ function ThemeToggle() {
   return (
     <button
       onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-      aria-label="Toggle theme"
+      aria-label={label}
       className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground"
     >
       {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -31,6 +33,7 @@ function ThemeToggle() {
 }
 
 function FounderLoginForm() {
+  const { t } = useTranslation();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -53,20 +56,20 @@ function FounderLoginForm() {
         redirect: false,
       });
       if (result?.error) {
-        if (result.code === "no-account") setError("No account found with that email.");
-        else if (result.code === "invalid-password") setError("Incorrect password.");
-        else setError("Invalid credentials.");
+        if (result.code === "no-account") setError(t("auth.noAccountWithEmail"));
+        else if (result.code === "invalid-password") setError(t("auth.incorrectPassword"));
+        else setError(t("auth.invalidCredentialsShort"));
         return;
       }
       const session = await getSession();
       if ((session?.user as { role?: string } | undefined)?.role !== "FOUNDER") {
         await signOut({ redirect: false });
-        setError("This account does not have Founder access.");
+        setError(t("auth.notFounderAccount"));
         return;
       }
       window.location.href = "/founder/dashboard";
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError(t("auth.somethingWentWrong"));
     } finally {
       setLoading(false);
     }
@@ -74,8 +77,11 @@ function FounderLoginForm() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      <div className="absolute left-1/2 top-4 -translate-x-1/2 z-20">
+        <LanguageSwitcher />
+      </div>
       <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-        <ThemeToggle />
+        <ThemeToggle label={t("common.toggleTheme")} />
       </div>
 
       <div className="w-full max-w-md">
@@ -86,13 +92,13 @@ function FounderLoginForm() {
           >
             <ShieldCheck className="h-6 w-6" />
           </div>
-          <span className="mt-3 text-2xl font-bold tracking-tight text-foreground">Founder Portal</span>
-          <span className="mt-1 text-sm text-muted-foreground">Platform-level access — SchoolSync</span>
+          <span className="mt-3 text-2xl font-bold tracking-tight text-foreground">{t("auth.founderPortal")}</span>
+          <span className="mt-1 text-sm text-muted-foreground">{t("auth.founderPortalSubtitle")}</span>
         </div>
         <Card className="border-border/70 shadow-xl shadow-black/5 backdrop-blur supports-[backdrop-filter]:bg-card/80">
           <CardHeader>
-            <CardTitle className="text-xl">Sign in</CardTitle>
-            <CardDescription>Restricted to authorized Founder accounts.</CardDescription>
+            <CardTitle className="text-xl">{t("common.signIn")}</CardTitle>
+            <CardDescription>{t("auth.founderRestricted")}</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
@@ -102,7 +108,7 @@ function FounderLoginForm() {
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label htmlFor="email">Email address</Label>
+                <Label htmlFor="email">{t("common.email")}</Label>
                 <Input
                   id="email"
                   type="email"
@@ -115,9 +121,9 @@ function FounderLoginForm() {
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">{t("common.password")}</Label>
                   <a href="/forgot-password" className="text-xs font-medium text-muted-foreground underline hover:text-foreground">
-                    Forgot password?
+                    {t("common.forgotPassword")}
                   </a>
                 </div>
                 <Input
@@ -133,15 +139,15 @@ function FounderLoginForm() {
             </CardContent>
             <CardFooter>
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Signing in..." : "Sign in"}
+                {loading ? t("common.signingIn") : t("common.signIn")}
               </Button>
             </CardFooter>
           </form>
         </Card>
         <p className="mt-5 text-center text-xs text-muted-foreground">
-          Not a Founder?{" "}
+          {t("auth.notFounder")}{" "}
           <a href="/login" className="font-medium underline hover:text-foreground">
-            Go to school login
+            {t("auth.goToSchoolLogin")}
           </a>
         </p>
       </div>

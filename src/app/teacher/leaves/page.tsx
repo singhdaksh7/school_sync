@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { format, differenceInCalendarDays } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface LeaveRequest {
   id: string;
@@ -19,12 +20,13 @@ interface LeaveRequest {
 }
 
 const STATUS_CONFIG = {
-  PENDING:  { label: "Pending",  color: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-  APPROVED: { label: "Approved", color: "bg-green-50  text-green-700  border-green-200"  },
-  REJECTED: { label: "Rejected", color: "bg-red-50    text-red-700    border-red-200"    },
+  PENDING:  { labelKey: "teacherLeaves.statusPending",  color: "bg-yellow-50 text-yellow-700 border-yellow-200" },
+  APPROVED: { labelKey: "teacherLeaves.statusApproved", color: "bg-green-50  text-green-700  border-green-200"  },
+  REJECTED: { labelKey: "teacherLeaves.statusRejected", color: "bg-red-50    text-red-700    border-red-200"    },
 };
 
 export default function TeacherLeavesPage() {
+  const { t } = useTranslation();
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,9 +50,9 @@ export default function TeacherLeavesPage() {
 
   async function submit() {
     if (!form.reason.trim() || !form.fromDate || !form.toDate) {
-      setError("All fields are required."); return;
+      setError(t("teacherLeaves.allFieldsRequired")); return;
     }
-    if (form.toDate < form.fromDate) { setError("To date must be on or after from date."); return; }
+    if (form.toDate < form.fromDate) { setError(t("teacherLeaves.toDateError")); return; }
     setSaving(true); setError("");
     const res = await fetch("/api/teacher/leaves", {
       method: "POST",
@@ -58,7 +60,7 @@ export default function TeacherLeavesPage() {
       body: JSON.stringify(form),
     });
     const data = await res.json();
-    if (!res.ok) { setError(data.error || "Failed to submit."); setSaving(false); return; }
+    if (!res.ok) { setError(data.error || t("teacherLeaves.failedToSubmit")); setSaving(false); return; }
     setShowForm(false);
     setForm({ reason: "", fromDate: "", toDate: "" });
     fetchLeaves();
@@ -71,13 +73,13 @@ export default function TeacherLeavesPage() {
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">My Leave Requests</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{t("teacherLeaves.title")}</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {pending > 0 ? `${pending} pending approval` : "Submit a request and the admin will review it"}
+              {pending > 0 ? t("teacherLeaves.pendingApproval", { count: pending }) : t("teacherLeaves.submitHint")}
             </p>
           </div>
           <Button onClick={() => { setShowForm(true); setError(""); }} className="gap-2">
-            <Plus className="w-4 h-4" /> Request Leave
+            <Plus className="w-4 h-4" /> {t("teacherLeaves.requestLeave")}
           </Button>
         </div>
 
@@ -85,7 +87,7 @@ export default function TeacherLeavesPage() {
         {showForm && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <p className="font-semibold text-gray-900 text-sm">New Leave Request</p>
+              <p className="font-semibold text-gray-900 text-sm">{t("teacherLeaves.newRequest")}</p>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-4 h-4" />
               </button>
@@ -93,7 +95,7 @@ export default function TeacherLeavesPage() {
             {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-gray-700">From *</label>
+                <label className="block text-sm font-medium text-gray-700">{t("teacherLeaves.from")}</label>
                 <input
                   type="date"
                   value={form.fromDate}
@@ -102,7 +104,7 @@ export default function TeacherLeavesPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-gray-700">To *</label>
+                <label className="block text-sm font-medium text-gray-700">{t("teacherLeaves.to")}</label>
                 <input
                   type="date"
                   value={form.toDate}
@@ -112,19 +114,19 @@ export default function TeacherLeavesPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Reason *</label>
+              <label className="block text-sm font-medium text-gray-700">{t("teacherLeaves.reason")}</label>
               <textarea
                 rows={3}
                 value={form.reason}
                 onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                placeholder="Briefly describe the reason for your leave..."
+                placeholder={t("teacherLeaves.reasonPlaceholder")}
                 className="w-full px-3 py-2 rounded-md border border-gray-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>{t("teacherLeaves.cancel")}</Button>
               <Button size="sm" onClick={submit} disabled={saving}>
-                {saving ? "Submitting…" : "Submit Request"}
+                {saving ? t("teacherLeaves.submitting") : t("teacherLeaves.submitRequest")}
               </Button>
             </div>
           </div>
@@ -132,13 +134,13 @@ export default function TeacherLeavesPage() {
 
         {/* Leave list */}
         {loading ? (
-          <div className="text-center py-20 text-gray-400">Loading...</div>
+          <div className="text-center py-20 text-gray-400">{t("common.loading")}</div>
         ) : leaves.length === 0 ? (
           <Card>
             <CardContent className="py-20 text-center">
               <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">No leave requests yet</p>
-              <p className="text-sm text-gray-400 mt-1">Click &quot;Request Leave&quot; to submit one</p>
+              <p className="text-gray-500 font-medium">{t("teacherLeaves.noLeaveYet")}</p>
+              <p className="text-sm text-gray-400 mt-1">{t("teacherLeaves.clickToRequest")}</p>
             </CardContent>
           </Card>
         ) : (
@@ -154,25 +156,25 @@ export default function TeacherLeavesPage() {
                         <p className="text-sm font-medium text-gray-800">{l.reason}</p>
                         <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 flex-wrap">
                           <span>{format(new Date(l.fromDate), "dd MMM")} → {format(new Date(l.toDate), "dd MMM yyyy")}</span>
-                          <span className="font-medium text-gray-500">{days} day{days > 1 ? "s" : ""}</span>
-                          <span>Submitted {format(new Date(l.createdAt), "dd MMM yyyy")}</span>
+                          <span className="font-medium text-gray-500">{t("teacherLeaves.dayCount", { count: days, plural: days > 1 ? "s" : "" })}</span>
+                          <span>{t("teacherLeaves.submittedOn", { date: format(new Date(l.createdAt), "dd MMM yyyy") })}</span>
                           {l.reviewedBy && (
-                            <span className="text-gray-500">Reviewed by <span className="font-medium">{l.reviewedBy.name}</span></span>
+                            <span className="text-gray-500">{t("teacherLeaves.reviewedBy", { name: l.reviewedBy.name })}</span>
                           )}
                         </div>
                       </div>
                       <Badge variant="outline" className={cn("text-xs flex-shrink-0", cfg.color)}>
-                        {cfg.label}
+                        {t(cfg.labelKey)}
                       </Badge>
                     </div>
                     {l.status === "APPROVED" && (
                       <p className="text-xs text-green-600 mt-2 bg-green-50 px-3 py-1.5 rounded-lg">
-                        Your leave has been approved. Substitute arrangements will be made automatically.
+                        {t("teacherLeaves.approvedNote")}
                       </p>
                     )}
                     {l.status === "REJECTED" && (
                       <p className="text-xs text-red-500 mt-2 bg-red-50 px-3 py-1.5 rounded-lg">
-                        Your leave request was not approved.
+                        {t("teacherLeaves.rejectedNote")}
                       </p>
                     )}
                   </CardContent>

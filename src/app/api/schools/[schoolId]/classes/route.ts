@@ -23,7 +23,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
 
   const classes = await prisma.class.findMany({
     where: { schoolId },
-    include: { sections: { include: { _count: { select: { students: true } } } } },
+    include: {
+      sections: {
+        include: {
+          _count: { select: { students: true } },
+          students: { orderBy: { rollNo: "asc" }, select: { id: true, name: true, rollNo: true } },
+        },
+      },
+    },
     orderBy: { name: "asc" },
   });
 

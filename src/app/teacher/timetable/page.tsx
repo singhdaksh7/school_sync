@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CalendarDays } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -15,6 +16,7 @@ interface Slot {
 }
 
 export default function TeacherTimetablePage() {
+  const { t } = useTranslation();
   const [slots, setSlots] = useState<Slot[]>([]);
   const [periodsPerDay, setPeriodsPerDay] = useState(6);
   const [loading, setLoading] = useState(true);
@@ -40,19 +42,19 @@ export default function TeacherTimetablePage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Timetable</h1>
-          <p className="text-sm text-gray-500 mt-1">Your weekly class schedule</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t("teacherTimetable.title")}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t("teacherTimetable.subtitle")}</p>
         </div>
 
         {loading ? (
-          <div className="text-center py-20 text-gray-400">Loading...</div>
+          <div className="text-center py-20 text-gray-400">{t("common.loading")}</div>
         ) : !hasAnySlot ? (
           <Card>
             <CardContent className="py-20 text-center">
               <CalendarDays className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-700 font-semibold text-lg">No timetable assigned yet</p>
+              <p className="text-gray-700 font-semibold text-lg">{t("teacherTimetable.noTimetable")}</p>
               <p className="text-gray-400 text-sm mt-2">
-                Your school admin has not assigned you any class periods. Please contact them.
+                {t("teacherTimetable.noTimetableHint")}
               </p>
             </CardContent>
           </Card>
@@ -62,7 +64,7 @@ export default function TeacherTimetablePage() {
               <thead>
                 <tr>
                   <th className="w-20 px-3 py-2.5 text-xs font-semibold text-gray-500 text-left bg-gray-50 border border-gray-200">
-                    Period
+                    {t("teacherTimetable.period")}
                   </th>
                   {DAYS.map((d) => (
                     <th
@@ -88,7 +90,7 @@ export default function TeacherTimetablePage() {
                           {slot ? (
                             <div className="bg-blue-50 border border-blue-200 rounded-md px-3 py-2 min-h-[52px]">
                               <p className="text-xs font-semibold text-blue-800">
-                                Class {slot.className} – {slot.sectionName}
+                                {t("teacherTimetable.classSection", { className: slot.className, sectionName: slot.sectionName })}
                               </p>
                               {slot.subject && (
                                 <p className="text-xs text-blue-500 mt-0.5">{slot.subject}</p>

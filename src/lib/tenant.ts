@@ -109,3 +109,19 @@ export async function allTeachersBelongToSchool(teacherIds: string[], schoolId: 
   });
   return count === uniqueIds.length;
 }
+
+export async function examMilestoneBelongsToSchool(examMilestoneId: string, schoolId: string) {
+  const milestone = await prisma.examMilestone.findFirst({
+    where: { id: examMilestoneId, schoolId },
+    select: { id: true },
+  });
+  return Boolean(milestone);
+}
+
+export async function notebookCheckBelongsToSchool(notebookCheckId: string, schoolId: string) {
+  const check = await prisma.notebookCheck.findFirst({
+    where: { id: notebookCheckId, schoolId },
+    select: { id: true },
+  });
+  return Boolean(check);
+}

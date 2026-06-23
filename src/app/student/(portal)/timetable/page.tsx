@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Clock, User } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -15,6 +16,7 @@ interface Slot {
 }
 
 export default function StudentTimetablePage() {
+  const { t } = useTranslation();
   const [slots, setSlots] = useState<Slot[]>([]);
   const [today, setToday] = useState<Slot[]>([]);
   const [dayOfWeek, setDayOfWeek] = useState(1);
@@ -53,8 +55,8 @@ export default function StudentTimetablePage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Timetable</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Your class schedule for the week.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("studentTimetable.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("studentTimetable.subtitle")}</p>
         </div>
         <div className="flex gap-2">
           {(["today", "week"] as const).map((v) => (
@@ -65,7 +67,7 @@ export default function StudentTimetablePage() {
                 view === v ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted text-muted-foreground hover:bg-muted/70"
               }`}
             >
-              {v === "today" ? "Today" : "Weekly"}
+              {v === "today" ? t("studentTimetable.today") : t("studentTimetable.weekly")}
             </button>
           ))}
         </div>
@@ -76,8 +78,8 @@ export default function StudentTimetablePage() {
           <Card className="border-border">
             <CardContent className="py-16 text-center">
               <CalendarDays className="mx-auto h-10 w-10 text-muted-foreground/40" />
-              <p className="mt-3 font-medium text-foreground">No periods scheduled for today</p>
-              {dayOfWeek === 7 && <p className="mt-1 text-sm text-muted-foreground">It&apos;s Sunday — enjoy your day off!</p>}
+              <p className="mt-3 font-medium text-foreground">{t("studentTimetable.noPeriodsToday")}</p>
+              {dayOfWeek === 7 && <p className="mt-1 text-sm text-muted-foreground">{t("studentTimetable.sundayOff")}</p>}
             </CardContent>
           </Card>
         ) : (
@@ -89,7 +91,7 @@ export default function StudentTimetablePage() {
                     P{slot.period}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-foreground">{slot.subject || "Free Period"}</p>
+                    <p className="truncate text-sm font-semibold text-foreground">{slot.subject || t("studentTimetable.freePeriod")}</p>
                     {slot.teacher && (
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                         <User className="h-3 w-3" /> {slot.teacher.name}
@@ -107,7 +109,7 @@ export default function StudentTimetablePage() {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th className="w-16 border border-border bg-muted/50 px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground">Period</th>
+                <th className="w-16 border border-border bg-muted/50 px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground">{t("studentTimetable.period")}</th>
                 {DAYS.map((d, i) => (
                   <th
                     key={d}

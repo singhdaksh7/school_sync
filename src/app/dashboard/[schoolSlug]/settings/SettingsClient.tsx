@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Save, Building2, Phone, Mail, Globe, MapPin, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,8 @@ interface SchoolData {
 interface Props { initialSchool: SchoolData }
 
 export default function SettingsClient({ initialSchool }: Props) {
-  const [school] = useState<SchoolData>(initialSchool);
+  const router = useRouter();
+  const [school, setSchool] = useState<SchoolData>(initialSchool);
   const [form, setForm] = useState({
     name: initialSchool.name,
     address: initialSchool.address || "",
@@ -32,13 +34,28 @@ export default function SettingsClient({ initialSchool }: Props) {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true); setError(""); setSaved(false);
-    const res = await fetch(`/api/schools/${school.id}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    const data = await res.json();
-    if (!res.ok) { setError(data.error); setSaving(false); return; }
-    setSaved(true); setTimeout(() => setSaved(false), 2000); setSaving(false);
+    try {
+      const res = await fetch(`/api/schools/${school.id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error); setSaving(false); return; }
+      setSchool((prev) => ({ ...prev, ...data }));
+      setForm({
+        name: data.name,
+        address: data.address || "",
+        phone: data.phone || "",
+        email: data.email || "",
+        website: data.website || "",
+      });
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
+      router.refresh();
+    } catch {
+      setError("Could not save settings. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (

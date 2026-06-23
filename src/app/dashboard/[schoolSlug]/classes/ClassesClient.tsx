@@ -15,7 +15,8 @@ const CLASS_OPTIONS = [
   "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
 ];
 
-interface Section { id: string; name: string; _count: { students: number } }
+interface StudentSummary { id: string; name: string; rollNo: string }
+interface Section { id: string; name: string; _count: { students: number }; students: StudentSummary[] }
 interface Class { id: string; name: string; sections: Section[] }
 
 interface Props {
@@ -38,12 +39,20 @@ export default function ClassesClient({ initialClasses, schoolId }: Props) {
   const [sectionLoading, setSectionLoading] = useState(false);
 
   const [error, setError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
 
   async function fetchClasses() {
     setLoading(true);
-    const res = await fetch(`/api/schools/${schoolId}/classes`);
-    setClasses(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/classes`);
+      if (!res.ok) throw new Error("Failed to refresh classes");
+      setClasses(await res.json());
+      setRefreshError("");
+    } catch {
+      setRefreshError("Could not refresh the class list. Please reload the page.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function addClass() {
@@ -51,51 +60,72 @@ export default function ClassesClient({ initialClasses, schoolId }: Props) {
     const count = parseInt(sectionCount, 10);
     if (isNaN(count) || count < 0 || count > 26) { setError("Section count must be 0–26"); return; }
     setClassLoading(true); setError("");
-    const res = await fetch(`/api/schools/${schoolId}/classes`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: selectedClass }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setError(data.error); setClassLoading(false); return; }
-    if (count > 0) {
-      const sectionLetters = Array.from({ length: count }, (_, i) => String.fromCharCode(65 + i));
-      for (const letter of sectionLetters) {
-        await fetch(`/api/schools/${schoolId}/classes/${data.id}/sections`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: letter }),
-        });
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/classes`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: selectedClass }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error); setClassLoading(false); return; }
+      if (count > 0) {
+        const sectionLetters = Array.from({ length: count }, (_, i) => String.fromCharCode(65 + i));
+        for (const letter of sectionLetters) {
+          const sectionRes = await fetch(`/api/schools/${schoolId}/classes/${data.id}/sections`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: letter }),
+          });
+          if (!sectionRes.ok) throw new Error(`Failed to create section ${letter}`);
+        }
       }
+      setAddClassOpen(false); setSelectedClass(""); setSectionCount("1");
+    } catch {
+      setRefreshError("Class was created but one or more sections failed. Refreshing the list — please check and retry if needed.");
+    } finally {
+      setClassLoading(false);
+      void fetchClasses();
     }
-    setAddClassOpen(false); setSelectedClass(""); setSectionCount("1");
-    fetchClasses(); setClassLoading(false);
   }
 
   async function deleteClass(classId: string) {
     if (!confirm("Delete this class and all its sections and students?")) return;
-    await fetch(`/api/schools/${schoolId}/classes/${classId}`, { method: "DELETE" });
-    fetchClasses();
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/classes/${classId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+    } catch {
+      setRefreshError("Could not delete the class. Please try again.");
+    }
+    void fetchClasses();
   }
 
   async function addSection(classId: string) {
     if (!sectionName.trim()) return;
     setSectionLoading(true); setError("");
-    const res = await fetch(`/api/schools/${schoolId}/classes/${classId}/sections`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: sectionName }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setError(data.error); setSectionLoading(false); return; }
-    setAddSectionOpen(null); setSectionName("");
-    fetchClasses(); setSectionLoading(false);
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/classes/${classId}/sections`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: sectionName }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error); setSectionLoading(false); return; }
+      setAddSectionOpen(null); setSectionName("");
+    } finally {
+      setSectionLoading(false);
+      void fetchClasses();
+    }
   }
 
   async function deleteSection(classId: string, sectionId: string) {
     if (!confirm("Delete this section? All students in it will need to be reassigned.")) return;
-    await fetch(`/api/schools/${schoolId}/classes/${classId}/sections`, {
-      method: "DELETE", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sectionId }),
-    });
-    fetchClasses();
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/classes/${classId}/sections`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sectionId }),
+      });
+      if (!res.ok) throw new Error("Delete failed");
+    } catch {
+      setRefreshError("Could not delete the section. Please try again.");
+    }
+    void fetchClasses();
   }
 
   const toggleExpand = (id: string) =>
@@ -115,6 +145,12 @@ export default function ClassesClient({ initialClasses, schoolId }: Props) {
           <Plus className="w-4 h-4" /> Add Class
         </Button>
       </div>
+
+      {refreshError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+          {refreshError}
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">
@@ -162,14 +198,26 @@ export default function ClassesClient({ initialClasses, schoolId }: Props) {
                     {cls.sections.length === 0 ? (
                       <p className="text-sm text-gray-400 pl-11">No sections — add one above</p>
                     ) : (
-                      <div className="flex flex-wrap gap-2 pl-11">
+                      <div className="space-y-3 pl-11">
                         {cls.sections.map((sec) => (
-                          <div key={sec.id} className="flex items-center gap-1.5 bg-gray-100 rounded-lg px-3 py-1.5">
-                            <span className="text-sm font-medium text-gray-800">Section {sec.name}</span>
-                            <Badge variant="secondary" className="text-xs">{sec._count.students} students</Badge>
-                            <button onClick={() => deleteSection(cls.id, sec.id)} className="ml-1 text-gray-400 hover:text-red-500">
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                          <div key={sec.id} className="rounded-lg border border-gray-100">
+                            <div className="flex items-center gap-1.5 bg-gray-50 rounded-t-lg px-3 py-1.5">
+                              <span className="text-sm font-medium text-gray-800">Section {sec.name}</span>
+                              <Badge variant="secondary" className="text-xs">{sec._count.students} students</Badge>
+                              <button onClick={() => deleteSection(cls.id, sec.id)} className="ml-auto text-gray-400 hover:text-red-500">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                            {sec.students.length > 0 && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 px-3 py-2">
+                                {sec.students.map((student) => (
+                                  <div key={student.id} className="flex items-center gap-2 text-sm text-gray-700 truncate">
+                                    <span className="text-xs text-gray-400 shrink-0">Roll {student.rollNo}</span>
+                                    <span className="truncate">{student.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

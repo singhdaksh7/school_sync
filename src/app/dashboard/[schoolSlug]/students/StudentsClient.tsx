@@ -14,12 +14,17 @@ import { Badge } from "@/components/ui/badge";
 interface Section { id: string; name: string; class: { id: string; name: string } }
 interface ClassWithSections { id: string; name: string; sections: { id: string; name: string }[] }
 interface Student {
-  id: string; name: string; rollNo: string; email: string | null; phone: string | null;
-  parentName: string | null; parentPhone: string | null; sectionId: string;
+  id: string; name: string; admissionNo: string | null; rollNo: string; email: string | null; phone: string | null;
+  fatherName: string | null; fatherPhone: string | null;
+  motherName: string | null; motherPhone: string | null;
+  sectionId: string;
   section: { name: string; class: { name: string } }
 }
 
-const empty = { name: "", rollNo: "", sectionId: "", email: "", phone: "", parentName: "", parentPhone: "" };
+const empty = {
+  name: "", admissionNo: "", rollNo: "", sectionId: "", email: "", phone: "",
+  fatherName: "", fatherPhone: "", motherName: "", motherPhone: "",
+};
 
 function parseCSV(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
@@ -51,6 +56,7 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [csvLoading, setCsvLoading] = useState(false);
@@ -59,29 +65,48 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
 
   async function fetchData() {
     setLoading(true);
-    const [studentsRes, classesRes] = await Promise.all([
-      fetch(`/api/schools/${schoolId}/students`),
-      fetch(`/api/schools/${schoolId}/classes`),
-    ]);
-    const studentsData = await studentsRes.json();
-    const classesData = await classesRes.json();
-    setStudents(studentsData);
-    const allSections: Section[] = (classesData as ClassWithSections[]).flatMap((c) =>
-      c.sections.map((s) => ({ id: s.id, name: s.name, class: { id: c.id, name: c.name } }))
-    );
-    setSections(allSections);
-    setLoading(false);
+    try {
+      const [studentsRes, classesRes] = await Promise.all([
+        fetch(`/api/schools/${schoolId}/students`),
+        fetch(`/api/schools/${schoolId}/classes`),
+      ]);
+      if (!studentsRes.ok || !classesRes.ok) throw new Error("Failed to refresh students");
+      const studentsData = await studentsRes.json();
+      const classesData = await classesRes.json();
+      setStudents(studentsData);
+      const allSections: Section[] = (classesData as ClassWithSections[]).flatMap((c) =>
+        c.sections.map((s) => ({ id: s.id, name: s.name, class: { id: c.id, name: c.name } }))
+      );
+      setSections(allSections);
+      setRefreshError("");
+    } catch {
+      setRefreshError("Could not refresh the student list. Please reload the page.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openAdd() { setEditing(null); setForm(empty); setError(""); setDialogOpen(true); }
   function openEdit(s: Student) {
     setEditing(s);
-    setForm({ name: s.name, rollNo: s.rollNo, sectionId: s.sectionId, email: s.email || "", phone: s.phone || "", parentName: s.parentName || "", parentPhone: s.parentPhone || "" });
+    setForm({
+      name: s.name, admissionNo: s.admissionNo || "", rollNo: s.rollNo, sectionId: s.sectionId,
+      email: s.email || "", phone: s.phone || "",
+      fatherName: s.fatherName || "", fatherPhone: s.fatherPhone || "",
+      motherName: s.motherName || "", motherPhone: s.motherPhone || "",
+    });
     setError(""); setDialogOpen(true);
   }
 
   async function save() {
-    if (!form.name.trim() || !form.rollNo.trim() || !form.sectionId) { setError("Name, roll no., and section are required"); return; }
+    if (!form.name.trim() || !form.admissionNo.trim() || !form.rollNo.trim() || !form.sectionId) {
+      setError("Name, admission number, roll no., and section are required");
+      return;
+    }
+    if (!form.fatherPhone.trim() && !form.motherPhone.trim()) {
+      setError("Father Phone or Mother Phone is required so the student can log in");
+      return;
+    }
     setSaving(true); setError("");
     const url = editing ? `/api/schools/${schoolId}/students/${editing.id}` : `/api/schools/${schoolId}/students`;
     const res = await fetch(url, {
@@ -92,14 +117,25 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
     const data = await res.json();
     if (!res.ok) { setError(data.error); setSaving(false); return; }
     setDialogOpen(false);
-    fetchData();
     setSaving(false);
+    // Reflect the saved record immediately; the response has the same nested
+    // shape the list renders, so this beats waiting on the network round-trip.
+    setStudents((prev) =>
+      editing ? prev.map((s) => (s.id === data.id ? data : s)) : [...prev, data]
+    );
+    void fetchData();
   }
 
   async function deleteStudent(id: string) {
     if (!confirm("Delete this student?")) return;
-    await fetch(`/api/schools/${schoolId}/students/${id}`, { method: "DELETE" });
-    fetchData();
+    setStudents((prev) => prev.filter((s) => s.id !== id));
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/students/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+    } catch {
+      setRefreshError("Could not delete the student. Please try again.");
+    }
+    void fetchData();
   }
 
   async function handleCSV(e: React.ChangeEvent<HTMLInputElement>) {
@@ -152,6 +188,12 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
           </Button>
         </div>
       </div>
+
+      {refreshError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+          {refreshError}
+        </div>
+      )}
 
       {sections.length === 0 && !loading && (
         <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-lg">
@@ -217,8 +259,14 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
                           <Button variant="ghost" size="icon" onClick={() => deleteStudent(s.id)} className="h-7 w-7 text-gray-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></Button>
                         </div>
                       </div>
-                      {(s.parentName || s.parentPhone) && (
-                        <p className="text-xs text-gray-400 mt-1">Parent: {s.parentName} {s.parentPhone && `· ${s.parentPhone}`}</p>
+                      {s.admissionNo && (
+                        <p className="text-xs text-gray-400 mt-1">Admission No: {s.admissionNo}</p>
+                      )}
+                      {(s.fatherName || s.fatherPhone) && (
+                        <p className="text-xs text-gray-400 mt-0.5">Father: {s.fatherName} {s.fatherPhone && `· ${s.fatherPhone}`}</p>
+                      )}
+                      {(s.motherName || s.motherPhone) && (
+                        <p className="text-xs text-gray-400 mt-0.5">Mother: {s.motherName} {s.motherPhone && `· ${s.motherPhone}`}</p>
                       )}
                     </CardContent>
                   </Card>
@@ -234,13 +282,20 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
           <DialogHeader><DialogTitle>{editing ? "Edit Student" : "Add Student"}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-1">
             {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
+            <p className="text-sm font-semibold text-gray-700">Student Information</p>
             <div className="space-y-1.5">
               <Label>Full Name *</Label>
               <Input placeholder="Ravi Kumar" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Roll Number *</Label>
-              <Input placeholder="101" value={form.rollNo} onChange={(e) => setForm({ ...form, rollNo: e.target.value })} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Admission Number *</Label>
+                <Input placeholder="ADM-001" value={form.admissionNo} onChange={(e) => setForm({ ...form, admissionNo: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Roll Number *</Label>
+                <Input placeholder="101" value={form.rollNo} onChange={(e) => setForm({ ...form, rollNo: e.target.value })} />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>Class & Section *</Label>
@@ -253,16 +308,6 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Parent Name</Label>
-                <Input placeholder="Suresh Kumar" value={form.parentName} onChange={(e) => setForm({ ...form, parentName: e.target.value })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Parent Phone</Label>
-                <Input placeholder="+91 98765 43210" value={form.parentPhone} onChange={(e) => setForm({ ...form, parentPhone: e.target.value })} />
-              </div>
-            </div>
             <div className="space-y-1.5">
               <Label>Email</Label>
               <Input type="email" placeholder="student@email.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
@@ -270,6 +315,33 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
             <div className="space-y-1.5">
               <Label>Phone</Label>
               <Input placeholder="+91 98765 43210" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            </div>
+
+            <div className="pt-1 border-t border-gray-100">
+              <p className="text-sm font-semibold text-gray-700 pt-3">Parent Information</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Father Phone or Mother Phone becomes the student&apos;s login password — at least one is required.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Father Name</Label>
+                <Input placeholder="Suresh Kumar" value={form.fatherName} onChange={(e) => setForm({ ...form, fatherName: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Father Phone</Label>
+                <Input placeholder="+91 98765 43210" value={form.fatherPhone} onChange={(e) => setForm({ ...form, fatherPhone: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Mother Name</Label>
+                <Input placeholder="Anita Kumar" value={form.motherName} onChange={(e) => setForm({ ...form, motherName: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Mother Phone</Label>
+                <Input placeholder="+91 98765 43210" value={form.motherPhone} onChange={(e) => setForm({ ...form, motherPhone: e.target.value })} />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -299,7 +371,8 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
             {csvResults.filter((r) => r.success).length} added, {csvResults.filter((r) => !r.success).length} failed
           </p>
           <p className="text-xs text-gray-400 bg-blue-50 px-3 py-2 rounded border border-blue-100">
-            CSV format: <code>name,rollno,class,section,email,phone,parentname,parentphone</code>
+            CSV format: <code>name,admissionno,rollno,class,section,email,phone,fathername,fatherphone,mothername,motherphone</code>
+            <br />Each row needs at least one of fatherphone/motherphone so the student can log in.
           </p>
           <DialogFooter>
             <Button onClick={() => setCsvDialogOpen(false)}>Close</Button>

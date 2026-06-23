@@ -8,25 +8,27 @@ import {
   Receipt, FileText, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface FounderSidebarProps {
   onClose?: () => void;
 }
 
 const navItems = [
-  { href: "/founder/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/founder/schools", label: "Schools", icon: Building2 },
-  { href: "/founder/analytics", label: "Analytics", icon: PieChart },
-  { href: "/founder/revenue", label: "Revenue", icon: IndianRupee },
-  { href: "/founder/billing", label: "Billing", icon: CreditCard },
-  { href: "/founder/payment-proofs", label: "Payment Proofs", icon: Receipt },
-  { href: "/founder/invoices", label: "Invoices", icon: FileText },
-  { href: "/founder/feature-flags", label: "Feature Flags", icon: Flag },
-  { href: "/founder/notifications", label: "Notifications", icon: Bell },
-  { href: "/founder/settings", label: "Settings", icon: Settings },
+  { href: "/founder/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { href: "/founder/schools", labelKey: "nav.schools", icon: Building2 },
+  { href: "/founder/analytics", labelKey: "nav.analytics", icon: PieChart },
+  { href: "/founder/revenue", labelKey: "nav.revenue", icon: IndianRupee },
+  { href: "/founder/billing", labelKey: "nav.billing", icon: CreditCard },
+  { href: "/founder/payment-proofs", labelKey: "nav.paymentProofs", icon: Receipt },
+  { href: "/founder/invoices", labelKey: "nav.invoices", icon: FileText },
+  { href: "/founder/feature-flags", labelKey: "nav.featureFlags", icon: Flag },
+  { href: "/founder/notifications", labelKey: "nav.notifications", icon: Bell },
+  { href: "/founder/settings", labelKey: "nav.settings", icon: Settings },
 ];
 
 export default function FounderSidebar({ onClose }: FounderSidebarProps) {
+  const { t } = useTranslation();
   const pathname = usePathname();
 
   return (
@@ -40,14 +42,14 @@ export default function FounderSidebar({ onClose }: FounderSidebarProps) {
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold leading-tight">Founder Portal</p>
-            <p className="text-[11px] text-muted-foreground">SchoolSync Platform</p>
+            <p className="truncate text-sm font-bold leading-tight">{t("nav.founderPortal")}</p>
+            <p className="text-[11px] text-muted-foreground">{t("founder.schoolSyncPlatform")}</p>
           </div>
           {onClose && (
             <button
               onClick={onClose}
               className="flex-shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground md:hidden"
-              aria-label="Close menu"
+              aria-label={t("common.closeMenu")}
             >
               <X className="h-5 w-5" />
             </button>
@@ -55,7 +57,7 @@ export default function FounderSidebar({ onClose }: FounderSidebarProps) {
         </div>
       </div>
 
-      <div className="px-5 pb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Menu</div>
+      <div className="px-5 pb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{t("common.menu")}</div>
 
       <nav className="no-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-1">
         {navItems.map((item) => {
@@ -75,7 +77,7 @@ export default function FounderSidebar({ onClose }: FounderSidebarProps) {
                 <span className="absolute left-0 top-1/2 h-5 w-1 -translate-x-1.5 -translate-y-1/2 rounded-full bg-indigo-600" aria-hidden="true" />
               )}
               <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
-              <span className="truncate">{item.label}</span>
+              <span className="truncate">{t(item.labelKey)}</span>
               {active && <ChevronRight className="ml-auto h-3.5 w-3.5" />}
             </Link>
           );
@@ -85,7 +87,7 @@ export default function FounderSidebar({ onClose }: FounderSidebarProps) {
       <div className="p-3">
         <div className="flex items-center justify-between rounded-xl border border-sidebar-border bg-muted/40 px-3 py-2.5">
           <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-            Founder
+            {t("founder.founderBadge")}
           </span>
           <span className="text-[10px] text-muted-foreground">SchoolSync</span>
         </div>

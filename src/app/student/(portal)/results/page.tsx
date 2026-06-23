@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { Award, Download, FileText, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface ExamMark {
   id: string;
@@ -35,6 +36,7 @@ interface ReportCard {
 }
 
 export default function StudentResultsPage() {
+  const { t } = useTranslation();
   const [marks, setMarks] = useState<ExamMark[]>([]);
   const [reportCards, setReportCards] = useState<ReportCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,8 +67,8 @@ export default function StudentResultsPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Results</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Your exam results and published report cards.</p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("studentResults.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("studentResults.subtitle")}</p>
       </div>
 
       {/* Performance trend */}
@@ -74,12 +76,12 @@ export default function StudentResultsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <TrendingUp className="h-4 w-4 text-primary" />
-            Performance Trend
+            {t("studentResults.performanceTrend")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {marks.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No exam results yet.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">{t("studentResults.noResultsYet")}</p>
           ) : (
             <div className="flex h-40 items-end gap-3 overflow-x-auto pb-1">
               {[...marks].reverse().map((m) => (
@@ -103,21 +105,21 @@ export default function StudentResultsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Award className="h-4 w-4 text-primary" />
-            Exam Results
+            {t("studentResults.examResults")}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {marks.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No exam results yet.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">{t("studentResults.noResultsYet")}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="px-5 py-2.5 font-medium">Exam</th>
-                    <th className="px-5 py-2.5 font-medium">Scheme</th>
-                    <th className="px-5 py-2.5 font-medium">Marks</th>
-                    <th className="px-5 py-2.5 font-medium">Grade</th>
+                    <th className="px-5 py-2.5 font-medium">{t("studentResults.exam")}</th>
+                    <th className="px-5 py-2.5 font-medium">{t("studentResults.scheme")}</th>
+                    <th className="px-5 py-2.5 font-medium">{t("studentResults.marks")}</th>
+                    <th className="px-5 py-2.5 font-medium">{t("studentResults.grade")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -139,11 +141,11 @@ export default function StudentResultsPage() {
       {/* Report cards */}
       <div className="space-y-4">
         <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
-          <FileText className="h-4 w-4 text-primary" /> Report Cards
+          <FileText className="h-4 w-4 text-primary" /> {t("studentResults.reportCards")}
         </h2>
         {reportCards.length === 0 ? (
           <Card className="border-border">
-            <CardContent className="py-12 text-center text-sm text-muted-foreground">No report cards published yet.</CardContent>
+            <CardContent className="py-12 text-center text-sm text-muted-foreground">{t("studentResults.noReportCardsYet")}</CardContent>
           </Card>
         ) : (
           reportCards.map((card) => (
@@ -152,7 +154,7 @@ export default function StudentResultsPage() {
                 <div>
                   <CardTitle className="text-base">{card.examScheme.name}</CardTitle>
                   <p className="text-xs text-muted-foreground">
-                    {card.publishedAt ? `Published ${format(new Date(card.publishedAt), "dd MMM yyyy")}` : "Published"} &middot; by {card.generatedByTeacher.name}
+                    {card.publishedAt ? t("studentResults.publishedOn", { date: format(new Date(card.publishedAt), "dd MMM yyyy") }) : t("studentResults.published")} &middot; {t("studentResults.byTeacher", { name: card.generatedByTeacher.name })}
                   </p>
                 </div>
                 {card.actionUrl && (
@@ -162,22 +164,22 @@ export default function StudentResultsPage() {
                     rel="noopener noreferrer"
                     className="flex flex-shrink-0 items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-primary hover:bg-muted/50"
                   >
-                    <Download className="h-4 w-4" /> Download PDF
+                    <Download className="h-4 w-4" /> {t("studentResults.downloadPdf")}
                   </a>
                 )}
               </CardHeader>
               <CardContent>
                 <div className="mb-4 grid grid-cols-3 gap-4 rounded-lg bg-muted/40 p-3 text-center">
                   <div>
-                    <p className="text-xs text-muted-foreground">Total Marks</p>
+                    <p className="text-xs text-muted-foreground">{t("studentResults.totalMarks")}</p>
                     <p className="text-lg font-bold text-foreground">{card.totalMarks}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Percentage</p>
+                    <p className="text-xs text-muted-foreground">{t("studentResults.percentage")}</p>
                     <p className="text-lg font-bold text-foreground">{card.percentage.toFixed(1)}%</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Grade</p>
+                    <p className="text-xs text-muted-foreground">{t("studentResults.grade")}</p>
                     <p className="text-lg font-bold text-foreground">{card.grade}</p>
                   </div>
                 </div>
@@ -185,10 +187,10 @@ export default function StudentResultsPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                        <th className="py-2 font-medium">Subject</th>
-                        <th className="py-2 font-medium">Marks</th>
-                        <th className="py-2 font-medium">Grade</th>
-                        <th className="py-2 font-medium">Teacher Remark</th>
+                        <th className="py-2 font-medium">{t("studentResults.subject")}</th>
+                        <th className="py-2 font-medium">{t("studentResults.marks")}</th>
+                        <th className="py-2 font-medium">{t("studentResults.grade")}</th>
+                        <th className="py-2 font-medium">{t("studentResults.teacherRemark")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -205,7 +207,7 @@ export default function StudentResultsPage() {
                 </div>
                 {card.classTeacherRemark && (
                   <p className="mt-4 rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
-                    <span className="font-medium text-foreground">Class Teacher Remark: </span>
+                    <span className="font-medium text-foreground">{t("studentResults.classTeacherRemark")}</span>
                     {card.classTeacherRemark}
                   </p>
                 )}

@@ -5,27 +5,29 @@ import { usePathname } from "next/navigation";
 import {
   GraduationCap, LayoutDashboard, ClipboardCheck, CalendarDays,
   FileText, BookOpenCheck, RefreshCw, DoorOpen, ClipboardList,
-  User, X, Award, Sparkles,
+  User, X, Award, Sparkles, BookCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 export interface TeacherNavItem {
   href: string;
-  label: string;
+  labelKey: string;
   icon: typeof LayoutDashboard;
 }
 
 export const TEACHER_NAV_ITEMS: TeacherNavItem[] = [
-  { href: "/teacher", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/teacher/attendance", label: "Attendance", icon: ClipboardCheck },
-  { href: "/teacher/timetable", label: "Timetable", icon: CalendarDays },
-  { href: "/teacher/marks", label: "Marks", icon: FileText },
-  { href: "/teacher/report-cards", label: "Report Cards", icon: Award },
-  { href: "/teacher/homework", label: "Homework", icon: BookOpenCheck },
-  { href: "/teacher/arrangements", label: "Arrangements", icon: RefreshCw },
-  { href: "/teacher/early-leave", label: "Early Leave", icon: DoorOpen },
-  { href: "/teacher/leaves", label: "Leaves", icon: ClipboardList },
-  { href: "/teacher/profile", label: "Profile", icon: User },
+  { href: "/teacher", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { href: "/teacher/attendance", labelKey: "nav.attendance", icon: ClipboardCheck },
+  { href: "/teacher/timetable", labelKey: "nav.timetable", icon: CalendarDays },
+  { href: "/teacher/marks", labelKey: "nav.marks", icon: FileText },
+  { href: "/teacher/report-cards", labelKey: "nav.reportCards", icon: Award },
+  { href: "/teacher/homework", labelKey: "nav.homework", icon: BookOpenCheck },
+  { href: "/teacher/notebook", labelKey: "nav.notebookChecking", icon: BookCheck },
+  { href: "/teacher/arrangements", labelKey: "nav.arrangements", icon: RefreshCw },
+  { href: "/teacher/early-leave", labelKey: "nav.earlyLeave", icon: DoorOpen },
+  { href: "/teacher/leaves", labelKey: "nav.leaves", icon: ClipboardList },
+  { href: "/teacher/profile", labelKey: "nav.profile", icon: User },
 ];
 
 interface TeacherSidebarProps {
@@ -36,6 +38,7 @@ interface TeacherSidebarProps {
 
 export default function TeacherSidebar({ schoolName, collapsed = false, onClose }: TeacherSidebarProps) {
   const pathname = usePathname();
+  const { t } = useTranslation();
   const base = "/teacher";
 
   return (
@@ -64,7 +67,7 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold leading-tight">{schoolName || "SchoolSync"}</p>
               <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                <Sparkles className="h-2.5 w-2.5" /> Teacher Portal
+                <Sparkles className="h-2.5 w-2.5" /> {t("nav.teacherPortal")}
               </span>
             </div>
           )}
@@ -72,7 +75,7 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
             <button
               onClick={onClose}
               className="flex-shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground md:hidden"
-              aria-label="Close menu"
+              aria-label={t("common.closeMenu")}
             >
               <X className="h-5 w-5" />
             </button>
@@ -82,7 +85,7 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
 
       {!collapsed && (
         <div className="px-5 pb-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          Menu
+          {t("common.menu")}
         </div>
       )}
 
@@ -90,12 +93,13 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
       <nav aria-label="Teacher navigation" className="no-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-1">
         {TEACHER_NAV_ITEMS.map((item) => {
           const active = pathname === item.href || (item.href !== base && pathname.startsWith(item.href));
+          const label = t(item.labelKey);
           return (
             <Link
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? label : undefined}
               className={cn(
                 "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 collapsed && "justify-center px-0",
@@ -108,7 +112,7 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
                 <span className="absolute left-0 top-1/2 h-5 w-1 -translate-x-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden="true" />
               )}
               <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
+              {!collapsed && <span className="truncate">{label}</span>}
             </Link>
           );
         })}
@@ -125,7 +129,7 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
           <Sparkles className="h-3 w-3 text-primary" />
           {!collapsed && (
             <span>
-              Powered by <span className="font-bold text-foreground">SchoolSync</span>
+              {t("common.poweredBy")} <span className="font-bold text-foreground">SchoolSync</span>
             </span>
           )}
         </div>
