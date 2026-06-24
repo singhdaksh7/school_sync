@@ -9,13 +9,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
+const ROLE_LABELS: Record<string, string> = {
+  SCHOOL_ADMIN: "Admin",
+  VICE_PRINCIPAL: "Vice Principal",
+  TEACHER: "Teacher",
+};
+
 export default function InvitePage() {
   const params = useParams();
   const token = params.token as string;
 
-  const [invite, setInvite] = useState<{ email: string; school: { name: string; slug: string } } | null>(null);
+  const [invite, setInvite] = useState<{ name: string | null; email: string; role: string; school: { name: string; slug: string } } | null>(null);
   const [inviteError, setInviteError] = useState("");
-  const [form, setForm] = useState({ name: "", password: "" });
+  const [contact, setContact] = useState<{ name: string; email: string } | null>(null);
+  const [form, setForm] = useState({ name: "", password: "", confirmPassword: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -23,14 +30,15 @@ export default function InvitePage() {
     fetch(`/api/invite/${token}`)
       .then((r) => r.json())
       .then((d) => {
-        if (d.error) setInviteError(d.error);
-        else setInvite(d);
+        if (d.error) { setInviteError(d.error); setContact(d.contact ?? null); }
+        else { setInvite(d); setForm((prev) => ({ ...prev, name: d.name || prev.name })); }
       });
   }, [token]);
 
   async function handleAccept(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (form.password !== form.confirmPassword) { setError("Passwords do not match"); return; }
     setLoading(true);
     const res = await fetch(`/api/invite/${token}`, {
       method: "POST",
@@ -73,7 +81,16 @@ export default function InvitePage() {
           <Card>
             <CardContent className="py-12 text-center">
               <p className="text-red-600 font-medium">{inviteError}</p>
-              <p className="text-gray-400 text-sm mt-2">Please request a new invite link.</p>
+              {contact ? (
+                <a
+                  href={`mailto:${contact.email}?subject=${encodeURIComponent("Requesting a new SchoolSync invite")}`}
+                  className="mt-4 inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Request New Invitation
+                </a>
+              ) : (
+                <p className="text-gray-400 text-sm mt-2">Please contact your school administrator for a new invite.</p>
+              )}
             </CardContent>
           </Card>
         ) : !invite ? (
@@ -91,9 +108,15 @@ export default function InvitePage() {
             <form onSubmit={handleAccept}>
               <CardContent className="space-y-4">
                 {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-md border border-red-200">{error}</div>}
-                <div className="space-y-1.5">
-                  <Label>Email</Label>
-                  <Input value={invite.email} disabled className="bg-gray-50" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Email</Label>
+                    <Input value={invite.email} disabled className="bg-gray-50" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Role</Label>
+                    <Input value={ROLE_LABELS[invite.role] || invite.role} disabled className="bg-gray-50" />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Your Name</Label>
@@ -102,6 +125,13 @@ export default function InvitePage() {
                 <div className="space-y-1.5">
                   <Label>Create Password</Label>
                   <Input type="password" placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Confirm Password</Label>
+                  <Input type="password" placeholder="Re-enter password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} required minLength={6} />
+                  {form.confirmPassword && form.password !== form.confirmPassword && (
+                    <p className="text-xs text-red-600">Passwords do not match</p>
+                  )}
                 </div>
               </CardContent>
               <CardFooter>

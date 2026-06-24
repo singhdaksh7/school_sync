@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { signIn, signOut, getSession } from "next-auth/react";
 import { GraduationCap } from "lucide-react";
@@ -9,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type Branding = {
   schoolName: string;
@@ -29,8 +30,7 @@ const DEFAULT_BRANDING: Branding = {
 };
 
 function LoginForm() {
-  const params = useSearchParams();
-  const registered = params.get("registered");
+  const { t } = useTranslation();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -71,14 +71,14 @@ function LoginForm() {
         callbackUrl,
       });
       if (result?.error) {
-        if (result.code === "no-account") setError("No account found with that email.");
-        else if (result.code === "invalid-password") setError("Incorrect password.");
-        else setError("Invalid credentials or this account is not allowed for this school.");
+        if (result.code === "no-account") setError(t("auth.noAccountWithEmail"));
+        else if (result.code === "invalid-password") setError(t("auth.incorrectPassword"));
+        else setError(t("auth.invalidCredentials"));
         return;
       }
       window.location.href = callbackUrl;
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError(t("auth.somethingWentWrong"));
     } finally {
       setLoading(false);
     }
@@ -86,6 +86,9 @@ function LoginForm() {
 
   return (
     <div className="gradient-mesh relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      <div className="absolute left-1/2 top-4 -translate-x-1/2 z-20">
+        <LanguageSwitcher />
+      </div>
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
           <Link href="/" className="flex items-center gap-2.5">
@@ -108,23 +111,18 @@ function LoginForm() {
         </div>
         <Card className="border-border/70 shadow-xl shadow-black/5 backdrop-blur supports-[backdrop-filter]:bg-card/80">
           <CardHeader>
-            <CardTitle className="text-xl">Welcome back</CardTitle>
-            <CardDescription>Sign in to your {branding.schoolName} account</CardDescription>
+            <CardTitle className="text-xl">{t("auth.welcomeBack")}</CardTitle>
+            <CardDescription>{t("auth.signInToAccount", { school: branding.schoolName })}</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
-              {registered && (
-                <div className="bg-green-50 text-green-700 text-sm px-4 py-3 rounded-md border border-green-200">
-                  Account created! Please sign in.
-                </div>
-              )}
               {error && (
                 <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-md border border-red-200">
                   {error}
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label htmlFor="email">Email address</Label>
+                <Label htmlFor="email">{t("common.email")}</Label>
                 <Input
                   id="email"
                   type="email"
@@ -136,9 +134,9 @@ function LoginForm() {
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">{t("common.password")}</Label>
                   <Link href="/forgot-password" className="text-xs font-medium text-muted-foreground underline hover:text-foreground">
-                    Forgot password?
+                    {t("common.forgotPassword")}
                   </Link>
                 </div>
                 <Input
@@ -158,24 +156,14 @@ function LoginForm() {
                 disabled={loading}
                 style={{ backgroundColor: branding.primaryColor }}
               >
-                {loading ? "Signing in..." : "Sign in"}
+                {loading ? t("common.signingIn") : t("common.signIn")}
               </Button>
-              <p className="text-sm text-gray-500 text-center">
-                Don&apos;t have an account?{" "}
-                <Link
-                  href="/register"
-                  className="hover:underline font-medium"
-                  style={{ color: branding.primaryColor }}
-                >
-                  Create one free
-                </Link>
-              </p>
             </CardFooter>
           </form>
         </Card>
         {branding.poweredBySchoolSync && (
           <p className="mt-5 text-center text-xs text-muted-foreground">
-            Powered by <span className="font-semibold text-foreground">SchoolSync</span>
+            {t("common.poweredBy")} <span className="font-semibold text-foreground">SchoolSync</span>
           </p>
         )}
       </div>
@@ -184,9 +172,5 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
-  );
+  return <LoginForm />;
 }

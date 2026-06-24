@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type Scheme = { id: string; name: string };
 type MentorSection = {
@@ -30,6 +31,7 @@ type ReportCard = {
 };
 
 export default function TeacherReportCardsPage() {
+  const { t } = useTranslation();
   const [mentorSection, setMentorSection] = useState<MentorSection | null>(null);
   const [schemes, setSchemes] = useState<Scheme[]>([]);
   const [cards, setCards] = useState<ReportCard[]>([]);
@@ -49,7 +51,7 @@ export default function TeacherReportCardsPage() {
     const data = await res.json();
     setLoading(false);
     if (!res.ok) {
-      setError(data.error || "Could not load report cards");
+      setError(data.error || t("teacherReportCards.couldNotLoad"));
       return;
     }
     setMentorSection(data.mentorSection);
@@ -76,7 +78,7 @@ export default function TeacherReportCardsPage() {
     const data = await res.json();
     setSaving(false);
     if (!res.ok) {
-      setError(data.error || "Could not generate report cards");
+      setError(data.error || t("teacherReportCards.couldNotGenerate"));
       return;
     }
     await loadReportCards();
@@ -86,7 +88,7 @@ export default function TeacherReportCardsPage() {
     const res = await fetch(`/api/teacher/report-cards/${id}/publish`, { method: "POST" });
     if (!res.ok) {
       const data = await res.json();
-      setError(data.error || "Could not publish report card");
+      setError(data.error || t("teacherReportCards.couldNotPublish"));
       return;
     }
     await loadReportCards();
@@ -99,9 +101,9 @@ export default function TeacherReportCardsPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Report Cards</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t("teacherReportCards.title")}</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Generate and publish final report cards for your mentor section.
+          {t("teacherReportCards.subtitle")}
         </p>
       </div>
 
@@ -115,30 +117,30 @@ export default function TeacherReportCardsPage() {
         <Card>
           <CardContent className="py-16 text-center">
             <Award className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <p className="font-semibold text-gray-800">No mentor section assigned</p>
-            <p className="text-sm text-gray-500 mt-1">Only class mentors can generate final report cards.</p>
+            <p className="font-semibold text-gray-800">{t("teacherReportCards.noMentorSection")}</p>
+            <p className="text-sm text-gray-500 mt-1">{t("teacherReportCards.noMentorSectionHint")}</p>
           </CardContent>
         </Card>
       ) : (
         <>
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Generate Drafts</CardTitle>
+              <CardTitle className="text-base">{t("teacherReportCards.generateDrafts")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Mentor Section</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{t("teacherReportCards.mentorSection")}</p>
                   <Input
-                    value={mentorSection ? `Class ${mentorSection.class.name} - Section ${mentorSection.name}` : ""}
+                    value={mentorSection ? t("teacherReportCards.classSection", { className: mentorSection.class.name, sectionName: mentorSection.name }) : ""}
                     disabled
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Exam Scheme</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{t("teacherReportCards.examScheme")}</p>
                   <Select value={examSchemeId} onValueChange={setExamSchemeId}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select exam scheme" />
+                      <SelectValue placeholder={t("teacherReportCards.selectExamScheme")} />
                     </SelectTrigger>
                     <SelectContent>
                       {schemes.map((scheme) => (
@@ -149,15 +151,15 @@ export default function TeacherReportCardsPage() {
                 </div>
                 <Button onClick={generateCards} disabled={!examSchemeId || saving || !canGenerate} className="gap-2">
                   <Wand2 className="w-4 h-4" />
-                  {saving ? "Generating..." : "Generate"}
+                  {saving ? t("teacherReportCards.generating") : t("teacherReportCards.generate")}
                 </Button>
               </div>
               <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Class Teacher Remark</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{t("teacherReportCards.classTeacherRemark")}</p>
                 <Input
                   value={remark}
                   onChange={(event) => setRemark(event.target.value)}
-                  placeholder="Optional remark for generated cards"
+                  placeholder={t("teacherReportCards.remarkPlaceholder")}
                 />
               </div>
             </CardContent>
@@ -165,20 +167,20 @@ export default function TeacherReportCardsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Drafts and Published Cards</CardTitle>
+              <CardTitle className="text-base">{t("teacherReportCards.draftsAndPublished")}</CardTitle>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               {filteredCards.length === 0 ? (
-                <p className="py-12 text-center text-sm text-gray-500">No report cards generated yet.</p>
+                <p className="py-12 text-center text-sm text-gray-500">{t("teacherReportCards.noCardsYet")}</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 text-left text-gray-500">
-                      <th className="py-2 px-3 font-medium">Student</th>
-                      <th className="py-2 px-3 font-medium">Exam</th>
-                      <th className="py-2 px-3 font-medium">Total</th>
-                      <th className="py-2 px-3 font-medium">Grade</th>
-                      <th className="py-2 px-3 font-medium">Status</th>
+                      <th className="py-2 px-3 font-medium">{t("teacherReportCards.student")}</th>
+                      <th className="py-2 px-3 font-medium">{t("teacherReportCards.exam")}</th>
+                      <th className="py-2 px-3 font-medium">{t("teacherReportCards.total")}</th>
+                      <th className="py-2 px-3 font-medium">{t("teacherReportCards.grade")}</th>
+                      <th className="py-2 px-3 font-medium">{t("teacherReportCards.status")}</th>
                       <th className="py-2 px-3"></th>
                     </tr>
                   </thead>
@@ -187,7 +189,7 @@ export default function TeacherReportCardsPage() {
                       <tr key={card.id} className="border-b border-gray-50">
                         <td className="py-3 px-3">
                           <p className="font-medium text-gray-900">{card.student.name}</p>
-                          <p className="text-xs text-gray-400">Roll {card.student.rollNo}</p>
+                          <p className="text-xs text-gray-400">{t("teacherReportCards.rollLabel", { roll: card.student.rollNo })}</p>
                         </td>
                         <td className="py-3 px-3 text-gray-600">{card.examScheme.name}</td>
                         <td className="py-3 px-3 text-gray-600">{card.totalMarks} ({card.percentage}%)</td>
@@ -205,13 +207,13 @@ export default function TeacherReportCardsPage() {
                                 onClick={() => window.open(`/api/teacher/report-cards/${card.id}/pdf`, "_blank")}
                               >
                                 <Download className="w-4 h-4" />
-                                PDF
+                                {t("teacherReportCards.pdf")}
                               </Button>
                             )}
                             {card.status === "DRAFT" && canPublish && (
                               <Button size="sm" className="gap-2" onClick={() => publishCard(card.id)}>
                                 <Send className="w-4 h-4" />
-                                Publish
+                                {t("teacherReportCards.publish")}
                               </Button>
                             )}
                           </div>

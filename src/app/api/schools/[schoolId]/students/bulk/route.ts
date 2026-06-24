@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
+import { buildStudentPasswordHashes } from "@/lib/student-credentials";
+import { backfillHomeworkStatusForStudent } from "@/lib/homework";
 
 export async function POST(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -32,16 +34,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
 
   for (const row of students) {
     const name = String(row.name || "").trim();
+    const admissionNo = String(row.admissionno || row.admission_no || "").trim();
     const rollNo = String(row.rollno || row.roll_no || row.roll || "").trim();
     const className = String(row.class || row.classname || "").trim().toLowerCase();
     const sectionName = String(row.section || "").trim().toLowerCase();
+    const fatherPhone = String(row.fatherphone || row.father_phone || "").trim();
+    const motherPhone = String(row.motherphone || row.mother_phone || "").trim();
 
     if (!name || name.length < 2) {
       results.push({ name: name || "(empty)", success: false, error: "Name too short" });
       continue;
     }
+    if (!admissionNo) {
+      results.push({ name, success: false, error: "Admission number missing" });
+      continue;
+    }
     if (!rollNo) {
       results.push({ name, success: false, error: "Roll number missing" });
+      continue;
+    }
+    if (!fatherPhone && !motherPhone) {
+      results.push({ name, success: false, error: "Father Phone or Mother Phone is required so the student can log in" });
       continue;
     }
 
@@ -52,21 +65,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     }
 
     try {
-      await prisma.student.create({
+      const { fatherPhoneHash, motherPhoneHash } = await buildStudentPasswordHashes(fatherPhone, motherPhone);
+      const student = await prisma.student.create({
         data: {
           name,
+          admissionNo,
           rollNo,
           email: row.email?.trim() || null,
           phone: row.phone?.trim() || null,
-          parentName: row.parentname?.trim() || row.parent_name?.trim() || null,
-          parentPhone: row.parentphone?.trim() || row.parent_phone?.trim() || null,
+          fatherName: row.fathername?.trim() || row.father_name?.trim() || null,
+          fatherPhone: fatherPhone || null,
+          fatherPhoneHash,
+          motherName: row.mothername?.trim() || row.mother_name?.trim() || null,
+          motherPhone: motherPhone || null,
+          motherPhoneHash,
           sectionId,
           schoolId,
         },
       });
+      await backfillHomeworkStatusForStudent(student.id, schoolId, sectionId);
       results.push({ name, success: true });
     } catch {
-      results.push({ name, success: false, error: "Duplicate roll number or invalid data" });
+      results.push({ name, success: false, error: "Duplicate roll number/admission number or invalid data" });
     }
   }
 

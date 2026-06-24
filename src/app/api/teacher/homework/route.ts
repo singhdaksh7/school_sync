@@ -70,6 +70,7 @@ export async function POST(req: Request) {
     where: { schoolId: teacher.schoolId, sectionId },
     select: { id: true },
   });
+  console.log(`[HW_DEBUG] creating homework schoolId=${teacher.schoolId} sectionId=${sectionId} subject=${subject} studentsSnapshotted=${students.length}`);
 
   const created = await prisma.$transaction(async (tx) => {
     const homework = await tx.homework.create({
@@ -101,6 +102,8 @@ export async function POST(req: Request) {
       include: homeworkIncludeForList(),
     });
   });
+
+  console.log(`[HW_DEBUG] homework created id=${created?.id} schoolId=${created?.schoolId} sectionId=${created?.sectionId} statusRows=${created?.studentStatuses?.length}`);
 
   if (created) {
     await logAudit({

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { logAudit } from "@/lib/audit";
 import { canAccessSchool, sessionRole } from "@/lib/tenant";
 import { getClientIp } from "@/lib/request-ip";
+import { backfillHomeworkStatusForStudent } from "@/lib/homework";
 
 const schema = z.object({
   toSectionId: z.string().min(1),
@@ -64,6 +65,7 @@ export async function POST(
       ipAddress: getClientIp(req),
     });
 
+    await backfillHomeworkStatusForStudent(studentId, schoolId, toSectionId);
     return NextResponse.json(transfer, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

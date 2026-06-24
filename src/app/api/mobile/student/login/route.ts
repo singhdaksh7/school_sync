@@ -5,9 +5,7 @@ import { NoAccountError, InvalidPasswordError } from "@/lib/auth-errors";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const identifier = typeof body.admissionNo === "string" && body.admissionNo.trim()
-      ? body.admissionNo
-      : body.email;
+    const identifier = body.admissionNo;
     const password = body.password;
 
     if (typeof identifier !== "string" || typeof password !== "string" || !identifier.trim() || !password) {
@@ -25,7 +23,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     if (error instanceof NoAccountError) {
-      return NextResponse.json({ error: "No account found with that admission number or email." }, { status: 404 });
+      return NextResponse.json({ error: "No account found with that admission number." }, { status: 404 });
     }
     if (error instanceof InvalidPasswordError) {
       return NextResponse.json({ error: "Incorrect password." }, { status: 401 });

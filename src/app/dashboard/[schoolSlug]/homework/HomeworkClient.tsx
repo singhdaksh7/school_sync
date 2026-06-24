@@ -52,7 +52,12 @@ function formatDate(value: string) {
 }
 
 function toDeadlineIso(value: string) {
-  const date = new Date(value);
+  // A date-only input (e.g. "2026-07-15") has no time component — default to
+  // end of day so a single date pick is enough. (A `datetime-local` input
+  // requires the user to fill in every segment, date AND time, or its value
+  // silently stays empty — switching to a plain date input avoids that trap.)
+  const withTime = value.includes("T") ? value : `${value}T23:59:00`;
+  const date = new Date(withTime);
   return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
@@ -230,7 +235,7 @@ export default function HomeworkClient({
             </SelectContent>
           </Select>
           <Input placeholder="Title" value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} />
-          <Input type="datetime-local" value={form.dueDate} onChange={(e) => setForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
+          <Input aria-label="Due date" type="date" value={form.dueDate} onChange={(e) => setForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
           <Input placeholder="Attachment URL" value={form.attachmentUrl} onChange={(e) => setForm((prev) => ({ ...prev, attachmentUrl: e.target.value }))} />
           <textarea
             className="lg:col-span-5 min-h-20 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

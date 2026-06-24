@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface Slot { dayOfWeek: number; period: number; subject: string | null; sectionName: string; className: string }
 interface HomeworkSubmission { status: string }
@@ -17,21 +18,24 @@ type SelfStatus = "PRESENT" | "ABSENT" | "LATE";
 interface SelfAttendance { attendance: { status: SelfStatus } | null; cutoffTime?: string }
 
 const SELF_STATUS = {
-  PRESENT: { label: "Present", icon: Check, color: "text-green-700 bg-green-50 border-green-200 dark:bg-green-950 dark:text-green-300" },
-  ABSENT: { label: "Absent", icon: X, color: "text-red-700 bg-red-50 border-red-200 dark:bg-red-950 dark:text-red-300" },
-  LATE: { label: "Late", icon: Clock, color: "text-yellow-700 bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300" },
+  PRESENT: { labelKey: "common.present", icon: Check, color: "text-green-700 bg-green-50 border-green-200 dark:bg-green-950 dark:text-green-300" },
+  ABSENT: { labelKey: "common.absent", icon: X, color: "text-red-700 bg-red-50 border-red-200 dark:bg-red-950 dark:text-red-300" },
+  LATE: { labelKey: "common.late", icon: Clock, color: "text-yellow-700 bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300" },
 };
 
-function greeting() {
+function greeting(t: (key: string) => string) {
   const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  return h < 12 ? t("teacherDashboard.goodMorning") : h < 17 ? t("teacherDashboard.goodAfternoon") : t("teacherDashboard.goodEvening");
 }
 
 function todayLabel() {
-  return new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  // Pinned locale (not `undefined`) to avoid a server/client hydration
+  // mismatch — the default locale can differ between server and browser.
+  return new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
 export default function TeacherDashboardPage() {
+  const { t } = useTranslation();
   const [profileName, setProfileName] = useState<string>("");
   const [todaySlots, setTodaySlots] = useState<Slot[]>([]);
   const [pendingReviews, setPendingReviews] = useState(0);
@@ -70,32 +74,32 @@ export default function TeacherDashboardPage() {
 
   const kpis = [
     {
-      label: "Today's Classes",
+      label: t("teacherDashboard.todaysClasses"),
       value: todaySlots.length,
-      hint: todaySlots.length ? `Next: P${todaySlots[0].period} · ${todaySlots[0].className}-${todaySlots[0].sectionName}` : "No classes scheduled",
+      hint: todaySlots.length ? t("teacherDashboard.nextClass", { period: todaySlots[0].period, className: todaySlots[0].className, sectionName: todaySlots[0].sectionName }) : t("teacherDashboard.noClassesScheduled"),
       icon: CalendarDays,
       href: "/teacher/timetable",
     },
     {
-      label: "Homework Reviews",
+      label: t("teacherDashboard.homeworkReviews"),
       value: pendingReviews,
-      hint: pendingReviews ? "Submissions awaiting review" : "All caught up",
+      hint: pendingReviews ? t("teacherDashboard.submissionsAwaitingReview") : t("teacherDashboard.allCaughtUp"),
       icon: BookOpenCheck,
       href: "/teacher/homework",
     },
     {
-      label: "Substitutions",
+      label: t("teacherDashboard.substitutions"),
       value: todaySubs.length,
-      hint: todaySubs.length ? `In place of ${todaySubs[0].absentTeacher.name}` : "No duties today",
+      hint: todaySubs.length ? t("teacherDashboard.inPlaceOf", { name: todaySubs[0].absentTeacher.name }) : t("teacherDashboard.noDutiesToday"),
       icon: RefreshCw,
       href: "/teacher/arrangements",
     },
   ];
 
   const quickLinks = [
-    { label: "Early Leave", desc: "Request to leave early", icon: DoorOpen, href: "/teacher/early-leave" },
-    { label: "Report Cards", desc: "View & manage report cards", icon: Award, href: "/teacher/report-cards" },
-    { label: "Attendance", desc: "Mark class attendance", icon: ClipboardCheck, href: "/teacher/attendance" },
+    { label: t("teacherDashboard.earlyLeave"), desc: t("teacherDashboard.earlyLeaveDesc"), icon: DoorOpen, href: "/teacher/early-leave" },
+    { label: t("teacherDashboard.reportCards"), desc: t("teacherDashboard.reportCardsDesc"), icon: Award, href: "/teacher/report-cards" },
+    { label: t("teacherDashboard.attendance"), desc: t("teacherDashboard.attendanceDesc"), icon: ClipboardCheck, href: "/teacher/attendance" },
   ];
 
   return (
@@ -108,9 +112,9 @@ export default function TeacherDashboardPage() {
         <div className="relative z-10">
           <p className="text-xs font-semibold uppercase tracking-widest text-primary">{todayLabel()}</p>
           <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-            {greeting()}{profileName ? `, ${profileName.split(" ")[0]}` : ""} 👋
+            {greeting(t)}{profileName ? `, ${profileName.split(" ")[0]}` : ""} 👋
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">Here&apos;s a snapshot of your day.</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t("teacherDashboard.daySnapshot")}</p>
         </div>
         <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
       </div>
@@ -148,15 +152,15 @@ export default function TeacherDashboardPage() {
               <div className="mt-4">
                 {selfCfg ? (
                   <span className={cn("inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-semibold", selfCfg.color)}>
-                    <selfCfg.icon className="h-3.5 w-3.5" /> {selfCfg.label}
+                    <selfCfg.icon className="h-3.5 w-3.5" /> {t(selfCfg.labelKey)}
                   </span>
                 ) : (
-                  <span className="text-lg font-semibold italic text-muted-foreground">Not marked</span>
+                  <span className="text-lg font-semibold italic text-muted-foreground">{t("teacherDashboard.notMarked")}</span>
                 )}
               </div>
-              <p className="mt-2 text-sm font-semibold text-foreground">My Attendance</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">{t("teacherDashboard.myAttendance")}</p>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {self?.cutoffTime ? `Cutoff ${self.cutoffTime}` : "Your attendance today"}
+                {self?.cutoffTime ? t("teacherDashboard.cutoffLabel", { time: self.cutoffTime }) : t("teacherDashboard.yourAttendanceToday")}
               </p>
             </CardContent>
           </Card>
@@ -170,11 +174,11 @@ export default function TeacherDashboardPage() {
           <CardContent className="p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-semibold text-foreground">Today&apos;s Classes</h2>
-                <p className="text-xs text-muted-foreground">{todaySlots.length} period{todaySlots.length === 1 ? "" : "s"} scheduled</p>
+                <h2 className="text-base font-semibold text-foreground">{t("teacherDashboard.todaysClasses")}</h2>
+                <p className="text-xs text-muted-foreground">{t("teacherDashboard.periodsScheduled", { count: todaySlots.length, plural: todaySlots.length === 1 ? "" : "s" })}</p>
               </div>
               <Link href="/teacher/timetable" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-                Full timetable <ArrowRight className="h-3.5 w-3.5" />
+                {t("teacherDashboard.fullTimetable")} <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </div>
             {todaySlots.length === 0 ? (
@@ -182,8 +186,8 @@ export default function TeacherDashboardPage() {
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                   <CalendarDays className="h-5 w-5 text-muted-foreground" />
                 </div>
-                <p className="mt-3 text-sm font-medium text-foreground">No classes today</p>
-                <p className="text-xs text-muted-foreground">Enjoy the lighter schedule.</p>
+                <p className="mt-3 text-sm font-medium text-foreground">{t("teacherDashboard.noClassesToday")}</p>
+                <p className="text-xs text-muted-foreground">{t("teacherDashboard.enjoyLighterSchedule")}</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -194,7 +198,7 @@ export default function TeacherDashboardPage() {
                       <span className="text-sm font-bold leading-none">{s.period}</span>
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-foreground">Class {s.className} – {s.sectionName}</p>
+                      <p className="truncate text-sm font-semibold text-foreground">{t("teacherDashboard.classSection", { className: s.className, sectionName: s.sectionName })}</p>
                       {s.subject && <p className="truncate text-xs text-muted-foreground">{s.subject}</p>}
                     </div>
                   </div>
@@ -207,7 +211,7 @@ export default function TeacherDashboardPage() {
         {/* Quick access */}
         <Card className="border-border">
           <CardContent className="p-5">
-            <h2 className="mb-4 text-base font-semibold text-foreground">Quick access</h2>
+            <h2 className="mb-4 text-base font-semibold text-foreground">{t("teacherDashboard.quickAccess")}</h2>
             <div className="space-y-2">
               {quickLinks.map((q) => (
                 <Link

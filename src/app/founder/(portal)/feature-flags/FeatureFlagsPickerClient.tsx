@@ -7,10 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT, type SchoolStatusValue } from "@/lib/school-status";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type SchoolRow = { id: string; name: string; slug: string; status: SchoolStatusValue };
 
 export default function FeatureFlagsPickerClient() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [schools, setSchools] = useState<SchoolRow[] | null>(null);
@@ -43,16 +45,16 @@ export default function FeatureFlagsPickerClient() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Feature Flags</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Select a school to manage its feature toggles.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">{t("nav.featureFlags")}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t("founder.selectSchoolToManageFlags")}</p>
       </div>
 
       <Card className="border-border">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">Choose a School</CardTitle>
+          <CardTitle className="text-base">{t("founder.chooseASchool")}</CardTitle>
           <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search schools..." className="pl-9" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("founder.searchSchools")} className="pl-9" />
           </div>
         </CardHeader>
         <CardContent>
@@ -65,7 +67,7 @@ export default function FeatureFlagsPickerClient() {
           ) : !schools || schools.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-14 text-center">
               <Building2 className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">No schools found</p>
+              <p className="text-sm font-medium text-foreground">{t("founder.noSchoolsFound")}</p>
             </div>
           ) : (
             <div className="divide-y divide-border/60">

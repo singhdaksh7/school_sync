@@ -6,6 +6,7 @@ export async function GET(req: NextRequest) {
   try {
     const auth = await getStudentAuth(req);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    console.log(`[HW_DEBUG] fetching homework for studentId=${auth.studentId} schoolId=${auth.schoolId} sectionId=${auth.sectionId}`);
 
     const statuses = await prisma.homeworkStudentStatus.findMany({
       where: {
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
       },
       orderBy: [{ homework: { dueDate: "asc" } }, { createdAt: "desc" }],
     });
+    console.log(`[HW_DEBUG] query returned ${statuses.length} HomeworkStudentStatus row(s) for studentId=${auth.studentId}`);
 
     const homework = statuses.map((item) => {
       const submission = item.homework.submissions.find((s) => s.studentId === item.studentId) || null;

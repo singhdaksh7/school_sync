@@ -163,7 +163,7 @@ export async function authenticateStudentForMobile(identifier: string, password:
   const students = await prisma.student.findMany({
     where: {
       ...(resolvedSchool ? { schoolId: resolvedSchool.id } : {}),
-      OR: [{ admissionNo: trimmed }, { email: trimmed }, { rollNo: trimmed }],
+      admissionNo: trimmed,
     },
     include: { school: { select: { id: true, name: true, slug: true, logoUrl: true } } },
   });
@@ -172,8 +172,14 @@ export async function authenticateStudentForMobile(identifier: string, password:
 
   const valid = [];
   for (const student of students) {
-    if (!student.passwordHash) continue;
-    if (await bcrypt.compare(password, student.passwordHash)) valid.push(student);
+    // The login password is whichever parent phone number is on file — there
+    // is no separately-set password. passwordHash is kept as a legacy
+    // fallback (never removed) in case it's ever populated by another path.
+    const matches =
+      (student.fatherPhoneHash && (await bcrypt.compare(password, student.fatherPhoneHash))) ||
+      (student.motherPhoneHash && (await bcrypt.compare(password, student.motherPhoneHash))) ||
+      (student.passwordHash && (await bcrypt.compare(password, student.passwordHash)));
+    if (matches) valid.push(student);
   }
 
   if (valid.length === 0) throw new InvalidPasswordError();

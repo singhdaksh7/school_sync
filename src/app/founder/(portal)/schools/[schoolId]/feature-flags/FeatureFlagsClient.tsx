@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { FEATURE_FLAG_GROUPS, FEATURE_FLAG_LABELS, type FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 export default function FeatureFlagsClient({
   schoolId,
@@ -12,6 +13,7 @@ export default function FeatureFlagsClient({
   schoolId: string;
   initialFlags: Record<FeatureFlagKeyValue, boolean>;
 }) {
+  const { t } = useTranslation();
   const [flags, setFlags] = useState(initialFlags);
   const [savingKey, setSavingKey] = useState<FeatureFlagKeyValue | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,10 +29,10 @@ export default function FeatureFlagsClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, enabled }),
       });
-      if (!res.ok) throw new Error("Request failed");
+      if (!res.ok) throw new Error(t("founder.requestFailed"));
     } catch {
       setFlags((prev) => ({ ...prev, [key]: !enabled }));
-      setError(`Couldn't update ${FEATURE_FLAG_LABELS[key]}. Please try again.`);
+      setError(t("founder.couldntUpdateFeatureFlag", { flag: FEATURE_FLAG_LABELS[key] }));
     } finally {
       setSavingKey(null);
     }

@@ -1,5 +1,8 @@
+"use client";
+
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface FounderComingSoonProps {
   icon: LucideIcon;
@@ -8,6 +11,8 @@ interface FounderComingSoonProps {
 }
 
 export default function FounderComingSoon({ icon: Icon, title, description }: FounderComingSoonProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div>
@@ -18,7 +23,7 @@ export default function FounderComingSoon({ icon: Icon, title, description }: Fo
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
             <Icon className="h-7 w-7" />
           </div>
-          <p className="text-base font-semibold text-foreground">Coming soon</p>
+          <p className="text-base font-semibold text-foreground">{t("founder.comingSoon")}</p>
           <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
         </CardContent>
       </Card>

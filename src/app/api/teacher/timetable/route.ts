@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTeacherAuth } from "@/lib/mobile-auth";
+import { getTeacherAssignments } from "@/lib/homework";
 
 export async function GET(req: Request) {
   const teacherAuth = await getTeacherAuth(req);
@@ -25,27 +26,9 @@ export async function GET(req: Request) {
 
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
-  // Deduplicate sections teacher is assigned to teach
-  const sectionMap = new Map<string, {
-    sectionId: string;
-    sectionName: string;
-    className: string;
-    subject: string;
-    students: { id: string; name: string; rollNo: string }[];
-  }>();
-
-  for (const slot of teacher.timetableSlots) {
-    const key = `${slot.sectionId}|${slot.subject || ""}`;
-    if (!sectionMap.has(key)) {
-      sectionMap.set(key, {
-        sectionId: slot.sectionId,
-        sectionName: slot.section.name,
-        className: slot.section.class.name,
-        subject: slot.subject || teacher.subject || "",
-        students: slot.section.students,
-      });
-    }
-  }
+  // Includes mentor-section fallback (see getTeacherAssignments) so a class
+  // mentor can enter marks for their section without a timetable slot.
+  const teachingSections = await getTeacherAssignments(teacher.id, teacher.schoolId);
 
   // Raw slots for timetable grid view
   const slots = teacher.timetableSlots.map((slot) => ({
@@ -63,5 +46,5 @@ export async function GET(req: Request) {
       }).then((s) => s?.periodsPerDay ?? 6)
     : 6;
 
-  return NextResponse.json({ teachingSections: Array.from(sectionMap.values()), slots, timetable: slots, periodsPerDay: schoolPeriodsPerDay });
+  return NextResponse.json({ teachingSections, slots, timetable: slots, periodsPerDay: schoolPeriodsPerDay });
 }

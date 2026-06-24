@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { SCHOOL_STATUSES, SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT, type SchoolStatusValue } from "@/lib/school-status";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type SchoolRow = {
   id: string;
@@ -31,6 +32,7 @@ type SchoolsResponse = {
 };
 
 export default function SchoolsClient() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("ALL");
@@ -78,20 +80,20 @@ export default function SchoolsClient() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Schools</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Every school on the SchoolSync platform.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">{t("nav.schools")}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t("founder.everySchoolOnPlatform")}</p>
       </div>
 
       <Card className="border-border">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">All Schools{data ? ` (${data.total})` : ""}</CardTitle>
+          <CardTitle className="text-base">{t("founder.allSchools")}{data ? ` (${data.total})` : ""}</CardTitle>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={t("founder.status")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All statuses</SelectItem>
+                <SelectItem value="ALL">{t("founder.allStatuses")}</SelectItem>
                 {SCHOOL_STATUSES.map((s) => (
                   <SelectItem key={s} value={s}>
                     {SCHOOL_STATUS_LABEL[s]}
@@ -104,7 +106,7 @@ export default function SchoolsClient() {
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by name or slug..."
+                placeholder={t("founder.searchByNameOrSlug")}
                 className="pl-9"
               />
             </div>
@@ -123,13 +125,13 @@ export default function SchoolsClient() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <th className="pb-2 pr-4 font-medium">School Name</th>
-                      <th className="pb-2 pr-4 font-medium">Status</th>
-                      <th className="pb-2 pr-4 font-medium">Plan</th>
-                      <th className="pb-2 pr-4 font-medium">Students</th>
-                      <th className="pb-2 pr-4 font-medium">Teachers</th>
-                      <th className="pb-2 pr-4 font-medium">Admins</th>
-                      <th className="pb-2 pr-4 font-medium">Created</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.schoolName")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.status")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.plan")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.students")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.teachers")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.admins")}</th>
+                      <th className="pb-2 pr-4 font-medium">{t("founder.created")}</th>
                       <th className="pb-2 font-medium"></th>
                     </tr>
                   </thead>
@@ -146,7 +148,7 @@ export default function SchoolsClient() {
                             <Badge variant={SCHOOL_STATUS_BADGE_VARIANT[school.status]}>
                               {SCHOOL_STATUS_LABEL[school.status]}
                             </Badge>
-                            {school.isOverdue && <Badge variant="destructive">Overdue</Badge>}
+                            {school.isOverdue && <Badge variant="destructive">{t("founder.overdue")}</Badge>}
                           </div>
                         </td>
                         <td className="py-3 pr-4 text-muted-foreground">
@@ -174,7 +176,7 @@ export default function SchoolsClient() {
 
               <div className="mt-4 flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">
-                  Page {data.page} of {data.totalPages}
+                  {t("founder.pageOf", { page: data.page, totalPages: data.totalPages })}
                 </p>
                 <div className="flex gap-2">
                   <Button
@@ -214,23 +216,25 @@ function SkeletonTable() {
 }
 
 function EmptyState({ query }: { query: string }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-14 text-center">
       <Building2 className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm font-medium text-foreground">No schools found</p>
+      <p className="text-sm font-medium text-foreground">{t("founder.noSchoolsFound")}</p>
       <p className="text-xs text-muted-foreground">
-        {query ? `No results for "${query}".` : "No schools match the selected filters."}
+        {query ? t("founder.noResultsForQuery", { query }) : t("founder.noSchoolsMatchFilters")}
       </p>
     </div>
   );
 }
 
 function ErrorState() {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-destructive/40 py-14 text-center">
       <AlertTriangle className="h-8 w-8 text-destructive" />
-      <p className="text-sm font-medium text-foreground">Couldn&apos;t load schools</p>
-      <p className="text-xs text-muted-foreground">Something went wrong. Please refresh the page.</p>
+      <p className="text-sm font-medium text-foreground">{t("founder.couldntLoadSchools")}</p>
+      <p className="text-xs text-muted-foreground">{t("founder.somethingWentWrongRefresh")}</p>
     </div>
   );
 }

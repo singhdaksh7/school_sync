@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { ClipboardCheck, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface AttendanceRecord {
   id: string;
@@ -32,7 +33,14 @@ const STATUS_BADGE: Record<AttendanceRecord["status"], "success" | "destructive"
   LATE: "warning",
 };
 
+const STATUS_LABEL_KEY: Record<AttendanceRecord["status"], string> = {
+  PRESENT: "studentAttendance.present",
+  ABSENT: "studentAttendance.absent",
+  LATE: "studentAttendance.late",
+};
+
 export default function StudentAttendancePage() {
+  const { t } = useTranslation();
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,8 +89,8 @@ export default function StudentAttendancePage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Attendance</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Your attendance record for the last 30 days.</p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("studentAttendance.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("studentAttendance.subtitle")}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -90,7 +98,7 @@ export default function StudentAttendancePage() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Overall</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("studentAttendance.overall")}</p>
                 <p className="mt-1 text-3xl font-bold text-foreground">{summary?.percentage ?? 0}%</p>
               </div>
               <ClipboardCheck className="h-8 w-8 text-primary/30" />
@@ -101,7 +109,7 @@ export default function StudentAttendancePage() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Present</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("studentAttendance.present")}</p>
                 <p className="mt-1 text-3xl font-bold text-foreground">{summary?.present ?? 0}</p>
               </div>
               <CheckCircle2 className="h-8 w-8 text-green-500/30" />
@@ -112,7 +120,7 @@ export default function StudentAttendancePage() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Absent</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("studentAttendance.absent")}</p>
                 <p className="mt-1 text-3xl font-bold text-foreground">{summary?.absent ?? 0}</p>
               </div>
               <XCircle className="h-8 w-8 text-red-500/30" />
@@ -123,7 +131,7 @@ export default function StudentAttendancePage() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Late</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("studentAttendance.late")}</p>
                 <p className="mt-1 text-3xl font-bold text-foreground">{summary?.late ?? 0}</p>
               </div>
               <Clock className="h-8 w-8 text-yellow-500/30" />
@@ -134,12 +142,12 @@ export default function StudentAttendancePage() {
 
       <Card className="border-border">
         <CardHeader>
-          <CardTitle className="text-base">This Month</CardTitle>
+          <CardTitle className="text-base">{t("studentAttendance.thisMonth")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold text-foreground">{currentMonthSummary.percentage}%</span>
-            <span className="text-sm text-muted-foreground">{currentMonthSummary.present + currentMonthSummary.late} of {currentMonthSummary.total} days present</span>
+            <span className="text-sm text-muted-foreground">{t("studentAttendance.daysPresent", { count: currentMonthSummary.present + currentMonthSummary.late, total: currentMonthSummary.total })}</span>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${currentMonthSummary.percentage}%` }} />
@@ -149,11 +157,11 @@ export default function StudentAttendancePage() {
 
       <Card className="border-border">
         <CardHeader>
-          <CardTitle className="text-base">Attendance Trend (Last 30 Days)</CardTitle>
+          <CardTitle className="text-base">{t("studentAttendance.trend")}</CardTitle>
         </CardHeader>
         <CardContent>
           {records.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No attendance records yet.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">{t("studentAttendance.noRecords")}</p>
           ) : (
             <div className="flex h-32 items-end gap-1">
               {[...records].reverse().map((r) => (
@@ -166,26 +174,26 @@ export default function StudentAttendancePage() {
             </div>
           )}
           <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-green-500" /> Present</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-yellow-500" /> Late</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" /> Absent</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-green-500" /> {t("studentAttendance.present")}</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-yellow-500" /> {t("studentAttendance.late")}</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" /> {t("studentAttendance.absent")}</span>
           </div>
         </CardContent>
       </Card>
 
       <Card className="border-border">
         <CardHeader>
-          <CardTitle className="text-base">Daily Log</CardTitle>
+          <CardTitle className="text-base">{t("studentAttendance.dailyLog")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {records.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No attendance records yet.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">{t("studentAttendance.noRecords")}</p>
           ) : (
             <div className="divide-y divide-border">
               {records.map((r) => (
                 <div key={r.id} className="flex items-center justify-between px-5 py-3">
                   <span className="text-sm text-foreground">{format(new Date(r.date), "EEEE, dd MMM yyyy")}</span>
-                  <Badge variant={STATUS_BADGE[r.status]}>{r.status}</Badge>
+                  <Badge variant={STATUS_BADGE[r.status]}>{t(STATUS_LABEL_KEY[r.status])}</Badge>
                 </div>
               ))}
             </div>

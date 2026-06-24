@@ -10,6 +10,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type Plan = { id: string; name: string; priceMonthly: string; priceAnnual: string; isActive: boolean };
 
@@ -27,6 +28,7 @@ export default function SubscriptionEditor({
   schoolId: string;
   current: CurrentSubscription | null;
 }) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -48,7 +50,7 @@ export default function SubscriptionEditor({
 
   async function save() {
     if (!planId) {
-      setError("Select a plan");
+      setError(t("founder.selectAPlan"));
       return;
     }
     setSaving(true);
@@ -64,11 +66,11 @@ export default function SubscriptionEditor({
           currentPeriodEnd: renewalMonth ? `${renewalMonth}-01` : null,
         }),
       });
-      if (!res.ok) throw new Error("Request failed");
+      if (!res.ok) throw new Error(t("founder.requestFailed"));
       setOpen(false);
       router.refresh();
     } catch {
-      setError("Couldn't save subscription. Please try again.");
+      setError(t("founder.couldntSaveSubscription"));
     } finally {
       setSaving(false);
     }
@@ -77,57 +79,57 @@ export default function SubscriptionEditor({
   return (
     <>
       <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="gap-1.5">
-        <Pencil className="h-3.5 w-3.5" /> Edit Subscription
+        <Pencil className="h-3.5 w-3.5" /> {t("founder.editSubscription")}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Subscription</DialogTitle>
-            <DialogDescription>Assign a plan and manually set the billing details for this school.</DialogDescription>
+            <DialogTitle>{t("founder.editSubscription")}</DialogTitle>
+            <DialogDescription>{t("founder.editSubscriptionDescription")}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Plan</Label>
+              <Label>{t("founder.plan")}</Label>
               <Select value={planId} onValueChange={setPlanId}>
-                <SelectTrigger><SelectValue placeholder="Select a plan" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t("founder.selectAPlan")} /></SelectTrigger>
                 <SelectContent>
                   {plans.map((plan) => (
-                    <SelectItem key={plan.id} value={plan.id}>{plan.name}{!plan.isActive ? " (inactive)" : ""}</SelectItem>
+                    <SelectItem key={plan.id} value={plan.id}>{plan.name}{!plan.isActive ? ` (${t("founder.inactive")})` : ""}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-1.5">
-              <Label>Billing Cycle</Label>
+              <Label>{t("founder.billingCycle")}</Label>
               <Select value={billingCycle} onValueChange={(v) => setBillingCycle(v as "MONTHLY" | "ANNUAL")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="MONTHLY">Monthly</SelectItem>
-                  <SelectItem value="ANNUAL">Annual</SelectItem>
+                  <SelectItem value="MONTHLY">{t("founder.monthly")}</SelectItem>
+                  <SelectItem value="ANNUAL">{t("founder.annual")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-1.5">
-              <Label>Amount (₹)</Label>
+              <Label>{t("founder.amountInRupees")}</Label>
               <Input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
 
             <div className="space-y-1.5">
-              <Label>Renewal Month</Label>
+              <Label>{t("founder.renewalMonth")}</Label>
               <Input type="month" value={renewalMonth} onChange={(e) => setRenewalMonth(e.target.value)} />
-              <p className="text-xs text-muted-foreground">Renewal dates are always the 1st of the selected month.</p>
+              <p className="text-xs text-muted-foreground">{t("founder.renewalDatesNote")}</p>
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>{t("common.cancel")}</Button>
+            <Button onClick={save} disabled={saving}>{saving ? t("common.saving") : t("common.save")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

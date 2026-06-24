@@ -6,6 +6,8 @@ import { signOut } from "next-auth/react";
 import { LogOut, ShieldCheck, Menu, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import NotificationBell from "@/components/founder/NotificationBell";
+import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface FounderHeaderProps {
   user: { name?: string | null; email?: string | null };
@@ -13,6 +15,7 @@ interface FounderHeaderProps {
 }
 
 export default function FounderHeader({ user, onMenuClick }: FounderHeaderProps) {
+  const { t } = useTranslation();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -21,24 +24,27 @@ export default function FounderHeader({ user, onMenuClick }: FounderHeaderProps)
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 flex-shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/60 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 md:px-6">
+    <header className="sticky top-0 z-30 flex h-16 flex-shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/60 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 md:px-6 relative">
       <div className="flex min-w-0 items-center gap-3">
         <button
           onClick={onMenuClick}
           className="flex-shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted md:hidden"
-          aria-label="Open menu"
+          aria-label={t("common.openMenu")}
         >
           <Menu className="h-5 w-5" />
         </button>
-        <h1 className="truncate text-sm font-medium text-muted-foreground">Platform Overview</h1>
+        <h1 className="truncate text-sm font-medium text-muted-foreground">{t("founder.platformOverview")}</h1>
+        <LanguageSwitcher className="sm:hidden" />
       </div>
+
+      <LanguageSwitcher className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 sm:flex" />
 
       <div className="flex flex-shrink-0 items-center gap-2">
         {mounted && (
           <button
             onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
             className="flex-shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
-            aria-label="Toggle theme"
+            aria-label={t("common.toggleTheme")}
           >
             {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
@@ -57,7 +63,7 @@ export default function FounderHeader({ user, onMenuClick }: FounderHeaderProps)
           className="gap-1.5 text-muted-foreground"
         >
           <LogOut className="h-4 w-4" />
-          <span className="hidden sm:inline">Sign out</span>
+          <span className="hidden sm:inline">{t("common.signOut")}</span>
         </Button>
       </div>
     </header>

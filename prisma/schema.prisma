@@ -42,6 +42,7 @@ enum FeatureFlagKey {
   WHITE_LABEL
   TEACHER_PERMISSIONS
   AI_FEATURES
+  NOTEBOOK_CHECKING
 }
 
 enum PaymentProofStatus {
@@ -129,30 +130,30 @@ enum ReportCardStatus {
 }
 
 model User {
-  id                   String                     @id @default(cuid())
-  name                 String
-  email                String                     @unique
-  password             String
-  role                 UserRole                   @default(SCHOOL_OWNER)
-  schoolId             String?
-  school               School?                    @relation("SchoolAdmins", fields: [schoolId], references: [id])
-  ownedSchool          School?                    @relation("SchoolOwner")
-  invitesSent          SchoolInvite[]             @relation("InviteSender")
-  attendancesMarked    Attendance[]
-  teacherProfile       Teacher?                   @relation("TeacherUser")
-  examResultsSubmitted ExamResult[]               @relation("ResultSubmitter")
-  announcements        Announcement[]
-  feePaymentsRecorded  FeePayment[]               @relation("FeeRecorder")
-  leavesReviewed       LeaveRequest[]             @relation("LeaveReviewer")
-  earlyLeavesReviewed  TeacherEarlyLeaveRequest[] @relation("EarlyLeaveApprover")
-  transfersBy          SectionTransfer[]          @relation("TransferBy")
-  auditLogs            AuditLog[]                 @relation("AuditUser")
-  paymentProofsSubmitted PaymentProofSubmission[] @relation("PaymentProofSubmitter")
-  paymentProofsReviewed  PaymentProofSubmission[] @relation("PaymentProofReviewer")
-  invoicesCreated        Invoice[]                @relation("InvoiceCreator")
+  id                     String                     @id @default(cuid())
+  name                   String
+  email                  String                     @unique
+  password               String
+  role                   UserRole                   @default(SCHOOL_OWNER)
+  schoolId               String?
+  school                 School?                    @relation("SchoolAdmins", fields: [schoolId], references: [id])
+  ownedSchool            School?                    @relation("SchoolOwner")
+  invitesSent            SchoolInvite[]             @relation("InviteSender")
+  attendancesMarked      Attendance[]
+  teacherProfile         Teacher?                   @relation("TeacherUser")
+  examResultsSubmitted   ExamResult[]               @relation("ResultSubmitter")
+  announcements          Announcement[]
+  feePaymentsRecorded    FeePayment[]               @relation("FeeRecorder")
+  leavesReviewed         LeaveRequest[]             @relation("LeaveReviewer")
+  earlyLeavesReviewed    TeacherEarlyLeaveRequest[] @relation("EarlyLeaveApprover")
+  transfersBy            SectionTransfer[]          @relation("TransferBy")
+  auditLogs              AuditLog[]                 @relation("AuditUser")
+  paymentProofsSubmitted PaymentProofSubmission[]   @relation("PaymentProofSubmitter")
+  paymentProofsReviewed  PaymentProofSubmission[]   @relation("PaymentProofReviewer")
+  invoicesCreated        Invoice[]                  @relation("InvoiceCreator")
   passwordResetTokens    PasswordResetToken[]
-  createdAt            DateTime                   @default(now())
-  updatedAt            DateTime                   @updatedAt
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
 }
 
 model PasswordResetToken {
@@ -205,6 +206,8 @@ model School {
   leaveRequests               LeaveRequest[]
   homework                    Homework[]
   homeworkSubmissions         HomeworkSubmission[]
+  examMilestones              ExamMilestone[]
+  notebookChecks              NotebookCheck[]
   arrangements                Arrangement[]
   earlyLeaveRequests          TeacherEarlyLeaveRequest[]
   sectionTransfers            SectionTransfer[]
@@ -215,15 +218,16 @@ model School {
   reportCardTemplates         ReportCardTemplate[]
   subscription                SchoolSubscription?
   featureFlags                SchoolFeatureFlag[]
-  paymentProofs                PaymentProofSubmission[]
-  invoices                     Invoice[]
-  notifications                FounderNotification[]
+  paymentProofs               PaymentProofSubmission[]
+  invoices                    Invoice[]
+  notifications               FounderNotification[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 }
 
 model SchoolInvite {
   id          String    @id @default(cuid())
+  name        String?
   email       String
   token       String    @unique @default(cuid())
   role        UserRole  @default(SCHOOL_ADMIN)
@@ -268,29 +272,31 @@ model Section {
 }
 
 model Teacher {
-  id                      String                     @id @default(cuid())
-  name                    String
-  email                   String?
-  phone                   String?
-  subject                 String?
-  schoolId                String
-  school                  School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  userId                  String?                    @unique
-  user                    User?                      @relation("TeacherUser", fields: [userId], references: [id])
-  mentorSectionId         String?                    @unique
-  mentorSection           Section?                   @relation("SectionMentor", fields: [mentorSectionId], references: [id])
-  invites                 TeacherInvite[]
-  attendances             Attendance[]
-  timetableSlots          TimetableSlot[]            @relation("TeacherSlots")
-  leaveRequests           LeaveRequest[]
-  homework                Homework[]
-  generatedReportCards    ReportCard[]               @relation("ReportCardGenerator")
-  arrangmentsAsAbsent     Arrangement[]              @relation("ArrangementAbsent")
-  arrangmentsAsSubstitute Arrangement[]              @relation("ArrangementSubstitute")
-  earlyLeaveRequests      TeacherEarlyLeaveRequest[]
-  roleAssignments         TeacherRoleAssignment[]
-  createdAt               DateTime                   @default(now())
-  updatedAt               DateTime                   @updatedAt
+  id                        String                     @id @default(cuid())
+  name                      String
+  email                     String?
+  phone                     String?
+  subject                   String?
+  schoolId                  String
+  school                    School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  userId                    String?                    @unique
+  user                      User?                      @relation("TeacherUser", fields: [userId], references: [id])
+  mentorSectionId           String?                    @unique
+  mentorSection             Section?                   @relation("SectionMentor", fields: [mentorSectionId], references: [id])
+  invites                   TeacherInvite[]
+  attendances               Attendance[]
+  timetableSlots            TimetableSlot[]            @relation("TeacherSlots")
+  leaveRequests             LeaveRequest[]
+  homework                  Homework[]
+  generatedReportCards      ReportCard[]               @relation("ReportCardGenerator")
+  arrangmentsAsAbsent       Arrangement[]              @relation("ArrangementAbsent")
+  arrangmentsAsSubstitute   Arrangement[]              @relation("ArrangementSubstitute")
+  earlyLeaveRequests        TeacherEarlyLeaveRequest[]
+  roleAssignments           TeacherRoleAssignment[]
+  homeworkCompletionsMarked HomeworkStudentStatus[]    @relation("HomeworkCompletionMarker")
+  notebookChecks            NotebookCheck[]
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
 
   @@index([schoolId])
 }
@@ -374,6 +380,12 @@ model Student {
   passwordHash        String?
   parentName          String?
   parentPhone         String?
+  fatherName          String?
+  fatherPhone         String?
+  fatherPhoneHash     String?
+  motherName          String?
+  motherPhone         String?
+  motherPhoneHash     String?
   sectionId           String
   section             Section                 @relation(fields: [sectionId], references: [id])
   schoolId            String
@@ -383,6 +395,7 @@ model Student {
   reportCards         ReportCard[]
   homeworkStatuses    HomeworkStudentStatus[]
   homeworkSubmissions HomeworkSubmission[]
+  notebookChecks      NotebookCheck[]
   guardianLinks       StudentGuardian[]
   feePayments         FeePayment[]
   leaveRequests       LeaveRequest[]
@@ -668,26 +681,30 @@ model Homework {
 }
 
 model HomeworkStudentStatus {
-  id               String                           @id @default(cuid())
-  homeworkId       String
-  homework         Homework                         @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
-  studentId        String
-  student          Student                          @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  status           HomeworkStudentSubmissionStatus  @default(PENDING)
-  submissionStatus HomeworkAcademicSubmissionStatus @default(PENDING)
-  submissionMethod HomeworkSubmissionMethod         @default(NONE)
-  submittedAt      DateTime?
-  score            Float?
-  maxScore         Float?
-  teacherRemark    String?
-  parentVisible    Boolean                          @default(true)
-  checkedAt        DateTime?
-  createdAt        DateTime                         @default(now())
-  updatedAt        DateTime                         @updatedAt
+  id                String                           @id @default(cuid())
+  homeworkId        String
+  homework          Homework                         @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  studentId         String
+  student           Student                          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status            HomeworkStudentSubmissionStatus  @default(PENDING)
+  submissionStatus  HomeworkAcademicSubmissionStatus @default(PENDING)
+  submissionMethod  HomeworkSubmissionMethod         @default(NONE)
+  submittedAt       DateTime?
+  score             Float?
+  maxScore          Float?
+  teacherRemark     String?
+  parentVisible     Boolean                          @default(true)
+  checkedAt         DateTime?
+  markedAt          DateTime?
+  markedByTeacherId String?
+  markedByTeacher   Teacher?                         @relation("HomeworkCompletionMarker", fields: [markedByTeacherId], references: [id], onDelete: SetNull)
+  createdAt         DateTime                         @default(now())
+  updatedAt         DateTime                         @updatedAt
 
   @@unique([homeworkId, studentId])
   @@index([studentId])
   @@index([status])
+  @@index([markedByTeacherId])
 }
 
 model HomeworkSubmission {
@@ -722,6 +739,46 @@ model HomeworkSubmission {
   @@index([status])
   @@index([submissionStatus])
   @@index([submissionMethod])
+}
+
+model ExamMilestone {
+  id             String          @id @default(cuid())
+  schoolId       String
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name           String
+  sequence       Int             @default(0)
+  active         Boolean         @default(true)
+  notebookChecks NotebookCheck[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@index([schoolId, active])
+}
+
+model NotebookCheck {
+  id              String        @id @default(cuid())
+  schoolId        String
+  school          School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId       String
+  student         Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId       String
+  teacher         Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject         String
+  examMilestoneId String
+  examMilestone   ExamMilestone @relation(fields: [examMilestoneId], references: [id], onDelete: Cascade)
+  checked         Boolean       @default(false)
+  checkedAt       DateTime?
+  remarks         String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([studentId, subject, examMilestoneId])
+  @@index([schoolId])
+  @@index([teacherId])
+  @@index([examMilestoneId])
+  @@index([schoolId, studentId])
 }
 
 model Arrangement {

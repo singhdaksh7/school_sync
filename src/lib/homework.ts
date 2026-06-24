@@ -1,5 +1,108 @@
 import { prisma } from "@/lib/prisma";
 
+const DEFAULT_EXAM_MILESTONES = ["UT-1", "UT-2", "Half Yearly", "UT-3", "UT-4", "Final Exam"];
+
+export type AcademicStatus = "PENDING" | "SUBMITTED" | "LATE_SUBMITTED" | "NOT_SUBMITTED" | "CHECKED" | "REJECTED";
+type SubmissionMethod = "NONE" | "ONLINE" | "PHYSICAL";
+
+export type HomeworkStatsAccumulator = {
+  totalAssigned: number;
+  submittedCount: number;
+  onlineSubmittedCount: number;
+  physicalSubmittedCount: number;
+  lateSubmittedCount: number;
+  notSubmittedCount: number;
+  checkedCount: number;
+  scoredPercentages: number[];
+};
+
+export function createHomeworkStatsAccumulator(): HomeworkStatsAccumulator {
+  return {
+    totalAssigned: 0,
+    submittedCount: 0,
+    onlineSubmittedCount: 0,
+    physicalSubmittedCount: 0,
+    lateSubmittedCount: 0,
+    notSubmittedCount: 0,
+    checkedCount: 0,
+    scoredPercentages: [],
+  };
+}
+
+function roundPercentage(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function averageScore(scoredPercentages: number[]) {
+  if (scoredPercentages.length === 0) return null;
+  return roundPercentage(scoredPercentages.reduce((sum, score) => sum + score, 0) / scoredPercentages.length);
+}
+
+export function addHomeworkStatsRecord(
+  summary: HomeworkStatsAccumulator,
+  status: AcademicStatus,
+  method: SubmissionMethod,
+  score: number | null,
+  maxScore: number | null
+) {
+  summary.totalAssigned += 1;
+
+  if (status === "SUBMITTED" || status === "LATE_SUBMITTED" || status === "CHECKED") {
+    summary.submittedCount += 1;
+  }
+  if (method === "ONLINE" && status !== "PENDING" && status !== "NOT_SUBMITTED") {
+    summary.onlineSubmittedCount += 1;
+  }
+  if (method === "PHYSICAL" && status !== "PENDING" && status !== "NOT_SUBMITTED") {
+    summary.physicalSubmittedCount += 1;
+  }
+  if (status === "LATE_SUBMITTED") summary.lateSubmittedCount += 1;
+  if (status === "NOT_SUBMITTED") summary.notSubmittedCount += 1;
+  if (status === "CHECKED") summary.checkedCount += 1;
+  if (score !== null && maxScore !== null && maxScore > 0) {
+    summary.scoredPercentages.push((score / maxScore) * 100);
+  }
+}
+
+export function homeworkStatsToResponse(summary: HomeworkStatsAccumulator) {
+  const completedCount = summary.submittedCount;
+  const completionPercentage = summary.totalAssigned > 0
+    ? roundPercentage((completedCount / summary.totalAssigned) * 100)
+    : null;
+  return {
+    totalAssigned: summary.totalAssigned,
+    submittedCount: summary.submittedCount,
+    onlineSubmittedCount: summary.onlineSubmittedCount,
+    physicalSubmittedCount: summary.physicalSubmittedCount,
+    lateSubmittedCount: summary.lateSubmittedCount,
+    notSubmittedCount: summary.notSubmittedCount,
+    checkedCount: summary.checkedCount,
+    completedCount,
+    missedCount: summary.notSubmittedCount,
+    completionPercentage,
+    averageScore: averageScore(summary.scoredPercentages),
+  };
+}
+
+/** Seeds the default exam milestone set for a school the first time it's accessed. */
+export async function ensureDefaultExamMilestonesSeeded(schoolId: string) {
+  const existingCount = await prisma.examMilestone.count({ where: { schoolId } });
+  if (existingCount === 0) {
+    await prisma.examMilestone.createMany({
+      data: DEFAULT_EXAM_MILESTONES.map((name, index) => ({ schoolId, name, sequence: index, active: true })),
+    });
+  }
+}
+
+/** Returns this school's active exam milestones, lazy-seeding the default set on first use. */
+export async function getActiveExamMilestones(schoolId: string) {
+  await ensureDefaultExamMilestonesSeeded(schoolId);
+  return prisma.examMilestone.findMany({
+    where: { schoolId, active: true },
+    orderBy: { sequence: "asc" },
+  });
+}
+
 export type HomeworkStudentStatusInput = {
   studentId: string;
   status: "PENDING" | "SUBMITTED" | "NOT_SUBMITTED" | "LATE" | "CHECKED" | "REJECTED";
@@ -13,6 +116,37 @@ export type HomeworkStudentStatusInput = {
 
 export function normalizeSubject(subject: unknown) {
   return typeof subject === "string" ? subject.trim() : "";
+}
+
+/**
+ * HomeworkStudentStatus rows are a one-time snapshot taken when homework is
+ * created (see POST /api/teacher/homework) — a student who wasn't in the
+ * section at that exact moment (added later, transferred in, or the section
+ * was empty when the homework was assigned) never gets a row and silently
+ * never sees that homework, no matter how many times they refresh. Call this
+ * after any event that puts a student into a section, to backfill rows for
+ * every non-cancelled homework already assigned to that section.
+ */
+export async function backfillHomeworkStatusForStudent(studentId: string, schoolId: string, sectionId: string) {
+  const homework = await prisma.homework.findMany({
+    where: { schoolId, sectionId, status: { not: "CANCELLED" } },
+    select: { id: true },
+  });
+  if (homework.length === 0) return;
+
+  const existing = await prisma.homeworkStudentStatus.findMany({
+    where: { studentId, homeworkId: { in: homework.map((h) => h.id) } },
+    select: { homeworkId: true },
+  });
+  const covered = new Set(existing.map((e) => e.homeworkId));
+  const missing = homework.filter((h) => !covered.has(h.id));
+  if (missing.length === 0) return;
+
+  await prisma.homeworkStudentStatus.createMany({
+    data: missing.map((h) => ({ homeworkId: h.id, studentId, status: "PENDING" })),
+    skipDuplicates: true,
+  });
+  console.log(`[HW_DEBUG] backfilled ${missing.length} HomeworkStudentStatus row(s) for studentId=${studentId} sectionId=${sectionId}`);
 }
 
 export function parseRequiredDate(value: unknown) {
@@ -39,6 +173,11 @@ export async function getTeacherByUserId(userId: string) {
   });
 }
 
+const STUDENT_SELECT = {
+  orderBy: { rollNo: "asc" as const },
+  select: { id: true, name: true, rollNo: true },
+};
+
 export async function getTeacherAssignments(teacherId: string, schoolId: string) {
   const teacher = await prisma.teacher.findFirst({
     where: { id: teacherId, schoolId },
@@ -50,12 +189,15 @@ export async function getTeacherAssignments(teacherId: string, schoolId: string)
           section: {
             include: {
               class: { select: { id: true, name: true } },
-              students: {
-                orderBy: { rollNo: "asc" },
-                select: { id: true, name: true, rollNo: true },
-              },
+              students: STUDENT_SELECT,
             },
           },
+        },
+      },
+      mentorSection: {
+        include: {
+          class: { select: { id: true, name: true } },
+          students: STUDENT_SELECT,
         },
       },
     },
@@ -81,6 +223,24 @@ export async function getTeacherAssignments(teacherId: string, schoolId: string)
         className: slot.section.class.name,
         subject,
         students: slot.section.students,
+      });
+    }
+  }
+
+  // A class mentor can manage homework/marks/notebook checking for their
+  // mentor section even without a matching timetable slot — falls back to
+  // "General" when the teacher has no subject set, so the assignment always
+  // shows up once a mentor section is assigned.
+  if (teacher.mentorSection) {
+    const subject = normalizeSubject(teacher.subject) || "General";
+    const key = `${teacher.mentorSection.id}|${subject.toLowerCase()}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        sectionId: teacher.mentorSection.id,
+        sectionName: teacher.mentorSection.name,
+        className: teacher.mentorSection.class.name,
+        subject,
+        students: teacher.mentorSection.students,
       });
     }
   }

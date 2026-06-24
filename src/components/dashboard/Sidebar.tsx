@@ -8,10 +8,11 @@ import {
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
   ClipboardList, PieChart, Activity, BarChart, X, Wand2, BookOpenCheck, Replace, Palette, ShieldCheck, LayoutTemplate,
-  CreditCard,
+  CreditCard, BookCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface SidebarProps {
   school: { slug: string; name: string; logoUrl?: string | null };
@@ -20,11 +21,11 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  SCHOOL_OWNER: "Owner",
-  SCHOOL_ADMIN: "Admin",
-  VICE_PRINCIPAL: "Vice Principal",
-  TEACHER: "Teacher",
+const ROLE_LABEL_KEYS: Record<string, string> = {
+  SCHOOL_OWNER: "common.roleOwner",
+  SCHOOL_ADMIN: "common.roleAdmin",
+  VICE_PRINCIPAL: "common.roleVicePrincipal",
+  TEACHER: "common.roleTeacher",
 };
 
 const ROLE_COLORS: Record<string, string> = {
@@ -36,6 +37,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 export default function Sidebar({ school, userRole, featureFlags, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const { t } = useTranslation();
   const base = `/dashboard/${school.slug}`;
   const isOwnerOrAdmin = userRole === "SCHOOL_OWNER" || userRole === "SCHOOL_ADMIN";
 
@@ -44,32 +46,33 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
   const flagEnabled = (key: FeatureFlagKeyValue) => featureFlags?.[key] ?? true;
 
   const navItems = [
-    { href: base, label: "Overview", icon: LayoutDashboard, show: true },
-    { href: `${base}/classes`, label: "Classes & Sections", icon: BookOpen, show: true },
-    { href: `${base}/teachers`, label: "Teachers", icon: Users, show: true },
-    { href: `${base}/teacher-roles`, label: "Teacher Roles & Permissions", icon: ShieldCheck, show: isOwnerOrAdmin && flagEnabled("TEACHER_PERMISSIONS") },
-    { href: `${base}/students`, label: "Students", icon: GraduationCap, show: true },
-    { href: `${base}/attendance`, label: "Attendance", icon: ClipboardCheck, show: flagEnabled("ATTENDANCE") },
-    { href: `${base}/reports`, label: "Attendance Reports", icon: BarChart2, show: flagEnabled("ATTENDANCE") },
-    { href: `${base}/timetable`, label: "Timetable", icon: CalendarDays, show: true },
-    { href: `${base}/custom-timetable`, label: "Custom Timetable", icon: Wand2, show: isOwnerOrAdmin },
-    { href: `${base}/homework`, label: "Homework", icon: BookOpenCheck, show: flagEnabled("HOMEWORK") },
-    { href: `${base}/exam-schemes`, label: "Exam Schemes", icon: FileText, show: true },
-    { href: `${base}/results`, label: "Results", icon: Award, show: true },
-    { href: `${base}/report-cards`, label: "Report Cards", icon: ClipboardList, show: flagEnabled("REPORT_CARDS") },
-    { href: `${base}/report-card-builder`, label: "Report Card Builder", icon: LayoutTemplate, show: isOwnerOrAdmin && flagEnabled("REPORT_CARD_BUILDER") },
-    { href: `${base}/fees`, label: "Fee Management", icon: IndianRupee, show: flagEnabled("FEES") },
-    { href: `${base}/leaves`, label: "Leave Management", icon: ClipboardList, show: true },
-    { href: `${base}/substitutions`, label: "Substitutions", icon: Replace, show: true },
-    { href: `${base}/analytics`, label: "Analytics", icon: PieChart, show: flagEnabled("ANALYTICS") },
-    { href: `${base}/teachers/workload`, label: "Teacher Workload", icon: BarChart, show: true },
-    { href: `${base}/announcements`, label: "Announcements", icon: Megaphone, show: true },
-    { href: `${base}/holidays`, label: "Holiday Calendar", icon: CalendarOff, show: true },
-    { href: `${base}/audit-logs`, label: "Audit Logs", icon: Activity, show: isOwnerOrAdmin },
-    { href: `${base}/invite`, label: "Invite Staff", icon: UserPlus, show: userRole === "SCHOOL_OWNER" },
-    { href: `${base}/branding`, label: "Branding", icon: Palette, show: isOwnerOrAdmin && flagEnabled("WHITE_LABEL") },
-    { href: `${base}/billing`, label: "Billing", icon: CreditCard, show: isOwnerOrAdmin },
-    { href: `${base}/settings`, label: "Settings", icon: Settings, show: isOwnerOrAdmin },
+    { href: base, label: t("nav.overview"), icon: LayoutDashboard, show: true },
+    { href: `${base}/classes`, label: t("nav.classesAndSections"), icon: BookOpen, show: true },
+    { href: `${base}/teachers`, label: t("nav.teachers"), icon: Users, show: true },
+    { href: `${base}/teacher-roles`, label: t("nav.teacherRoles"), icon: ShieldCheck, show: isOwnerOrAdmin && flagEnabled("TEACHER_PERMISSIONS") },
+    { href: `${base}/students`, label: t("nav.students"), icon: GraduationCap, show: true },
+    { href: `${base}/attendance`, label: t("nav.attendance"), icon: ClipboardCheck, show: flagEnabled("ATTENDANCE") },
+    { href: `${base}/reports`, label: t("nav.attendanceReports"), icon: BarChart2, show: flagEnabled("ATTENDANCE") },
+    { href: `${base}/timetable`, label: t("nav.timetable"), icon: CalendarDays, show: true },
+    { href: `${base}/custom-timetable`, label: t("nav.customTimetable"), icon: Wand2, show: isOwnerOrAdmin },
+    { href: `${base}/homework`, label: t("nav.homework"), icon: BookOpenCheck, show: flagEnabled("HOMEWORK") },
+    { href: `${base}/exam-schemes`, label: t("nav.examSchemes"), icon: FileText, show: true },
+    { href: `${base}/exam-milestones`, label: t("nav.examMilestones"), icon: BookCheck, show: flagEnabled("NOTEBOOK_CHECKING") },
+    { href: `${base}/results`, label: t("nav.results"), icon: Award, show: true },
+    { href: `${base}/report-cards`, label: t("nav.reportCards"), icon: ClipboardList, show: flagEnabled("REPORT_CARDS") },
+    { href: `${base}/report-card-builder`, label: t("nav.reportCardBuilder"), icon: LayoutTemplate, show: isOwnerOrAdmin && flagEnabled("REPORT_CARD_BUILDER") },
+    { href: `${base}/fees`, label: t("nav.feeManagement"), icon: IndianRupee, show: flagEnabled("FEES") },
+    { href: `${base}/leaves`, label: t("nav.leaveManagement"), icon: ClipboardList, show: true },
+    { href: `${base}/substitutions`, label: t("nav.substitutions"), icon: Replace, show: true },
+    { href: `${base}/analytics`, label: t("nav.analytics"), icon: PieChart, show: flagEnabled("ANALYTICS") },
+    { href: `${base}/teachers/workload`, label: t("nav.teacherWorkload"), icon: BarChart, show: true },
+    { href: `${base}/announcements`, label: t("nav.announcements"), icon: Megaphone, show: true },
+    { href: `${base}/holidays`, label: t("nav.holidayCalendar"), icon: CalendarOff, show: true },
+    { href: `${base}/audit-logs`, label: t("nav.auditLogs"), icon: Activity, show: isOwnerOrAdmin },
+    { href: `${base}/invite`, label: t("nav.inviteStaff"), icon: UserPlus, show: isOwnerOrAdmin },
+    { href: `${base}/branding`, label: t("nav.branding"), icon: Palette, show: isOwnerOrAdmin && flagEnabled("WHITE_LABEL") },
+    { href: `${base}/billing`, label: t("nav.billing"), icon: CreditCard, show: isOwnerOrAdmin },
+    { href: `${base}/settings`, label: t("nav.settings"), icon: Settings, show: isOwnerOrAdmin },
   ].filter((item) => item.show);
 
   return (
@@ -95,7 +98,7 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
             <button
               onClick={onClose}
               className="flex-shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground md:hidden"
-              aria-label="Close menu"
+              aria-label={t("common.closeMenu")}
             >
               <X className="h-5 w-5" />
             </button>
@@ -103,7 +106,7 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
         </div>
       </div>
 
-      <div className="px-5 pb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Menu</div>
+      <div className="px-5 pb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{t("common.menu")}</div>
 
       {/* Nav */}
       <nav className="no-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-1">
@@ -135,7 +138,7 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
       <div className="p-3">
         <div className="flex items-center justify-between rounded-xl border border-sidebar-border bg-muted/40 px-3 py-2.5">
           <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", ROLE_COLORS[userRole] || "bg-muted text-muted-foreground")}>
-            {ROLE_LABELS[userRole] || userRole}
+            {ROLE_LABEL_KEYS[userRole] ? t(ROLE_LABEL_KEYS[userRole]) : userRole}
           </span>
           <span className="text-[10px] text-muted-foreground">SchoolSync</span>
         </div>

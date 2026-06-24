@@ -7,9 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 function StudentLoginForm() {
-  const [form, setForm] = useState({ identifier: "", password: "" });
+  const { t } = useTranslation();
+  const [form, setForm] = useState({ admissionNo: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -26,28 +29,31 @@ function StudentLoginForm() {
       if (existing) await signOut({ redirect: false });
 
       const result = await signIn("student-credentials", {
-        identifier: form.identifier,
+        identifier: form.admissionNo,
         password: form.password,
         redirect: false,
       });
 
       if (result?.error) {
-        if (result.code === "no-account") setError("No account found with that admission number or student ID.");
-        else if (result.code === "invalid-password") setError("Incorrect password.");
-        else setError("Invalid credentials.");
+        if (result.code === "no-account") setError(t("auth.noAccountWithAdmissionNo"));
+        else if (result.code === "invalid-password") setError(t("auth.incorrectPassword"));
+        else setError(t("auth.invalidCredentialsShort"));
         return;
       }
 
       window.location.href = "/student/dashboard";
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError(t("auth.somethingWentWrong"));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      <div className="absolute left-1/2 top-4 -translate-x-1/2 z-20">
+        <LanguageSwitcher />
+      </div>
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
           <div
@@ -56,13 +62,13 @@ function StudentLoginForm() {
           >
             <GraduationCap className="h-6 w-6" />
           </div>
-          <span className="mt-3 text-2xl font-bold tracking-tight text-foreground">Student Portal</span>
-          <span className="mt-1 text-sm text-muted-foreground">Sign in to view your homework, attendance and results</span>
+          <span className="mt-3 text-2xl font-bold tracking-tight text-foreground">{t("auth.studentPortal")}</span>
+          <span className="mt-1 text-sm text-muted-foreground">{t("auth.studentPortalSubtitle")}</span>
         </div>
         <Card className="border-border/70 shadow-xl shadow-black/5 backdrop-blur supports-[backdrop-filter]:bg-card/80">
           <CardHeader>
-            <CardTitle className="text-xl">Sign in</CardTitle>
-            <CardDescription>Use the admission number or student ID given by your school.</CardDescription>
+            <CardTitle className="text-xl">{t("common.signIn")}</CardTitle>
+            <CardDescription>{t("auth.studentSignInDesc")}</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
@@ -72,19 +78,19 @@ function StudentLoginForm() {
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label htmlFor="identifier">Admission Number or Student ID</Label>
+                <Label htmlFor="admissionNo">{t("auth.admissionNumber")}</Label>
                 <Input
-                  id="identifier"
+                  id="admissionNo"
                   type="text"
                   autoComplete="username"
-                  placeholder="e.g. 2024A015"
-                  value={form.identifier}
-                  onChange={(e) => setForm({ ...form, identifier: e.target.value })}
+                  placeholder="e.g. ADM-001"
+                  value={form.admissionNo}
+                  onChange={(e) => setForm({ ...form, admissionNo: e.target.value })}
                   required
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">{t("common.password")}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -98,15 +104,15 @@ function StudentLoginForm() {
             </CardContent>
             <CardFooter>
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Signing in..." : "Sign in"}
+                {loading ? t("common.signingIn") : t("common.signIn")}
               </Button>
             </CardFooter>
           </form>
         </Card>
         <p className="mt-5 text-center text-xs text-muted-foreground">
-          Not a student?{" "}
+          {t("auth.notAStudent")}{" "}
           <a href="/login" className="font-medium underline hover:text-foreground">
-            Go to staff login
+            {t("auth.goToStaffLogin")}
           </a>
         </p>
       </div>

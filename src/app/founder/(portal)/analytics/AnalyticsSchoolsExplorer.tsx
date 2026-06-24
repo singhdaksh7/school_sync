@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { SCHOOL_STATUSES, SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT, type SchoolStatusValue } from "@/lib/school-status";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 type SchoolRow = {
   id: string;
@@ -33,6 +34,7 @@ type SchoolsResponse = {
 type Plan = { id: string; name: string };
 
 export default function AnalyticsSchoolsExplorer() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("ALL");
@@ -97,13 +99,13 @@ export default function AnalyticsSchoolsExplorer() {
     <Card className="border-border">
       <CardHeader className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">Schools Explorer{data ? ` (${data.total})` : ""}</CardTitle>
+          <CardTitle className="text-base">{t("founder.schoolsExplorer")}{data ? ` (${data.total})` : ""}</CardTitle>
           <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by name or slug..."
+              placeholder={t("founder.searchByNameOrSlug")}
               className="pl-9"
             />
           </div>
@@ -112,10 +114,10 @@ export default function AnalyticsSchoolsExplorer() {
         <div className="flex flex-wrap gap-2">
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="Status" />
+              <SelectValue placeholder={t("founder.status")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All statuses</SelectItem>
+              <SelectItem value="ALL">{t("founder.allStatuses")}</SelectItem>
               {SCHOOL_STATUSES.map((s) => (
                 <SelectItem key={s} value={s}>
                   {SCHOOL_STATUS_LABEL[s]}
@@ -126,10 +128,10 @@ export default function AnalyticsSchoolsExplorer() {
 
           <Select value={planId} onValueChange={setPlanId}>
             <SelectTrigger className="w-full sm:w-44">
-              <SelectValue placeholder="Plan" />
+              <SelectValue placeholder={t("founder.plan")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All plans</SelectItem>
+              <SelectItem value="ALL">{t("founder.allPlans")}</SelectItem>
               {plans.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.name}
@@ -140,17 +142,17 @@ export default function AnalyticsSchoolsExplorer() {
 
           <Select value={billing} onValueChange={setBilling}>
             <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="Billing" />
+              <SelectValue placeholder={t("founder.billing")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All billing</SelectItem>
-              <SelectItem value="overdue">Overdue</SelectItem>
-              <SelectItem value="current">Current</SelectItem>
+              <SelectItem value="ALL">{t("founder.allBilling")}</SelectItem>
+              <SelectItem value="overdue">{t("founder.overdue")}</SelectItem>
+              <SelectItem value="current">{t("founder.current")}</SelectItem>
             </SelectContent>
           </Select>
 
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full sm:w-40" aria-label="Registered from" />
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full sm:w-40" aria-label="Registered to" />
+          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full sm:w-40" aria-label={t("founder.registeredFrom")} />
+          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full sm:w-40" aria-label={t("founder.registeredTo")} />
         </div>
       </CardHeader>
       <CardContent>
@@ -166,12 +168,12 @@ export default function AnalyticsSchoolsExplorer() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="pb-2 pr-4 font-medium">School Name</th>
-                    <th className="pb-2 pr-4 font-medium">Status</th>
-                    <th className="pb-2 pr-4 font-medium">Plan</th>
-                    <th className="pb-2 pr-4 font-medium">Students</th>
-                    <th className="pb-2 pr-4 font-medium">Teachers</th>
-                    <th className="pb-2 pr-4 font-medium">Created</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.schoolName")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.status")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.plan")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.students")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.teachers")}</th>
+                    <th className="pb-2 pr-4 font-medium">{t("founder.created")}</th>
                     <th className="pb-2 font-medium"></th>
                   </tr>
                 </thead>
@@ -188,7 +190,7 @@ export default function AnalyticsSchoolsExplorer() {
                           <Badge variant={SCHOOL_STATUS_BADGE_VARIANT[school.status]}>
                             {SCHOOL_STATUS_LABEL[school.status]}
                           </Badge>
-                          {school.isOverdue && <Badge variant="destructive">Overdue</Badge>}
+                          {school.isOverdue && <Badge variant="destructive">{t("founder.overdue")}</Badge>}
                         </div>
                       </td>
                       <td className="py-3 pr-4 text-muted-foreground">
@@ -215,7 +217,7 @@ export default function AnalyticsSchoolsExplorer() {
 
             <div className="mt-4 flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
-                Page {data.page} of {data.totalPages}
+                {t("founder.pageOf", { page: data.page, totalPages: data.totalPages })}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -254,23 +256,25 @@ function SkeletonTable() {
 }
 
 function EmptyState({ query }: { query: string }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-14 text-center">
       <Building2 className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm font-medium text-foreground">No schools found</p>
+      <p className="text-sm font-medium text-foreground">{t("founder.noSchoolsFound")}</p>
       <p className="text-xs text-muted-foreground">
-        {query ? `No results for "${query}".` : "No schools match the selected filters."}
+        {query ? t("founder.noResultsForQuery", { query }) : t("founder.noSchoolsMatchFilters")}
       </p>
     </div>
   );
 }
 
 function ErrorState() {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-destructive/40 py-14 text-center">
       <AlertTriangle className="h-8 w-8 text-destructive" />
-      <p className="text-sm font-medium text-foreground">Couldn&apos;t load schools</p>
-      <p className="text-xs text-muted-foreground">Something went wrong. Please refresh the page.</p>
+      <p className="text-sm font-medium text-foreground">{t("founder.couldntLoadSchools")}</p>
+      <p className="text-xs text-muted-foreground">{t("founder.somethingWentWrongRefresh")}</p>
     </div>
   );
 }
