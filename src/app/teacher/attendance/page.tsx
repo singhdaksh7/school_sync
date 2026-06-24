@@ -71,8 +71,7 @@ export default function TeacherAttendancePage() {
       return;
     }
     setSelfError(data.error || t("teacherAttendance.unableToLoadTodayAttendance"));
-  }, []);
-
+  }, [t]);
   useEffect(() => {
     const id = window.setTimeout(() => fetchSelfAttendance(), 0);
     return () => window.clearTimeout(id);
@@ -103,8 +102,7 @@ export default function TeacherAttendancePage() {
       setAttendance(map);
     }
     setLoading(false);
-  }, []);
-
+  }, [t]);
   useEffect(() => {
     if (!profile?.mentorSection) return;
     const id = window.setTimeout(() => fetchAttendance(date), 0);
@@ -330,3 +328,4 @@ export default function TeacherAttendancePage() {
     </div>
   );
 }
+

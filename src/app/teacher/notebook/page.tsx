@@ -64,8 +64,7 @@ export default function TeacherNotebookPage() {
     if (!res.ok) { setMessage(data.error || t("teacherNotebook.couldNotLoadRoster")); return; }
     setRoster(data.roster || []);
     setOverrides({});
-  }, []);
-
+  }, [t]);
   useEffect(() => {
     const id = window.setTimeout(() => {
       if (selectedAssignment && milestoneId) {
@@ -208,3 +207,4 @@ export default function TeacherNotebookPage() {
     </div>
   );
 }
+
