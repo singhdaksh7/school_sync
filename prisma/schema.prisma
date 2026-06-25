@@ -151,6 +151,7 @@ model User {
   paymentProofsSubmitted PaymentProofSubmission[]   @relation("PaymentProofSubmitter")
   paymentProofsReviewed  PaymentProofSubmission[]   @relation("PaymentProofReviewer")
   invoicesCreated        Invoice[]                  @relation("InvoiceCreator")
+  teachersDeleted        Teacher[]                  @relation("TeacherDeletedBy")
   passwordResetTokens    PasswordResetToken[]
   createdAt              DateTime                   @default(now())
   updatedAt              DateTime                   @updatedAt
@@ -186,10 +187,11 @@ model School {
   status                      SchoolStatus               @default(ACTIVE)
   periodsPerDay               Int                        @default(6)
   teacherAttendanceCutoffTime String                     @default("09:30")
-  ownerId                     String                     @unique
-  owner                       User                       @relation("SchoolOwner", fields: [ownerId], references: [id])
+  ownerId                     String?                    @unique
+  owner                       User?                      @relation("SchoolOwner", fields: [ownerId], references: [id])
   admins                      User[]                     @relation("SchoolAdmins")
   classes                     Class[]
+  subjects                    Subject[]
   teachers                    Teacher[]
   students                    Student[]
   guardians                   Guardian[]
@@ -226,18 +228,25 @@ model School {
 }
 
 model SchoolInvite {
-  id          String    @id @default(cuid())
-  name        String?
-  email       String
-  token       String    @unique @default(cuid())
-  role        UserRole  @default(SCHOOL_ADMIN)
-  schoolId    String
-  school      School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  invitedById String
-  invitedBy   User      @relation("InviteSender", fields: [invitedById], references: [id])
-  usedAt      DateTime?
-  expiresAt   DateTime
-  createdAt   DateTime  @default(now())
+  id              String            @id @default(cuid())
+  name            String?
+  email           String
+  token           String            @unique @default(cuid())
+  role            UserRole          @default(SCHOOL_ADMIN)
+  schoolId        String
+  school          School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  invitedById     String
+  invitedBy       User              @relation("InviteSender", fields: [invitedById], references: [id])
+  usedAt          DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime          @default(now())
+  planId          String?
+  plan            SubscriptionPlan? @relation(fields: [planId], references: [id])
+  trialStartDate  DateTime?
+  trialExpiryDate DateTime?
+  billingCycle    BillingCycle?
+
+  @@index([planId])
 }
 
 model Class {
@@ -247,6 +256,7 @@ model Class {
   school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sections      Section[]
   feeStructures FeeStructure[]
+  subjects      Subject[]
   createdAt     DateTime       @default(now())
 
   @@unique([name, schoolId])
@@ -264,11 +274,28 @@ model Section {
   timetableSlots TimetableSlot[]
   homework       Homework[]
   arrangements   Arrangement[]
+  subjects       Subject[]
   transfersFrom  SectionTransfer[] @relation("TransferFrom")
   transfersTo    SectionTransfer[] @relation("TransferTo")
   createdAt      DateTime          @default(now())
 
   @@unique([name, classId])
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId String?
+  section   Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+
+  @@unique([classId, sectionId, name])
+  @@index([schoolId])
+  @@index([classId])
 }
 
 model Teacher {
@@ -295,10 +322,15 @@ model Teacher {
   roleAssignments           TeacherRoleAssignment[]
   homeworkCompletionsMarked HomeworkStudentStatus[]    @relation("HomeworkCompletionMarker")
   notebookChecks            NotebookCheck[]
+  isDeleted                 Boolean                    @default(false)
+  deletedAt                 DateTime?
+  deletedById               String?
+  deletedBy                 User?                      @relation("TeacherDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
   createdAt                 DateTime                   @default(now())
   updatedAt                 DateTime                   @updatedAt
 
   @@index([schoolId])
+  @@index([schoolId, isDeleted])
 }
 
 model TeacherInvite {
@@ -930,6 +962,7 @@ model SubscriptionPlan {
   isActive      Boolean              @default(true)
   subscriptions SchoolSubscription[]
   invoices      Invoice[]
+  schoolInvites SchoolInvite[]
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 }

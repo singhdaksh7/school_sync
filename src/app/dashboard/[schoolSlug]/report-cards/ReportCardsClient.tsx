@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileText, Search } from "lucide-react";
+import { Download, FileText, Search, ListTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import SubjectMarksTable, { type SubjectMark } from "@/components/shared/SubjectMarksTable";
 
 type Section = { id: string; name: string; className: string };
 type Scheme = { id: string; name: string };
@@ -20,6 +22,7 @@ type ReportCard = {
   student: { name: string; rollNo: string; section: { name: string; class: { name: string } } };
   examScheme: { id: string; name: string };
   generatedByTeacher: { name: string };
+  subjects: SubjectMark[];
 };
 
 export default function ReportCardsClient({
@@ -38,6 +41,7 @@ export default function ReportCardsClient({
   const [cards, setCards] = useState<ReportCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [subjectsCard, setSubjectsCard] = useState<ReportCard | null>(null);
 
   async function fetchCards() {
     setLoading(true);
@@ -168,15 +172,26 @@ export default function ReportCardsClient({
                     <td className="py-3 px-3 text-gray-600">{card.totalMarks} ({card.percentage}%) · {card.grade}</td>
                     <td className="py-3 px-3"><Badge variant={card.status === "PUBLISHED" ? "default" : "secondary"}>{card.status}</Badge></td>
                     <td className="py-3 px-3 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => window.open(`/api/schools/${schoolId}/report-cards/${card.id}/pdf`, "_blank")}
-                      >
-                        <Download className="w-4 h-4" />
-                        PDF
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => setSubjectsCard(card)}
+                        >
+                          <ListTree className="w-4 h-4" />
+                          Subjects
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => window.open(`/api/schools/${schoolId}/report-cards/${card.id}/pdf`, "_blank")}
+                        >
+                          <Download className="w-4 h-4" />
+                          PDF
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -185,6 +200,24 @@ export default function ReportCardsClient({
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!subjectsCard} onOpenChange={(open) => !open && setSubjectsCard(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {subjectsCard ? `${subjectsCard.student.name} – ${subjectsCard.examScheme.name}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {subjectsCard && (
+            <SubjectMarksTable
+              subjects={subjectsCard.subjects}
+              totalMarks={subjectsCard.totalMarks}
+              percentage={subjectsCard.percentage}
+              grade={subjectsCard.grade}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

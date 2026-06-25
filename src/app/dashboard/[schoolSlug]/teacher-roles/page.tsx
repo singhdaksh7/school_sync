@@ -22,7 +22,7 @@ export default async function TeacherRolesPage({
       orderBy: { name: "asc" },
     }),
     prisma.teacher.findMany({
-      where: { schoolId: school.id },
+      where: { schoolId: school.id, isDeleted: false },
       select: {
         id: true,
         name: true,

@@ -66,7 +66,7 @@ export async function classBelongsToSchool(classId: string, schoolId: string) {
 
 export async function teacherBelongsToSchool(teacherId: string, schoolId: string) {
   const teacher = await prisma.teacher.findFirst({
-    where: { id: teacherId, schoolId },
+    where: { id: teacherId, schoolId, isDeleted: false },
     select: { id: true },
   });
   return Boolean(teacher);
@@ -130,7 +130,7 @@ export async function allTeachersBelongToSchool(teacherIds: string[], schoolId: 
   if (uniqueIds.length === 0) return true;
 
   const count = await prisma.teacher.count({
-    where: { id: { in: uniqueIds }, schoolId },
+    where: { id: { in: uniqueIds }, schoolId, isDeleted: false },
   });
   return count === uniqueIds.length;
 }

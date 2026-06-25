@@ -25,5 +25,5 @@ export async function GET() {
   if (user.role === "TEACHER") return noStoreRedirect("/teacher/attendance");
 
   if (user.schoolSlug) return noStoreRedirect(`/dashboard/${user.schoolSlug}`);
-  return noStoreRedirect("/onboarding");
+  return noStoreRedirect("/no-school");
 }

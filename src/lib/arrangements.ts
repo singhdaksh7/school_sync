@@ -134,9 +134,9 @@ async function generateForTeacherDay(
   });
   if (slots.length === 0) return summary;
 
-  // Candidate substitutes: every other teacher in the same school who isn't absent.
+  // Candidate substitutes: every other active teacher in the same school who isn't absent.
   const teachers = await prisma.teacher.findMany({
-    where: { schoolId, id: { not: absentTeacherId } },
+    where: { schoolId, id: { not: absentTeacherId }, isDeleted: false },
     select: { id: true, subject: true },
   });
   const candidates = teachers.filter((t) => !excludeFromCandidates.has(t.id));

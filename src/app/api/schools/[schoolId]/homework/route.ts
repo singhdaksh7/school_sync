@@ -42,7 +42,7 @@ export async function GET(
   });
 
   const teachers = await prisma.teacher.findMany({
-    where: { schoolId },
+    where: { schoolId, isDeleted: false },
     select: { id: true, name: true, subject: true },
     orderBy: { name: "asc" },
   });

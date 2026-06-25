@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Kept local (not imported from the server-coupled lib) so this stays a client bundle.
 const LAYOUT_TYPES = ["CLASSIC", "MODERN", "COMPACT"] as const;
@@ -124,6 +125,8 @@ export default function ReportCardBuilderClient({ schoolId, classes, initialTemp
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [subjectGroupClassId, setSubjectGroupClassId] = useState("");
+  const [loadingGroupSubjects, setLoadingGroupSubjects] = useState(false);
 
   const classNameById = useMemo(
     () => new Map(classes.map((c) => [c.id, c.name])),
@@ -284,6 +287,22 @@ export default function ReportCardBuilderClient({ schoolId, classes, initialTemp
   }
   function removeGroup(index: number) {
     update("subjectGroups", form!.subjectGroups.filter((_, i) => i !== index));
+  }
+  async function addGroupFromMaster() {
+    if (!subjectGroupClassId) return;
+    setLoadingGroupSubjects(true);
+    const res = await fetch(`/api/schools/${schoolId}/subjects?classId=${subjectGroupClassId}`);
+    const data = await res.json();
+    setLoadingGroupSubjects(false);
+    if (!res.ok || !Array.isArray(data) || data.length === 0) {
+      setError("No subjects found for that class in Subject Master.");
+      return;
+    }
+    const className = classNameById.get(subjectGroupClassId) ?? "Subjects";
+    update("subjectGroups", [
+      ...form!.subjectGroups,
+      { name: className, subjects: data.map((s: { name: string }) => s.name) },
+    ]);
   }
 
   // --- Custom section editing ---------------------------------------------
@@ -533,6 +552,25 @@ export default function ReportCardBuilderClient({ schoolId, classes, initialTemp
                   </div>
                 ))}
                 <Button size="sm" variant="outline" className="gap-1" onClick={addGroup}><Plus className="w-3 h-3" /> Add group</Button>
+                {classes.length > 0 && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                    <Select value={subjectGroupClassId} onValueChange={setSubjectGroupClassId}>
+                      <SelectTrigger className="w-44"><SelectValue placeholder="Pick a class" /></SelectTrigger>
+                      <SelectContent>
+                        {classes.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1"
+                      onClick={addGroupFromMaster}
+                      disabled={!subjectGroupClassId || loadingGroupSubjects}
+                    >
+                      <Plus className="w-3 h-3" /> {loadingGroupSubjects ? "Loading..." : "Add group from Subject Master"}
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

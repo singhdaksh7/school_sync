@@ -17,7 +17,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ scho
     },
   });
 
-  if (!school) redirect("/onboarding");
+  if (!school) redirect("/no-school");
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);

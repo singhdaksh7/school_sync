@@ -8,15 +8,18 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Exam { id: string; name: string; maxMarks: number; order: number }
 interface Scheme { id: string; name: string; exams: Exam[] }
+interface SectionItem { id: string; name: string }
+interface ClassItem { id: string; name: string; sections: SectionItem[] }
 
 const emptyExam = { name: "", maxMarks: "" };
 
-interface Props { initialSchemes: Scheme[]; schoolId: string }
+interface Props { initialSchemes: Scheme[]; schoolId: string; initialClasses?: ClassItem[] }
 
-export default function ExamSchemesClient({ initialSchemes, schoolId }: Props) {
+export default function ExamSchemesClient({ initialSchemes, schoolId, initialClasses = [] }: Props) {
   const [schemes, setSchemes] = useState<Scheme[]>(initialSchemes);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -25,6 +28,27 @@ export default function ExamSchemesClient({ initialSchemes, schoolId }: Props) {
   const [exams, setExams] = useState([{ ...emptyExam }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [subjectClassId, setSubjectClassId] = useState("");
+  const [subjectSectionId, setSubjectSectionId] = useState("whole-class");
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+
+  const subjectClassSections = initialClasses.find((c) => c.id === subjectClassId)?.sections ?? [];
+
+  async function loadSubjectsFromMaster() {
+    if (!subjectClassId) return;
+    setLoadingSubjects(true);
+    const params = new URLSearchParams({ classId: subjectClassId });
+    if (subjectSectionId !== "whole-class") params.set("sectionId", subjectSectionId);
+    const res = await fetch(`/api/schools/${schoolId}/subjects?${params.toString()}`);
+    const data = await res.json();
+    setLoadingSubjects(false);
+    if (!res.ok || !Array.isArray(data) || data.length === 0) {
+      setError("No subjects found for this class/section in Subject Master.");
+      return;
+    }
+    setError("");
+    setExams(data.map((s: { name: string }) => ({ name: s.name, maxMarks: "" })));
+  }
 
   async function fetchSchemes() {
     setLoading(true);
@@ -33,7 +57,10 @@ export default function ExamSchemesClient({ initialSchemes, schoolId }: Props) {
     setLoading(false);
   }
 
-  function openAdd() { setSchemeName(""); setExams([{ ...emptyExam }]); setError(""); setDialogOpen(true); }
+  function openAdd() {
+    setSchemeName(""); setExams([{ ...emptyExam }]); setError(""); setDialogOpen(true);
+    setSubjectClassId(""); setSubjectSectionId("whole-class");
+  }
   function addExamRow() { setExams((prev) => [...prev, { ...emptyExam }]); }
   function removeExamRow(i: number) { setExams((prev) => prev.filter((_, idx) => idx !== i)); }
   function updateExam(i: number, field: keyof typeof emptyExam, value: string) {
@@ -124,6 +151,34 @@ export default function ExamSchemesClient({ initialSchemes, schoolId }: Props) {
           <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto pr-1">
             {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
             <div className="space-y-1.5"><Label>Scheme Name</Label><Input placeholder="e.g. Annual Exam 2024-25" value={schemeName} onChange={(e) => setSchemeName(e.target.value)} /></div>
+
+            {initialClasses.length > 0 && (
+              <div className="space-y-1.5 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                <Label className="text-xs text-gray-500">Load subjects from Subject Master (optional)</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Select value={subjectClassId} onValueChange={(v) => { setSubjectClassId(v); setSubjectSectionId("whole-class"); }}>
+                    <SelectTrigger className="w-40"><SelectValue placeholder="Class" /></SelectTrigger>
+                    <SelectContent>
+                      {initialClasses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {subjectClassSections.length > 0 && (
+                    <Select value={subjectSectionId} onValueChange={setSubjectSectionId}>
+                      <SelectTrigger className="w-40"><SelectValue placeholder="Whole class" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="whole-class">Whole class</SelectItem>
+                        {subjectClassSections.map((s) => <SelectItem key={s.id} value={s.id}>Section {s.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <Button type="button" variant="outline" size="sm" onClick={loadSubjectsFromMaster} disabled={!subjectClassId || loadingSubjects}>
+                    {loadingSubjects ? "Loading..." : "Insert Subjects"}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-400">Replaces the exam rows below with this class&apos;s subject list. You still enter max marks for each.</p>
+              </div>
+            )}
+
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label>Exams</Label>
