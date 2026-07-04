@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessSchool, canWriteSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { ensureDefaultExamMilestonesSeeded } from "@/lib/homework";
 import { logAudit } from "@/lib/audit";
 
@@ -22,6 +23,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!isTeacherOfSchool && !(await canAccessSchool(schoolId, session.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  {
+    const denied = await requireSchoolFeature(schoolId, "NOTEBOOK_CHECKING");
+    if (denied) return denied;
+  }
 
   await ensureDefaultExamMilestonesSeeded(schoolId);
   const milestones = await prisma.examMilestone.findMany({
@@ -37,6 +42,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const role = sessionRole(session.user);
   if (!(await canWriteSchool(schoolId, session.user.id, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "NOTEBOOK_CHECKING");
+    if (denied) return denied;
+  }
 
   try {
     const body = milestoneSchema.parse(await req.json());

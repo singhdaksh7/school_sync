@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionRole, allStudentsBelongToSchool, examMilestoneBelongsToSchool } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { logAudit } from "@/lib/audit";
 import { getTeacherByUserId, normalizeSubject, teacherCanTeachSubjectSection } from "@/lib/homework";
 
@@ -19,6 +20,9 @@ export async function GET(req: Request) {
 
   const teacher = await getTeacherByUserId(session.user.id);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "NOTEBOOK_CHECKING");
+  if (featureDenied) return featureDenied;
 
   const { searchParams } = new URL(req.url);
   const sectionId = searchParams.get("sectionId");
@@ -70,6 +74,9 @@ export async function PATCH(req: Request) {
 
   const teacher = await getTeacherByUserId(session.user.id);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "NOTEBOOK_CHECKING");
+  if (featureDenied) return featureDenied;
 
   const body = await req.json();
   const sectionId = typeof body.sectionId === "string" ? body.sectionId : "";

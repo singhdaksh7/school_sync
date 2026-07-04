@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessSchool } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -9,6 +10,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  // Exam-milestone analytics is notebook-check completion data, so it belongs to
+  // the NOTEBOOK_CHECKING module (its parent feature), NOT the ANALYTICS dashboard.
+  {
+    const denied = await requireSchoolFeature(schoolId, "NOTEBOOK_CHECKING");
+    if (denied) return denied;
   }
 
   const milestones = await prisma.examMilestone.findMany({

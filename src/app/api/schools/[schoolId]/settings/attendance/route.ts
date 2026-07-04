@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessSchool, canWriteSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { isValidCutoffTime, normalizeCutoffTime } from "@/lib/teacher-attendance";
 
 const settingsSchema = z.object({
@@ -14,6 +15,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "ATTENDANCE");
+    if (denied) return denied;
+  }
 
   const school = await prisma.school.findUnique({
     where: { id: schoolId },
@@ -34,6 +39,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ school
   const role = sessionRole(session.user);
   if (!(await canWriteSchool(schoolId, session.user.id, role))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await requireSchoolFeature(schoolId, "ATTENDANCE");
+    if (denied) return denied;
   }
 
   try {

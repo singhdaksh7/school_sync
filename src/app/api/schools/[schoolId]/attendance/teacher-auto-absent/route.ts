@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { runTeacherAutoAbsent } from "@/lib/teacher-attendance";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
@@ -11,6 +12,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ school
   const role = sessionRole(session.user);
   if (!(await canWriteSchool(schoolId, session.user.id, role))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await requireSchoolFeature(schoolId, "ATTENDANCE");
+    if (denied) return denied;
   }
 
   const result = await runTeacherAutoAbsent(schoolId, session.user.id);

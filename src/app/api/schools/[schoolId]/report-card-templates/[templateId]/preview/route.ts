@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessSchool } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { generateReportCardPdf } from "@/lib/report-card-pdf";
 import {
   buildTemplateData,
@@ -24,6 +25,10 @@ export async function POST(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await requireSchoolFeature(schoolId, "REPORT_CARD_BUILDER");
+    if (denied) return denied;
   }
 
   const template = await prisma.reportCardTemplate.findFirst({ where: { id: templateId, schoolId } });

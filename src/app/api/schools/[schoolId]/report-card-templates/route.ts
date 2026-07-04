@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessSchool, canWriteSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { buildTemplateData, serializeTemplate } from "@/lib/report-card-templates";
 
 // Validate that every assigned class id actually belongs to this school.
@@ -22,6 +23,10 @@ export async function GET(
   if (!(await canAccessSchool(schoolId, session.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  {
+    const denied = await requireSchoolFeature(schoolId, "REPORT_CARD_BUILDER");
+    if (denied) return denied;
+  }
 
   const templates = await prisma.reportCardTemplate.findMany({
     where: { schoolId },
@@ -40,6 +45,10 @@ export async function POST(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await requireSchoolFeature(schoolId, "REPORT_CARD_BUILDER");
+    if (denied) return denied;
   }
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;

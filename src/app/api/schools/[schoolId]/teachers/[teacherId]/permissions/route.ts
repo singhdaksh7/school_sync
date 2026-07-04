@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canAccessSchool, teacherBelongsToSchool } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { getTeacherPermissions, getTeacherScope } from "@/lib/teacher-permissions";
 
 /**
@@ -18,6 +19,10 @@ export async function GET(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "TEACHER_PERMISSIONS");
+    if (denied) return denied;
+  }
   if (!(await teacherBelongsToSchool(teacherId, schoolId)))
     return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 

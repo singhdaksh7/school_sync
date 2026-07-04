@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTeacherAuth } from "@/lib/mobile-auth";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { getTodayDateOnly, hasCutoffPassed, normalizeCutoffTime } from "@/lib/teacher-attendance";
 
 export async function GET(req: Request) {
@@ -12,6 +13,9 @@ export async function GET(req: Request) {
     include: { school: { select: { teacherAttendanceCutoffTime: true } } },
   });
   if (!teacher) return NextResponse.json({ error: "Teacher profile not found" }, { status: 404 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "ATTENDANCE");
+  if (featureDenied) return featureDenied;
 
   const date = getTodayDateOnly();
   const cutoffTime = normalizeCutoffTime(teacher.school.teacherAttendanceCutoffTime);

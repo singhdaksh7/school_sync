@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { serializeTemplate } from "@/lib/report-card-templates";
 
 export async function POST(
@@ -13,6 +14,10 @@ export async function POST(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await requireSchoolFeature(schoolId, "REPORT_CARD_BUILDER");
+    if (denied) return denied;
   }
 
   const existing = await prisma.reportCardTemplate.findFirst({ where: { id: templateId, schoolId } });

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { logAudit } from "@/lib/audit";
 
 const updateSchema = z.object({
@@ -17,6 +18,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ school
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const role = sessionRole(session.user);
   if (!(await canWriteSchool(schoolId, session.user.id, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "NOTEBOOK_CHECKING");
+    if (denied) return denied;
+  }
 
   const existing = await prisma.examMilestone.findFirst({ where: { id, schoolId } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });

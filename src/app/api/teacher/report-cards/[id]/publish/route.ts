@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { reportCardInclude, serializeReportCard } from "@/lib/report-cards";
 import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { logAudit } from "@/lib/audit";
 
 export async function POST(
@@ -16,7 +17,12 @@ export async function POST(
   if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  if (!teacher?.mentorSectionId) {
+  if (!teacher) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "REPORT_CARDS");
+  if (featureDenied) return featureDenied;
+
+  if (!teacher.mentorSectionId) {
     return NextResponse.json({ error: "Only class mentors can publish report cards" }, { status: 403 });
   }
 

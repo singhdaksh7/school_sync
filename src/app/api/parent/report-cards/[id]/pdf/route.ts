@@ -3,6 +3,7 @@ import { getAuthenticatedGuardian } from "@/lib/parent-auth";
 import { prisma } from "@/lib/prisma";
 import { generateReportCardPdf } from "@/lib/report-card-pdf";
 import { reportCardInclude, reportCardToPdfInput } from "@/lib/report-cards";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 export async function GET(
   req: NextRequest,
@@ -11,6 +12,9 @@ export async function GET(
   const { id } = await params;
   const auth = await getAuthenticatedGuardian(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const featureDenied = await requireSchoolFeature(auth.guardian.schoolId, "REPORT_CARDS");
+  if (featureDenied) return featureDenied;
 
   const card = await prisma.reportCard.findFirst({
     where: {

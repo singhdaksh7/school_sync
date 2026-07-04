@@ -3,12 +3,17 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { canAccessSchool, canWriteSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "ATTENDANCE");
+    if (denied) return denied;
+  }
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
@@ -55,6 +60,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const role = sessionRole(session.user);
 
   if (!(await canWriteSchool(schoolId, userId, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "ATTENDANCE");
+    if (denied) return denied;
+  }
 
   try {
     const body = await req.json();

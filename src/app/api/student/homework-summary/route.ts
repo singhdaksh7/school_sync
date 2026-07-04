@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getStudentAuth } from "@/lib/student-mobile-auth";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import {
   addHomeworkStatsRecord,
   createHomeworkStatsAccumulator,
@@ -11,6 +12,9 @@ import {
 export async function GET(req: NextRequest) {
   const auth = await getStudentAuth(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const featureDenied = await requireSchoolFeature(auth.schoolId, "HOMEWORK");
+  if (featureDenied) return featureDenied;
 
   const records = await prisma.homeworkStudentStatus.findMany({
     where: {

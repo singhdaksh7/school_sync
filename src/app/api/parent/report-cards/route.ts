@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedGuardian } from "@/lib/parent-auth";
 import { prisma } from "@/lib/prisma";
 import { reportCardInclude, serializeReportCard } from "@/lib/report-cards";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedGuardian(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const featureDenied = await requireSchoolFeature(auth.guardian.schoolId, "REPORT_CARDS");
+  if (featureDenied) return featureDenied;
 
   const { searchParams } = new URL(req.url);
   const studentId = searchParams.get("studentId");

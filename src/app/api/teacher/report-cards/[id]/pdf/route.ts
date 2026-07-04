@@ -5,6 +5,7 @@ import { generateReportCardPdf } from "@/lib/report-card-pdf";
 import { reportCardInclude, reportCardToPdfInput } from "@/lib/report-cards";
 import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 export async function GET(
   _req: Request,
@@ -16,7 +17,12 @@ export async function GET(
   if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
-  if (!teacher?.mentorSectionId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!teacher) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "REPORT_CARDS");
+  if (featureDenied) return featureDenied;
+
+  if (!teacher.mentorSectionId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "REPORT_CARDS", "DOWNLOAD", {
     sectionId: teacher.mentorSectionId,

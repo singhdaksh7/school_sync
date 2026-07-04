@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessSchool, canWriteSchool, sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { buildTemplateData, serializeTemplate } from "@/lib/report-card-templates";
 
 async function classesBelongToSchool(classIds: string[], schoolId: string) {
@@ -25,6 +26,10 @@ export async function GET(
   if (!(await canAccessSchool(schoolId, session.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  {
+    const denied = await requireSchoolFeature(schoolId, "REPORT_CARD_BUILDER");
+    if (denied) return denied;
+  }
 
   const template = await getOwnedTemplate(schoolId, templateId);
   if (!template) return NextResponse.json({ error: "Template not found" }, { status: 404 });
@@ -41,6 +46,10 @@ export async function PATCH(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await requireSchoolFeature(schoolId, "REPORT_CARD_BUILDER");
+    if (denied) return denied;
   }
 
   const existing = await getOwnedTemplate(schoolId, templateId);
@@ -73,6 +82,10 @@ export async function DELETE(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await requireSchoolFeature(schoolId, "REPORT_CARD_BUILDER");
+    if (denied) return denied;
   }
 
   const existing = await getOwnedTemplate(schoolId, templateId);

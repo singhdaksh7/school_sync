@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canWriteSchool, hasPrismaErrorCode, sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { normalizeHostname } from "@/lib/school-resolver";
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -33,6 +34,10 @@ export async function GET(
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  {
+    const denied = await requireSchoolFeature(schoolId, "WHITE_LABEL");
+    if (denied) return denied;
+  }
 
   const school = await prisma.school.findUnique({
     where: { id: schoolId },
@@ -61,6 +66,10 @@ export async function PATCH(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await requireSchoolFeature(schoolId, "WHITE_LABEL");
+    if (denied) return denied;
   }
 
   const body = await req.json();

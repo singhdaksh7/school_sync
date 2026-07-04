@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionRole, canAccessSchool, canWriteSchool, teacherBelongsToSchool } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 const assignSchema = z.object({
   roleId: z.string().min(1),
@@ -19,6 +20,10 @@ export async function GET(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "TEACHER_PERMISSIONS");
+    if (denied) return denied;
+  }
   if (!(await teacherBelongsToSchool(teacherId, schoolId)))
     return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
@@ -39,6 +44,10 @@ export async function POST(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user))))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "TEACHER_PERMISSIONS");
+    if (denied) return denied;
+  }
   if (!(await teacherBelongsToSchool(teacherId, schoolId)))
     return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 

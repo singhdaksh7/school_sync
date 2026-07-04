@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { generateReportCardPdf } from "@/lib/report-card-pdf";
 import { reportCardInclude, reportCardToPdfInput } from "@/lib/report-cards";
 import { canAccessSchool } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 export async function GET(
   _req: Request,
@@ -14,6 +15,10 @@ export async function GET(
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await requireSchoolFeature(schoolId, "REPORT_CARDS");
+    if (denied) return denied;
   }
 
   const card = await prisma.reportCard.findFirst({

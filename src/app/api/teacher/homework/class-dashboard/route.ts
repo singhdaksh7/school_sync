@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionRole } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import {
   addHomeworkStatsRecord,
   createHomeworkStatsAccumulator,
@@ -25,6 +26,9 @@ export async function GET(req: Request) {
 
   const teacher = await getTeacherByUserId(session.user.id);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "HOMEWORK");
+  if (featureDenied) return featureDenied;
 
   const { searchParams } = new URL(req.url);
   const sectionId = searchParams.get("sectionId");

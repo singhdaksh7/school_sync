@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { allStudentsBelongToSchool, sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 async function getTeacher(userId: string) {
   return prisma.teacher.findUnique({ where: { userId } });
@@ -15,6 +16,9 @@ export async function GET(req: Request) {
 
   const teacher = await getTeacher(session.user.id);
   if (!teacher?.mentorSectionId) return NextResponse.json({ error: "No mentor section assigned" }, { status: 400 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "ATTENDANCE");
+  if (featureDenied) return featureDenied;
 
   const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "ATTENDANCE", "VIEW", {
     sectionId: teacher.mentorSectionId,
@@ -39,6 +43,9 @@ export async function POST(req: Request) {
 
   const teacher = await getTeacher(userId);
   if (!teacher?.mentorSectionId) return NextResponse.json({ error: "No mentor section assigned" }, { status: 400 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "ATTENDANCE");
+  if (featureDenied) return featureDenied;
 
   const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "ATTENDANCE", "MARK", {
     sectionId: teacher.mentorSectionId,

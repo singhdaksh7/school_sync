@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 async function canAccess(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -17,6 +18,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "ATTENDANCE");
+    if (denied) return denied;
+  }
 
   const { searchParams } = new URL(req.url);
   const from = searchParams.get("from");

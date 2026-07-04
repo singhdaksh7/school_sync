@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import {
   getHomeworkForTeacherAccess,
   getTeacherByUserId,
@@ -37,6 +38,9 @@ export async function POST(
 
   const teacher = await getTeacherByUserId(session.user.id);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "HOMEWORK");
+  if (featureDenied) return featureDenied;
 
   const homework = await getHomeworkForTeacherAccess(homeworkId, teacher.id, teacher.schoolId);
   if (!homework) return NextResponse.json({ error: "Homework not found" }, { status: 404 });
