@@ -33,7 +33,7 @@ export default async function DashboardLayout({
       where: { OR: [{ ownerId: userId }, { admins: { some: { id: userId } } }] },
     });
     if (userSchool) redirect(`/dashboard/${userSchool.slug}`);
-    redirect("/onboarding");
+    redirect("/no-school");
   }
 
   const featureFlags = await getSchoolFeatureFlags(school.id);

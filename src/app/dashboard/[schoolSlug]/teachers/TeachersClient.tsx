@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import {
   Plus, Pencil, Trash2, Users, Search, Mail, Phone, BookOpen,
-  Upload, Copy, Check, Link as LinkIcon, GraduationCap,
+  Upload, Copy, Check, Link as LinkIcon, GraduationCap, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,13 @@ interface MentorSection { id: string; name: string; class: { name: string } }
 interface Teacher {
   id: string; name: string; email: string | null; phone: string | null; subject: string | null;
   mentorSection: MentorSection | null; user: { id: string } | null; invites: { token: string }[];
+}
+
+interface DeleteImpact {
+  isMentor: boolean;
+  mentorSectionName: string | null;
+  upcomingSlotCount: number;
+  hasGeneratedReportCards: boolean;
 }
 
 const empty = { name: "", email: "", phone: "", subject: "", mentorSectionId: "" };
@@ -63,6 +70,11 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
   const [csvDialogOpen, setCsvDialogOpen] = useState(false);
   const [csvResults, setCsvResults] = useState<{ name: string; success: boolean; inviteToken?: string; error?: string }[]>([]);
   const [csvLoading, setCsvLoading] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<Teacher | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<DeleteImpact | null>(null);
+  const [deleteImpactLoading, setDeleteImpactLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function fetchTeachers() {
     setLoading(true);
@@ -119,8 +131,22 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
     void fetchTeachers();
   }
 
-  async function deleteTeacher(id: string) {
-    if (!confirm("Delete this teacher?")) return;
+  async function openDeleteConfirm(teacher: Teacher) {
+    setDeleteTarget(teacher);
+    setDeleteImpact(null);
+    setDeleteImpactLoading(true);
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/teachers/${teacher.id}/delete-impact`);
+      if (res.ok) setDeleteImpact(await res.json());
+    } finally {
+      setDeleteImpactLoading(false);
+    }
+  }
+
+  async function confirmDeleteTeacher() {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    setDeleting(true);
     setTeachers((prev) => prev.filter((t) => t.id !== id));
     try {
       const res = await fetch(`/api/schools/${schoolId}/teachers/${id}`, { method: "DELETE" });
@@ -128,6 +154,8 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
     } catch {
       setRefreshError("Could not delete the teacher. Please try again.");
     }
+    setDeleting(false);
+    setDeleteTarget(null);
     void fetchTeachers();
   }
 
@@ -237,7 +265,7 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
                       </Button>
                     )}
                     <Button variant="ghost" size="icon" onClick={() => openEdit(t)} className="h-8 w-8 text-gray-400 hover:text-blue-600"><Pencil className="w-3.5 h-3.5" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteTeacher(t.id)} className="h-8 w-8 text-gray-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => openDeleteConfirm(t)} className="h-8 w-8 text-gray-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></Button>
                   </div>
                 </div>
                 <div className="space-y-1.5 text-sm text-gray-500">
@@ -320,6 +348,43 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={save} disabled={saving}>{saving ? "Saving..." : editing ? "Save Changes" : "Add Teacher"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Remove {deleteTarget?.name}?</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-gray-600">
+              The teacher will be moved to <strong>Deleted Teachers History</strong>. All homework, attendance,
+              timetable, leave, exam, and report card records are kept — nothing is permanently lost, and you can
+              restore the teacher later.
+            </p>
+            {deleteImpactLoading ? (
+              <div className="h-16 bg-gray-100 animate-pulse rounded-lg" />
+            ) : deleteImpact && (deleteImpact.isMentor || deleteImpact.upcomingSlotCount > 0) ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 space-y-1.5">
+                <div className="flex items-center gap-2 text-amber-700 font-semibold text-sm">
+                  <AlertTriangle className="w-4 h-4 shrink-0" /> This teacher is actively assigned
+                </div>
+                {deleteImpact.isMentor && (
+                  <p className="text-xs text-amber-800 pl-6">Mentor of Section {deleteImpact.mentorSectionName} — this section will need a new mentor.</p>
+                )}
+                {deleteImpact.upcomingSlotCount > 0 && (
+                  <p className="text-xs text-amber-800 pl-6">{deleteImpact.upcomingSlotCount} timetable period(s) will be cleared and need reassigning.</p>
+                )}
+                <p className="text-xs text-amber-600 pl-6 pt-0.5">
+                  After removing, check Teachers &rarr; Deleted Teachers History for replacement suggestions.
+                </p>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDeleteTeacher} disabled={deleting}>
+              {deleting ? "Removing..." : "Remove Teacher"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

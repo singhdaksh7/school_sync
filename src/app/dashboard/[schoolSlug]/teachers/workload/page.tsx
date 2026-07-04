@@ -12,7 +12,7 @@ export default async function TeacherWorkloadPage({
   if (!school) return null;
 
   const teachers = await prisma.teacher.findMany({
-    where: { schoolId: school.id },
+    where: { schoolId: school.id, isDeleted: false },
     include: {
       timetableSlots: {
         include: { section: { include: { class: { select: { name: true } } } } },

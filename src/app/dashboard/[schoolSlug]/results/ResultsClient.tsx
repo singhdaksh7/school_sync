@@ -9,6 +9,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
+// Mirrors the grade bands in src/lib/report-cards.ts gradeForPercentage().
+// Duplicated (not imported) because that module pulls in the Prisma client,
+// which must not end up in this "use client" bundle.
+function gradeForPercentage(percentage: number) {
+  if (percentage >= 90) return "A+";
+  if (percentage >= 80) return "A";
+  if (percentage >= 70) return "B+";
+  if (percentage >= 60) return "B";
+  if (percentage >= 50) return "C";
+  if (percentage >= 40) return "D";
+  return "E";
+}
+
 interface Exam { id: string; name: string; maxMarks: number; order: number }
 interface Scheme { id: string; name: string; exams: Exam[] }
 interface Section { id: string; name: string; class: { name: string } }
@@ -151,7 +164,7 @@ export default function ResultsClient({ initialSchemes, initialSections, schoolI
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-blue-600" />Overall Summary — {selectedScheme.name}
+                  <TrendingUp className="w-4 h-4 text-blue-600" />Subject-wise Marks — {selectedScheme.name}
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-0 overflow-x-auto">
@@ -166,7 +179,8 @@ export default function ResultsClient({ initialSchemes, initialSections, schoolI
                         </th>
                       ))}
                       <th className="text-center py-2 px-3 text-gray-500 font-medium">Total</th>
-                      <th className="text-center py-2 px-3 text-gray-500 font-medium">%</th>
+                      <th className="text-center py-2 px-3 text-gray-500 font-medium">Percentage</th>
+                      <th className="text-center py-2 px-3 text-gray-500 font-medium">Grade</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -186,6 +200,7 @@ export default function ResultsClient({ initialSchemes, initialSections, schoolI
                               <Badge variant={pct >= 33 ? "default" : "destructive"} className={cn("text-xs", pct >= 60 ? "bg-green-100 text-green-700 hover:bg-green-100" : pct >= 33 ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-100" : "")}>{pct}%</Badge>
                             ) : "—"}
                           </td>
+                          <td className="py-2.5 px-3 text-center font-semibold text-gray-900">{filled > 0 ? gradeForPercentage(pct) : "—"}</td>
                         </tr>
                       );
                     })}

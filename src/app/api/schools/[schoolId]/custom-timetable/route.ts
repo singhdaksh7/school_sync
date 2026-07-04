@@ -21,6 +21,15 @@ type GeneratedSlot = {
   teacherName: string;
 };
 
+export type UnplacedEntry = {
+  subjectName: string;
+  teacherId: string;
+  teacherName: string;
+  requested: number;
+  placed: number;
+  count: number; // periods still unplaced (requested - placed)
+};
+
 function shuffle<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -34,7 +43,7 @@ function generateTimetable(
   periodsPerDay: number,
   daysPerWeek: number,
   busySlots: { teacherId: string; dayOfWeek: number; period: number }[]
-): GeneratedSlot[] {
+): { slots: GeneratedSlot[]; unplaced: UnplacedEntry[] } {
   const busySet = new Set(busySlots.map((s) => `${s.teacherId}-${s.dayOfWeek}-${s.period}`));
 
   // grid[dayIdx][periodIdx]
@@ -73,6 +82,8 @@ function generateTimetable(
     }
   };
 
+  const unplaced: UnplacedEntry[] = [];
+
   for (const subj of subjects) {
     const blockSize = Math.max(1, Math.min(subj.consecutiveCount ?? 1, periodsPerDay));
     const fullBlocks = Math.floor(subj.weeklyCount / blockSize);
@@ -85,7 +96,7 @@ function generateTimetable(
     const periodsOnDay = new Array(daysPerWeek).fill(0);
     const dailyCap = Math.max(1, subj.maxPerDay ?? 2);
 
-    const placeNBlocks = (count: number, size: number) => {
+    const placeNBlocks = (count: number, size: number): number => {
       let placed = 0;
 
       // Build all valid (dayIdx, startPIdx) candidates for this block size
@@ -116,14 +127,27 @@ function generateTimetable(
         periodsOnDay[dayIdx] += size;
         placed++;
       }
+      return placed;
     };
 
-    if (fullBlocks > 0) placeNBlocks(fullBlocks, blockSize);
+    let periodsPlaced = 0;
+    if (fullBlocks > 0) periodsPlaced += placeNBlocks(fullBlocks, blockSize) * blockSize;
     // Place leftover periods as individual slots
-    if (remainder > 0) placeNBlocks(remainder, 1);
+    if (remainder > 0) periodsPlaced += placeNBlocks(remainder, 1);
+
+    if (periodsPlaced < subj.weeklyCount) {
+      unplaced.push({
+        subjectName: subj.name,
+        teacherId: subj.teacherId,
+        teacherName: subj.teacherName,
+        requested: subj.weeklyCount,
+        placed: periodsPlaced,
+        count: subj.weeklyCount - periodsPlaced,
+      });
+    }
   }
 
-  return grid.flat().filter(Boolean) as GeneratedSlot[];
+  return { slots: grid.flat().filter(Boolean) as GeneratedSlot[], unplaced };
 }
 
 export async function POST(
@@ -166,8 +190,8 @@ export async function POST(
       teacherId: string; dayOfWeek: number; period: number;
     }[];
 
-    const slots = generateTimetable(subjects, periodsPerDay, daysPerWeek, busySlots);
-    return NextResponse.json({ slots });
+    const { slots, unplaced } = generateTimetable(subjects, periodsPerDay, daysPerWeek, busySlots);
+    return NextResponse.json({ slots, unplaced });
   }
 
   if (action === "save") {

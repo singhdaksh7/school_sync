@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { CalendarDays, X, GripVertical, AlertTriangle, Search, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,6 +66,8 @@ export default function TimetableClient({ initialClasses, initialTeachers, initi
   const [assignOpen, setAssignOpen] = useState(false);
   const [pendingTeacherId, setPendingTeacherId] = useState<string | null>(null);
   const [subjectInput, setSubjectInput] = useState("");
+  const [masterSubjects, setMasterSubjects] = useState<string[]>([]);
+  const [useCustomSubject, setUseCustomSubject] = useState(false);
   const [dayPeriods, setDayPeriods] = useState<Record<number, string>>({});
   const [conflicts, setConflicts] = useState<ConflictEntry[]>([]);
   const [validationError, setValidationError] = useState("");
@@ -93,6 +95,20 @@ export default function TimetableClient({ initialClasses, initialTeachers, initi
     else setSlots([]);
   }
 
+  // Subject Master list for the selected class/section — falls back to a
+  // free-text input in the assign dialog when nothing has been configured yet.
+  // (Resetting to [] when the selection is cleared happens in the Class
+  // select's onChange handler below, not here, so this effect never needs to
+  // call setState synchronously on its early-return path.)
+  useEffect(() => {
+    if (!selectedClassId || !selectedSectionId) return;
+    const params = new URLSearchParams({ classId: selectedClassId, sectionId: selectedSectionId });
+    fetch(`/api/schools/${schoolId}/subjects?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: { name: string }[]) => setMasterSubjects(data.map((s) => s.name)))
+      .catch(() => setMasterSubjects([]));
+  }, [schoolId, selectedClassId, selectedSectionId]);
+
   function getSlot(day: number, period: number): Slot | undefined {
     return slots.find((s) => s.dayOfWeek === day && s.period === period);
   }
@@ -110,6 +126,7 @@ export default function TimetableClient({ initialClasses, initialTeachers, initi
     const teacher = teachers.find((t) => t.id === tid);
     setPendingTeacherId(tid);
     setSubjectInput(teacher?.subject || "");
+    setUseCustomSubject(false);
     setDayPeriods({ [day]: String(period) });
     setConflicts([]); setValidationError("");
     setAssignOpen(true);
@@ -171,6 +188,7 @@ export default function TimetableClient({ initialClasses, initialTeachers, initi
 
   function closeDialog() {
     setAssignOpen(false); setPendingTeacherId(null); setSubjectInput("");
+    setUseCustomSubject(false);
     setDayPeriods({}); setConflicts([]); setValidationError("");
   }
 
@@ -255,7 +273,7 @@ export default function TimetableClient({ initialClasses, initialTeachers, initi
           <div className="flex flex-wrap gap-4 items-end">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Class</Label>
-              <Select value={selectedClassId} onValueChange={(v) => { setSelectedClassId(v); setSelectedSectionId(""); setSlots([]); }}>
+              <Select value={selectedClassId} onValueChange={(v) => { setSelectedClassId(v); setSelectedSectionId(""); setSlots([]); setMasterSubjects([]); }}>
                 <SelectTrigger className="w-44 bg-white"><SelectValue placeholder="Select class" /></SelectTrigger>
                 <SelectContent>
                   {classes.map((c) => (
@@ -462,7 +480,20 @@ export default function TimetableClient({ initialClasses, initialTeachers, initi
             )}
             <div className="space-y-1.5">
               <Label>Subject <span className="text-gray-400 font-normal text-xs">(optional, applies to all slots)</span></Label>
-              <Input placeholder="e.g. Mathematics, Science…" value={subjectInput} onChange={(e) => setSubjectInput(e.target.value)} autoFocus />
+              {masterSubjects.length > 0 && !useCustomSubject ? (
+                <Select
+                  value={masterSubjects.includes(subjectInput) ? subjectInput : ""}
+                  onValueChange={(v) => { if (v === "__custom__") { setUseCustomSubject(true); setSubjectInput(""); } else { setSubjectInput(v); } }}
+                >
+                  <SelectTrigger className="bg-white"><SelectValue placeholder="Select subject" /></SelectTrigger>
+                  <SelectContent>
+                    {masterSubjects.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                    <SelectItem value="__custom__">Other (type manually)…</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input placeholder="e.g. Mathematics, Science…" value={subjectInput} onChange={(e) => setSubjectInput(e.target.value)} autoFocus />
+              )}
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">

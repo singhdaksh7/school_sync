@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import SchoolStatusControl from "./SchoolStatusControl";
 import SubscriptionEditor from "./SubscriptionEditor";
+import InviteAdminClient from "../../invites/InviteAdminClient";
 
 const ROLE_LABELS: Record<string, string> = {
   SCHOOL_OWNER: "Owner",
@@ -61,7 +62,9 @@ export default async function FounderSchoolDetailPage({
   ]);
 
   const adminRows = [
-    { id: school.owner.id, name: school.owner.name, email: school.owner.email, role: "SCHOOL_OWNER" as const },
+    ...(school.owner
+      ? [{ id: school.owner.id, name: school.owner.name, email: school.owner.email, role: "SCHOOL_OWNER" as const }]
+      : []),
     ...school.admins.map((a) => ({ id: a.id, name: a.name, email: a.email, role: a.role })),
   ];
 
@@ -106,14 +109,23 @@ export default async function FounderSchoolDetailPage({
           <div className="flex flex-col items-end gap-2">
             <div className="rounded-xl border border-border bg-card/80 px-4 py-3 text-sm backdrop-blur">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Owner</p>
-              <p className="mt-0.5 font-medium text-foreground">{school.owner.name}</p>
-              <p className="text-xs text-muted-foreground">{school.owner.email}</p>
+              {school.owner ? (
+                <>
+                  <p className="mt-0.5 font-medium text-foreground">{school.owner.name}</p>
+                  <p className="text-xs text-muted-foreground">{school.owner.email}</p>
+                </>
+              ) : (
+                <p className="mt-0.5 font-medium text-amber-600 dark:text-amber-400">No admin yet — invite pending</p>
+              )}
             </div>
-            <Button variant="outline" size="sm" asChild className="gap-1.5">
-              <Link href={`/founder/schools/${school.id}/feature-flags`}>
-                <Flag className="h-3.5 w-3.5" /> Feature Flags
-              </Link>
-            </Button>
+            <div className="flex gap-1.5">
+              <InviteAdminClient defaultSchoolId={school.id} defaultSchoolName={school.name} />
+              <Button variant="outline" size="sm" asChild className="gap-1.5">
+                <Link href={`/founder/schools/${school.id}/feature-flags`}>
+                  <Flag className="h-3.5 w-3.5" /> Feature Flags
+                </Link>
+              </Button>
+            </div>
           </div>
         </div>
       </div>

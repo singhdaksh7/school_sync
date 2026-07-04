@@ -27,7 +27,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const teachers = await prisma.teacher.findMany({
-    where: { schoolId },
+    where: { schoolId, isDeleted: false },
     orderBy: { name: "asc" },
     include: {
       mentorSection: { include: { class: { select: { name: true } } } },

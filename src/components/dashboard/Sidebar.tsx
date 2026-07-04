@@ -8,7 +8,7 @@ import {
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
   ClipboardList, PieChart, Activity, BarChart, X, Wand2, BookOpenCheck, Replace, Palette, ShieldCheck, LayoutTemplate,
-  CreditCard, BookCheck,
+  CreditCard, BookCheck, ListTree, UserMinus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
@@ -49,6 +49,7 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
     { href: base, label: t("nav.overview"), icon: LayoutDashboard, show: true },
     { href: `${base}/classes`, label: t("nav.classesAndSections"), icon: BookOpen, show: true },
     { href: `${base}/teachers`, label: t("nav.teachers"), icon: Users, show: true },
+    { href: `${base}/teachers/deleted`, label: t("nav.deletedTeachers"), icon: UserMinus, show: isOwnerOrAdmin },
     { href: `${base}/teacher-roles`, label: t("nav.teacherRoles"), icon: ShieldCheck, show: isOwnerOrAdmin && flagEnabled("TEACHER_PERMISSIONS") },
     { href: `${base}/students`, label: t("nav.students"), icon: GraduationCap, show: true },
     { href: `${base}/attendance`, label: t("nav.attendance"), icon: ClipboardCheck, show: flagEnabled("ATTENDANCE") },
@@ -56,6 +57,7 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
     { href: `${base}/timetable`, label: t("nav.timetable"), icon: CalendarDays, show: true },
     { href: `${base}/custom-timetable`, label: t("nav.customTimetable"), icon: Wand2, show: isOwnerOrAdmin },
     { href: `${base}/homework`, label: t("nav.homework"), icon: BookOpenCheck, show: flagEnabled("HOMEWORK") },
+    { href: `${base}/subjects`, label: t("nav.subjectMaster"), icon: ListTree, show: isOwnerOrAdmin },
     { href: `${base}/exam-schemes`, label: t("nav.examSchemes"), icon: FileText, show: true },
     { href: `${base}/exam-milestones`, label: t("nav.examMilestones"), icon: BookCheck, show: flagEnabled("NOTEBOOK_CHECKING") },
     { href: `${base}/results`, label: t("nav.results"), icon: Award, show: true },

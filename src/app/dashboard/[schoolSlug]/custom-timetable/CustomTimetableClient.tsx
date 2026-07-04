@@ -18,7 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   Plus, Trash2, Wand2, CheckCircle, ArrowLeft, ArrowRight,
-  RefreshCw, Sparkles, Settings2, Layers, Shuffle,
+  RefreshCw, Sparkles, Settings2, Layers, Shuffle, AlertTriangle, X, Users, CalendarClock, Edit3,
 } from "lucide-react";
 
 type Teacher = { id: string; name: string; subject: string | null };
@@ -42,6 +42,18 @@ type GeneratedSlot = {
   teacherId: string;
   teacherName: string;
 };
+
+type UnplacedEntry = {
+  subjectName: string;
+  teacherId: string;
+  teacherName: string;
+  requested: number;
+  placed: number;
+  count: number;
+};
+
+type FreeSlot = { dayOfWeek: number; period: number };
+type RankedTeacher = { id: string; name: string; subject: string | null; periodsPerWeek: number };
 
 const DAY_NAMES = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -99,9 +111,21 @@ export default function CustomTimetableClient({
 
   // Step 3+
   const [generatedSlots, setGeneratedSlots] = useState<GeneratedSlot[]>([]);
+  const [unplaced, setUnplaced] = useState<UnplacedEntry[]>([]);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Resolution panel for one unplaced item at a time
+  const [resolvingKey, setResolvingKey] = useState<string | null>(null);
+  const [resolveMode, setResolveMode] = useState<"slots" | "teacher" | "manual" | null>(null);
+  const [freeSlots, setFreeSlots] = useState<FreeSlot[]>([]);
+  const [recommendedTeachers, setRecommendedTeachers] = useState<RankedTeacher[]>([]);
+  const [resolveLoading, setResolveLoading] = useState(false);
+  const [manualDay, setManualDay] = useState("1");
+  const [manualPeriod, setManualPeriod] = useState("1");
+
+  const unplacedKey = (item: UnplacedEntry) => `${item.subjectName}|${item.teacherId}`;
 
   const selectedClass = initialClasses.find((c) => c.id === selectedClassId);
   const sections = selectedClass?.sections ?? [];
@@ -174,6 +198,8 @@ export default function CustomTimetableClient({
 
       const data = await res.json();
       setGeneratedSlots(data.slots);
+      setUnplaced(data.unplaced ?? []);
+      closeResolvePanel();
       setStep(3);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Generation failed");
@@ -209,6 +235,104 @@ export default function CustomTimetableClient({
     }
   };
 
+  function closeResolvePanel() {
+    setResolvingKey(null);
+    setResolveMode(null);
+    setFreeSlots([]);
+    setRecommendedTeachers([]);
+  }
+
+  function dismissUnplaced(item: UnplacedEntry) {
+    setUnplaced((prev) => prev.filter((u) => unplacedKey(u) !== unplacedKey(item)));
+    closeResolvePanel();
+  }
+
+  async function openSlotsPanel(item: UnplacedEntry) {
+    setResolvingKey(unplacedKey(item));
+    setResolveMode("slots");
+    setResolveLoading(true);
+    const params = new URLSearchParams({
+      sectionId: selectedSectionId,
+      teacherId: item.teacherId,
+      periodsPerDay: String(periodsPerDay),
+      daysPerWeek: String(daysPerWeek),
+    });
+    const res = await fetch(`/api/schools/${schoolId}/custom-timetable/free-slots?${params.toString()}`);
+    const data = await res.json();
+    setResolveLoading(false);
+    // Exclude cells already filled in this draft (not yet saved).
+    const occupied = new Set(generatedSlots.map((s) => `${s.dayOfWeek}-${s.period}`));
+    setFreeSlots((data.freeSlots ?? []).filter((s: FreeSlot) => !occupied.has(`${s.dayOfWeek}-${s.period}`)));
+  }
+
+  async function openTeacherPanel(item: UnplacedEntry) {
+    setResolvingKey(unplacedKey(item));
+    setResolveMode("teacher");
+    setResolveLoading(true);
+    const params = new URLSearchParams({ subject: item.subjectName, excludeTeacherId: item.teacherId });
+    const res = await fetch(`/api/schools/${schoolId}/custom-timetable/recommend-teacher?${params.toString()}`);
+    const data = await res.json();
+    setResolveLoading(false);
+    setRecommendedTeachers(data ?? []);
+  }
+
+  function openManualPanel(item: UnplacedEntry) {
+    setResolvingKey(unplacedKey(item));
+    setResolveMode("manual");
+    setManualDay("1");
+    setManualPeriod("1");
+  }
+
+  function placeOne(item: UnplacedEntry, slot: FreeSlot, teacherId = item.teacherId, teacherName = item.teacherName) {
+    setGeneratedSlots((prev) => [
+      ...prev.filter((s) => !(s.dayOfWeek === slot.dayOfWeek && s.period === slot.period)),
+      { dayOfWeek: slot.dayOfWeek, period: slot.period, subject: item.subjectName, teacherId, teacherName },
+    ]);
+    setUnplaced((prev) => prev.flatMap((u) => {
+      if (unplacedKey(u) !== unplacedKey(item)) return [u];
+      const remaining = u.count - 1;
+      return remaining > 0 ? [{ ...u, placed: u.placed + 1, count: remaining }] : [];
+    }));
+    setFreeSlots((prev) => prev.filter((s) => !(s.dayOfWeek === slot.dayOfWeek && s.period === slot.period)));
+    if (item.count - 1 <= 0) closeResolvePanel();
+  }
+
+  function swapTeacherAndPlace(item: UnplacedEntry, teacher: RankedTeacher) {
+    setResolveLoading(true);
+    const params = new URLSearchParams({
+      sectionId: selectedSectionId,
+      teacherId: teacher.id,
+      periodsPerDay: String(periodsPerDay),
+      daysPerWeek: String(daysPerWeek),
+    });
+    fetch(`/api/schools/${schoolId}/custom-timetable/free-slots?${params.toString()}`)
+      .then((res) => res.json())
+      .then((data: { freeSlots: FreeSlot[] }) => {
+        const occupied = new Set(generatedSlots.map((s) => `${s.dayOfWeek}-${s.period}`));
+        const available = (data.freeSlots ?? []).filter((s) => !occupied.has(`${s.dayOfWeek}-${s.period}`));
+        const toPlace = available.slice(0, item.count);
+        setGeneratedSlots((prev) => [
+          ...prev,
+          ...toPlace.map((slot) => ({ dayOfWeek: slot.dayOfWeek, period: slot.period, subject: item.subjectName, teacherId: teacher.id, teacherName: teacher.name })),
+        ]);
+        const stillNeeded = item.count - toPlace.length;
+        setUnplaced((prev) => prev.flatMap((u) => {
+          if (unplacedKey(u) !== unplacedKey(item)) return [u];
+          if (stillNeeded <= 0) return [];
+          return [{ subjectName: u.subjectName, teacherId: teacher.id, teacherName: teacher.name, requested: stillNeeded, placed: 0, count: stillNeeded }];
+        }));
+        closeResolvePanel();
+      })
+      .finally(() => setResolveLoading(false));
+  }
+
+  function manualPlace(item: UnplacedEntry) {
+    const day = parseInt(manualDay, 10);
+    const period = parseInt(manualPeriod, 10);
+    if (isNaN(day) || day < 1 || day > daysPerWeek || isNaN(period) || period < 1 || period > periodsPerDay) return;
+    placeOne(item, { dayOfWeek: day, period });
+  }
+
   const handleReset = () => {
     setStep(1);
     setSelectedClassId("");
@@ -217,6 +341,8 @@ export default function CustomTimetableClient({
     setDaysPerWeek(5);
     setSubjects([makeSubject()]);
     setGeneratedSlots([]);
+    setUnplaced([]);
+    closeResolvePanel();
     setError("");
   };
 
@@ -464,13 +590,96 @@ export default function CustomTimetableClient({
                 </div>
                 <div className="text-sm text-gray-500 bg-gray-50 px-3 py-1 rounded-full border border-gray-200">
                   {generatedSlots.length} of {totalSlots} slots filled
-                  {generatedSlots.length < totalWeeklyClasses && (
-                    <span className="text-amber-600 ml-1">({totalWeeklyClasses - generatedSlots.length} skipped due to conflicts)</span>
-                  )}
                 </div>
               </div>
             </CardHeader>
             <CardContent>
+              {unplaced.length > 0 && (
+                <div className="mb-4 space-y-2">
+                  {unplaced.map((item) => {
+                    const key = unplacedKey(item);
+                    const isOpen = resolvingKey === key;
+                    return (
+                      <div key={key} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <p className="text-sm text-amber-800">
+                            <strong>{item.teacherName}</strong> — {item.subjectName}: requested {item.requested}, placed {item.placed},{" "}
+                            <strong>{item.count} period{item.count !== 1 ? "s" : ""} unassigned</strong>
+                          </p>
+                          <div className="ml-auto flex gap-1.5 flex-wrap">
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openSlotsPanel(item)}>
+                              <CalendarClock className="w-3 h-3" /> Alternate Slots
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openTeacherPanel(item)}>
+                              <Users className="w-3 h-3" /> Alternate Teacher
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openManualPanel(item)}>
+                              <Edit3 className="w-3 h-3" /> Manual Resolve
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-gray-500" onClick={() => dismissUnplaced(item)}>
+                              <X className="w-3 h-3" /> Keep as unassigned
+                            </Button>
+                          </div>
+                        </div>
+
+                        {isOpen && (
+                          <div className="mt-3 rounded-md bg-white border border-amber-100 p-3">
+                            {resolveLoading ? (
+                              <p className="text-xs text-gray-400">Loading…</p>
+                            ) : resolveMode === "slots" ? (
+                              freeSlots.length === 0 ? (
+                                <p className="text-xs text-gray-400">No free slots available for this teacher.</p>
+                              ) : (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {freeSlots.map((slot) => (
+                                    <button
+                                      key={`${slot.dayOfWeek}-${slot.period}`}
+                                      onClick={() => placeOne(item, slot)}
+                                      className="px-2.5 py-1 rounded-full text-xs font-medium border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                    >
+                                      {DAY_NAMES[slot.dayOfWeek]} P{slot.period}
+                                    </button>
+                                  ))}
+                                </div>
+                              )
+                            ) : resolveMode === "teacher" ? (
+                              recommendedTeachers.length === 0 ? (
+                                <p className="text-xs text-gray-400">No other active teachers available.</p>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {recommendedTeachers.map((t) => (
+                                    <button
+                                      key={t.id}
+                                      onClick={() => swapTeacherAndPlace(item, t)}
+                                      className="flex w-full items-center justify-between rounded-md border border-gray-200 px-3 py-1.5 text-xs hover:bg-gray-50"
+                                    >
+                                      <span className="font-medium text-gray-800">{t.name} {t.subject ? `(${t.subject})` : ""}</span>
+                                      <span className="text-gray-400">{t.periodsPerWeek} periods/week</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )
+                            ) : resolveMode === "manual" ? (
+                              <div className="flex items-end gap-2 flex-wrap">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-500">Day (1-{daysPerWeek})</Label>
+                                  <Input type="number" min={1} max={daysPerWeek} value={manualDay} onChange={(e) => setManualDay(e.target.value)} className="w-20 h-8" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-500">Period (1-{periodsPerDay})</Label>
+                                  <Input type="number" min={1} max={periodsPerDay} value={manualPeriod} onChange={(e) => setManualPeriod(e.target.value)} className="w-20 h-8" />
+                                </div>
+                                <Button size="sm" onClick={() => manualPlace(item)}>Assign</Button>
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               <div className="flex flex-wrap gap-2 mb-4">
                 {subjects.map((s) => {
                   const teacher = initialTeachers.find((t) => t.id === s.teacherId);

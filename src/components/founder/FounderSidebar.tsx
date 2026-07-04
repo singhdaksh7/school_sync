@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   ShieldCheck, LayoutDashboard, Building2, PieChart,
   IndianRupee, CreditCard, Flag, Settings, ChevronRight, X,
-  Receipt, FileText, Bell,
+  Receipt, FileText, Bell, UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
@@ -17,6 +17,7 @@ interface FounderSidebarProps {
 const navItems = [
   { href: "/founder/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
   { href: "/founder/schools", labelKey: "nav.schools", icon: Building2 },
+  { href: "/founder/invites", labelKey: "nav.invites", icon: UserPlus },
   { href: "/founder/analytics", labelKey: "nav.analytics", icon: PieChart },
   { href: "/founder/revenue", labelKey: "nav.revenue", icon: IndianRupee },
   { href: "/founder/billing", labelKey: "nav.billing", icon: CreditCard },

@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Award, Download, Send, Wand2 } from "lucide-react";
+import { Award, Download, ListTree, Send, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
+import SubjectMarksTable, { type SubjectMark } from "@/components/shared/SubjectMarksTable";
 
 type Scheme = { id: string; name: string };
 type MentorSection = {
@@ -27,7 +29,7 @@ type ReportCard = {
   publishedAt: string | null;
   student: { id: string; name: string; rollNo: string };
   examScheme: { id: string; name: string };
-  subjects: { id: string; subject: string; marks: number; maxMarks: number; grade: string }[];
+  subjects: SubjectMark[];
 };
 
 export default function TeacherReportCardsPage() {
@@ -40,6 +42,7 @@ export default function TeacherReportCardsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [subjectsCard, setSubjectsCard] = useState<ReportCard | null>(null);
   const { has: hasPermission } = useTeacherPermissions();
   const canGenerate = hasPermission("REPORT_CARDS", "GENERATE");
   const canPublish = hasPermission("REPORT_CARDS", "PUBLISH");
@@ -199,6 +202,15 @@ export default function TeacherReportCardsPage() {
                         </td>
                         <td className="py-3 px-3">
                           <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-2"
+                              onClick={() => setSubjectsCard(card)}
+                            >
+                              <ListTree className="w-4 h-4" />
+                              Subjects
+                            </Button>
                             {canDownload && (
                               <Button
                                 variant="outline"
@@ -227,6 +239,24 @@ export default function TeacherReportCardsPage() {
           </Card>
         </>
       )}
+
+      <Dialog open={!!subjectsCard} onOpenChange={(open) => !open && setSubjectsCard(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {subjectsCard ? `${subjectsCard.student.name} – ${subjectsCard.examScheme.name}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {subjectsCard && (
+            <SubjectMarksTable
+              subjects={subjectsCard.subjects}
+              totalMarks={subjectsCard.totalMarks}
+              percentage={subjectsCard.percentage}
+              grade={subjectsCard.grade}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

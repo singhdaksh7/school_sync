@@ -6,6 +6,7 @@ import { Award, Download, FileText, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
+import SubjectMarksTable from "@/components/shared/SubjectMarksTable";
 
 interface ExamMark {
   id: string;
@@ -169,42 +170,21 @@ export default function StudentResultsPage() {
                 )}
               </CardHeader>
               <CardContent>
-                <div className="mb-4 grid grid-cols-3 gap-4 rounded-lg bg-muted/40 p-3 text-center">
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t("studentResults.totalMarks")}</p>
-                    <p className="text-lg font-bold text-foreground">{card.totalMarks}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t("studentResults.percentage")}</p>
-                    <p className="text-lg font-bold text-foreground">{card.percentage.toFixed(1)}%</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t("studentResults.grade")}</p>
-                    <p className="text-lg font-bold text-foreground">{card.grade}</p>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                        <th className="py-2 font-medium">{t("studentResults.subject")}</th>
-                        <th className="py-2 font-medium">{t("studentResults.marks")}</th>
-                        <th className="py-2 font-medium">{t("studentResults.grade")}</th>
-                        <th className="py-2 font-medium">{t("studentResults.teacherRemark")}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {card.subjects.map((s) => (
-                        <tr key={s.subject}>
-                          <td className="py-2 font-medium text-foreground">{s.subject}</td>
-                          <td className="py-2 text-foreground">{s.marks} / {s.maxMarks}</td>
-                          <td className="py-2"><Badge variant="outline">{s.grade}</Badge></td>
-                          <td className="py-2 text-muted-foreground">{s.subjectTeacherRemark || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <SubjectMarksTable
+                  subjects={card.subjects}
+                  totalMarks={card.totalMarks}
+                  percentage={card.percentage}
+                  grade={card.grade}
+                  showRemarks
+                  labels={{
+                    subject: t("studentResults.subject"),
+                    marks: t("studentResults.marks"),
+                    grade: t("studentResults.grade"),
+                    teacherRemark: t("studentResults.teacherRemark"),
+                    totalMarks: t("studentResults.totalMarks"),
+                    percentage: t("studentResults.percentage"),
+                  }}
+                />
                 {card.classTeacherRemark && (
                   <p className="mt-4 rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
                     <span className="font-medium text-foreground">{t("studentResults.classTeacherRemark")}</span>

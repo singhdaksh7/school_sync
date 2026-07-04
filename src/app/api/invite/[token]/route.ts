@@ -41,7 +41,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const { token } = await params;
   const invite = await prisma.schoolInvite.findUnique({
     where: { token },
-    include: { school: true },
+    include: { school: true, invitedBy: { select: { role: true } }, plan: true },
   });
 
   if (!invite || invite.usedAt || invite.expiresAt < new Date()) {
@@ -92,6 +92,41 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
             data: { name, schoolId: invite.schoolId, userId },
           });
         }
+      }
+
+      // Founder-issued invites additionally provision ownership and a
+      // subscription -- school-internal staff invites (invitedBy a
+      // SCHOOL_OWNER/SCHOOL_ADMIN) never touch any of this.
+      if (invite.invitedBy.role === "FOUNDER") {
+        if (!invite.school.ownerId) {
+          await tx.user.update({ where: { id: userId }, data: { role: "SCHOOL_OWNER" } });
+          await tx.school.update({ where: { id: invite.schoolId }, data: { ownerId: userId } });
+        }
+
+        if (invite.planId && invite.plan) {
+          const amount = invite.billingCycle === "ANNUAL" ? invite.plan.priceAnnual : invite.plan.priceMonthly;
+          await tx.schoolSubscription.upsert({
+            where: { schoolId: invite.schoolId },
+            create: {
+              schoolId: invite.schoolId,
+              planId: invite.planId,
+              billingCycle: invite.billingCycle ?? "MONTHLY",
+              amount,
+              currentPeriodEnd: invite.trialExpiryDate,
+            },
+            update: {
+              planId: invite.planId,
+              billingCycle: invite.billingCycle ?? "MONTHLY",
+              amount,
+              currentPeriodEnd: invite.trialExpiryDate,
+            },
+          });
+        }
+
+        await tx.school.update({
+          where: { id: invite.schoolId },
+          data: { status: invite.trialExpiryDate ? "TRIAL" : "ACTIVE" },
+        });
       }
 
       await tx.schoolInvite.update({ where: { token }, data: { usedAt: new Date() } });

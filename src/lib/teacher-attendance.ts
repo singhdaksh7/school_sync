@@ -46,7 +46,7 @@ export async function runTeacherAutoAbsent(schoolId: string, markedById: string,
   const date = getTodayDateOnly(now);
   const [teachers, existing] = await Promise.all([
     prisma.teacher.findMany({
-      where: { schoolId },
+      where: { schoolId, isDeleted: false },
       select: { id: true },
     }),
     prisma.attendance.findMany({

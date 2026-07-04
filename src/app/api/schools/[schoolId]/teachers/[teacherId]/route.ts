@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { canAccessSchool, sectionBelongsToSchool } from "@/lib/tenant";
+import { logAudit } from "@/lib/audit";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -65,7 +66,53 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ schoo
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const result = await prisma.teacher.deleteMany({ where: { id: teacherId, schoolId } });
-  if (result.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const existing = await prisma.teacher.findFirst({
+    where: { id: teacherId, schoolId, isDeleted: false },
+    include: {
+      mentorSection: { include: { class: { select: { name: true } } } },
+      timetableSlots: { include: { section: { include: { class: { select: { name: true } } } } } },
+    },
+  });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Snapshot what this teacher was actively handling before we clear it from
+  // the live timetable/mentor assignment — TimetableSlot has no date field
+  // (it's the standing weekly schedule, not a dated log) so nulling teacherId
+  // is how "removed from active timetable" works here. The snapshot preserves
+  // "classes/sections handled" for the Deleted Teachers History view even
+  // though the live relation is gone.
+  const sectionsHandled = [
+    ...new Map(
+      existing.timetableSlots.map((s) => [s.sectionId, `${s.section.class.name}-${s.section.name}`])
+    ).values(),
+  ];
+  const classesHandled = [...new Set(existing.timetableSlots.map((s) => s.section.class.name))];
+  const mentorSectionName = existing.mentorSection
+    ? `${existing.mentorSection.class.name}-${existing.mentorSection.name}`
+    : null;
+
+  // Soft delete: the row stays in place so all historical relations (homework,
+  // attendance, timetable, exams, report cards) remain intact. Free up the
+  // mentor section and active timetable slots so the school can reassign them.
+  await prisma.$transaction([
+    prisma.teacher.update({
+      where: { id: teacherId },
+      data: { isDeleted: true, deletedAt: new Date(), deletedById: session.user.id, mentorSectionId: null },
+    }),
+    prisma.timetableSlot.updateMany({
+      where: { teacherId, schoolId },
+      data: { teacherId: null },
+    }),
+  ]);
+
+  await logAudit({
+    action: "TEACHER_SOFT_DELETED",
+    entityType: "Teacher",
+    entityId: teacherId,
+    metadata: { mentorSectionName, classesHandled, sectionsHandled },
+    userId: session.user.id,
+    schoolId,
+  });
+
   return NextResponse.json({ success: true });
 }

@@ -24,7 +24,7 @@ export default async function HomeworkPage({
       orderBy: { name: "asc" },
     }),
     prisma.teacher.findMany({
-      where: { schoolId: school.id },
+      where: { schoolId: school.id, isDeleted: false },
       select: { id: true, name: true, subject: true },
       orderBy: { name: "asc" },
     }),

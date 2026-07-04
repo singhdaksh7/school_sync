@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, Building2, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { Search, Building2, ChevronLeft, ChevronRight, AlertTriangle, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -79,9 +80,16 @@ export default function SchoolsClient() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">{t("nav.schools")}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{t("founder.everySchoolOnPlatform")}</p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">{t("nav.schools")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t("founder.everySchoolOnPlatform")}</p>
+        </div>
+        <Button asChild className="gap-2">
+          <Link href="/founder/schools/new">
+            <Plus className="h-4 w-4" /> New School
+          </Link>
+        </Button>
       </div>
 
       <Card className="border-border">

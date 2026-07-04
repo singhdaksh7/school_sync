@@ -13,7 +13,7 @@ export default async function TeachersPage({
 
   const [teachers, classes] = await Promise.all([
     prisma.teacher.findMany({
-      where: { schoolId: school.id },
+      where: { schoolId: school.id, isDeleted: false },
       include: {
         mentorSection: { include: { class: true } },
         user: { select: { id: true } },
