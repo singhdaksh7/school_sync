@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { IndianRupee, Plus, Trash2, Receipt, TrendingUp, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,35 +11,87 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import {
+  buildStudentFeeAccounts,
+  MANUAL_FEE_PAYMENT_METHODS,
+  type ManualFeePaymentMethod,
+} from "@/lib/student-fee-ledger";
 
-interface FeeStructure { id: string; name: string; amount: number; frequency: string; class: { name: string } | null }
-interface Student { id: string; name: string; rollNo: string; section: { name: string; class: { name: string } } }
+interface FeeStructure {
+  id: string;
+  name: string;
+  amount: number;
+  frequency: string;
+  classId: string | null;
+  class: { id: string; name: string } | null;
+}
+
+interface Student {
+  id: string;
+  name: string;
+  rollNo: string;
+  section: { name: string; class: { id: string; name: string } };
+}
+
 interface FeePayment {
-  id: string; amount: number; paidAt: string; method: string | null; notes: string | null;
-  paymentGateway: string | null; gatewayPaymentId: string | null; receiptNumber: string | null; status: string;
+  id: string;
+  amount: number;
+  paidAt: string | null;
+  method: string | null;
+  referenceNumber: string | null;
+  notes: string | null;
+  receiptNumber: string | null;
+  status: string;
+  studentId: string;
+  feeStructureId: string;
+  createdAt: string;
+  paymentGateway: string | null;
+  gatewayPaymentId: string | null;
   student: { name: string; rollNo: string; section: { name: string; class: { name: string } } };
   feeStructure: { name: string; amount: number };
   recordedBy: { name: string } | null;
 }
 
-const FREQUENCY_LABELS: Record<string, string> = { ANNUAL: "Annual", MONTHLY: "Monthly", QUARTERLY: "Quarterly", ONE_TIME: "One-time" };
+const FREQUENCY_LABELS: Record<string, string> = {
+  ANNUAL: "Annual",
+  MONTHLY: "Monthly",
+  QUARTERLY: "Quarterly",
+  ONE_TIME: "One-time",
+};
+
 const FREQUENCY_COLORS: Record<string, string> = {
   ANNUAL: "bg-blue-50 text-blue-700 border-blue-200",
   MONTHLY: "bg-green-50 text-green-700 border-green-200",
   QUARTERLY: "bg-purple-50 text-purple-700 border-purple-200",
   ONE_TIME: "bg-orange-50 text-orange-700 border-orange-200",
 };
+
 const METHOD_COLORS: Record<string, string> = {
-  CASH: "bg-yellow-50 text-yellow-700", ONLINE: "bg-blue-50 text-blue-700",
-  CHEQUE: "bg-purple-50 text-purple-700", UPI: "bg-green-50 text-green-700",
+  CASH: "bg-yellow-50 text-yellow-700",
+  UPI: "bg-green-50 text-green-700",
+  BANK_TRANSFER: "bg-blue-50 text-blue-700",
+  CHEQUE: "bg-purple-50 text-purple-700",
+  OTHER: "bg-gray-100 text-gray-700",
+  ONLINE: "bg-blue-50 text-blue-700",
 };
+
 const STATUS_COLORS: Record<string, string> = {
   PAID: "bg-green-50 text-green-700",
+  PARTIALLY_PAID: "bg-amber-50 text-amber-700",
+  UNPAID: "bg-red-50 text-red-700",
   PENDING: "bg-amber-50 text-amber-700",
   FAILED: "bg-red-50 text-red-700",
 };
 
-type Tab = "structures" | "payments";
+const METHOD_LABELS: Record<ManualFeePaymentMethod, string> = {
+  CASH: "Cash",
+  UPI: "UPI",
+  BANK_TRANSFER: "Bank Transfer",
+  CHEQUE: "Cheque",
+  OTHER: "Other",
+};
+
+type Tab = "structures" | "accounts" | "payments";
 
 interface Props {
   initialStructures: FeeStructure[];
@@ -50,7 +102,7 @@ interface Props {
 }
 
 export default function FeesClient({ initialStructures, initialPayments, initialStudents, initialClasses, schoolId }: Props) {
-  const [tab, setTab] = useState<Tab>("structures");
+  const [tab, setTab] = useState<Tab>("accounts");
   const [structures, setStructures] = useState<FeeStructure[]>(initialStructures);
   const [payments, setPayments] = useState<FeePayment[]>(initialPayments);
   const [students] = useState<Student[]>(initialStudents);
@@ -63,71 +115,132 @@ export default function FeesClient({ initialStructures, initialPayments, initial
   const [structureError, setStructureError] = useState("");
 
   const [paymentDialog, setPaymentDialog] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({ studentId: "", feeStructureId: "", amount: "", method: "CASH", notes: "", paidAt: "" });
+  const [paymentForm, setPaymentForm] = useState({
+    studentId: "",
+    feeStructureId: "",
+    amount: "",
+    method: "CASH" as ManualFeePaymentMethod,
+    paidAt: "",
+    referenceNumber: "",
+    remarks: "",
+  });
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+
+  const feeAccounts = useMemo(
+    () =>
+      buildStudentFeeAccounts({
+        students,
+        feeStructures: structures,
+        payments,
+      }),
+    [students, structures, payments]
+  );
 
   async function fetchAll() {
     setLoading(true);
     const [structRes, payRes] = await Promise.all([
-      fetch(`/api/schools/${schoolId}/fee-structures`),
-      fetch(`/api/schools/${schoolId}/fee-payments`),
+      fetch(`/api/schools/${schoolId}/fee-structures`, { cache: "no-store" }),
+      fetch(`/api/schools/${schoolId}/fee-payments`, { cache: "no-store" }),
     ]);
-    setStructures(await structRes.json());
-    setPayments(await payRes.json());
+    const structuresJson = await structRes.json();
+    const paymentsJson = await payRes.json();
+    setStructures(Array.isArray(structuresJson) ? structuresJson : []);
+    setPayments(Array.isArray(paymentsJson) ? paymentsJson : []);
     setLoading(false);
   }
 
   async function saveStructure() {
-    if (!structureForm.name.trim() || !structureForm.amount) { setStructureError("Name and amount are required"); return; }
-    setStructureSaving(true); setStructureError("");
+    if (!structureForm.name.trim() || !structureForm.amount) {
+      setStructureError("Name and amount are required");
+      return;
+    }
+    setStructureSaving(true);
+    setStructureError("");
     const res = await fetch(`/api/schools/${schoolId}/fee-structures`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: structureForm.name, amount: parseFloat(structureForm.amount), frequency: structureForm.frequency, classId: structureForm.classId || null }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: structureForm.name,
+        amount: parseFloat(structureForm.amount),
+        frequency: structureForm.frequency,
+        classId: structureForm.classId || null,
+      }),
     });
     const data = await res.json();
-    if (!res.ok) { setStructureError(data.error); setStructureSaving(false); return; }
+    if (!res.ok) {
+      setStructureError(data.error || "Failed to create fee structure");
+      setStructureSaving(false);
+      return;
+    }
     setStructureDialog(false);
     setStructureForm({ name: "", amount: "", frequency: "ANNUAL", classId: "" });
-    fetchAll(); setStructureSaving(false);
+    await fetchAll();
+    setStructureSaving(false);
   }
 
   async function deleteStructure(id: string) {
-    if (!confirm("Delete this fee structure? All payment records will also be deleted.")) return;
+    if (!confirm("Delete this fee structure? All payment records linked to it will also be deleted.")) return;
     await fetch(`/api/schools/${schoolId}/fee-structures/${id}`, { method: "DELETE" });
-    fetchAll();
+    await fetchAll();
   }
 
   async function savePayment() {
     if (!paymentForm.studentId || !paymentForm.feeStructureId || !paymentForm.amount) {
-      setPaymentError("Student, fee type, and amount are required"); return;
+      setPaymentError("Student, fee type, and amount received are required");
+      return;
     }
-    setPaymentSaving(true); setPaymentError("");
+    setPaymentSaving(true);
+    setPaymentError("");
     const res = await fetch(`/api/schools/${schoolId}/fee-payments`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        studentId: paymentForm.studentId, feeStructureId: paymentForm.feeStructureId,
-        amount: parseFloat(paymentForm.amount), method: paymentForm.method || undefined,
-        notes: paymentForm.notes || undefined, paidAt: paymentForm.paidAt || undefined,
+        studentId: paymentForm.studentId,
+        feeStructureId: paymentForm.feeStructureId,
+        amount: parseFloat(paymentForm.amount),
+        method: paymentForm.method,
+        paidAt: paymentForm.paidAt || undefined,
+        referenceNumber: paymentForm.referenceNumber || undefined,
+        remarks: paymentForm.remarks || undefined,
       }),
     });
     const data = await res.json();
-    if (!res.ok) { setPaymentError(data.error); setPaymentSaving(false); return; }
+    if (!res.ok) {
+      setPaymentError(data.error || "Failed to record payment");
+      setPaymentSaving(false);
+      return;
+    }
     setPaymentDialog(false);
-    setPaymentForm({ studentId: "", feeStructureId: "", amount: "", method: "CASH", notes: "", paidAt: "" });
-    fetchAll(); setPaymentSaving(false);
+    setPaymentForm({
+      studentId: "",
+      feeStructureId: "",
+      amount: "",
+      method: "CASH",
+      paidAt: "",
+      referenceNumber: "",
+      remarks: "",
+    });
+    await fetchAll();
+    setPaymentSaving(false);
   }
 
   function onFeeStructureChange(id: string) {
     const structure = structures.find((s) => s.id === id);
-    setPaymentForm((prev) => ({ ...prev, feeStructureId: id, amount: structure ? String(structure.amount) : prev.amount }));
+    setPaymentForm((prev) => ({
+      ...prev,
+      feeStructureId: id,
+      amount: structure ? String(structure.amount) : prev.amount,
+    }));
   }
 
   const paidPayments = payments.filter((p) => p.status === "PAID");
   const totalCollected = paidPayments.reduce((sum, p) => sum + p.amount, 0);
-  const thisMonth = payments.filter((p) => {
-    const d = new Date(p.paidAt); const now = new Date();
-    return p.status === "PAID" && p.paidAt && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  const thisMonth = paidPayments.filter((p) => {
+    if (!p.paidAt) return false;
+    const d = new Date(p.paidAt);
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
   const thisMonthTotal = thisMonth.reduce((sum, p) => sum + p.amount, 0);
 
@@ -136,14 +249,38 @@ export default function FeesClient({ initialStructures, initialPayments, initial
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Fee Management</h2>
-          <p className="text-sm text-gray-500 mt-1">Track fee structures and payment records</p>
+          <p className="mt-1 text-sm text-gray-500">Manual ledger of externally received student fees</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setStructureError(""); setStructureForm({ name: "", amount: "", frequency: "ANNUAL", classId: "" }); setStructureDialog(true); }} className="gap-2">
-            <Plus className="w-4 h-4" /> Fee Structure
+          <Button
+            variant="outline"
+            onClick={() => {
+              setStructureError("");
+              setStructureForm({ name: "", amount: "", frequency: "ANNUAL", classId: "" });
+              setStructureDialog(true);
+            }}
+            className="gap-2"
+          >
+            <Plus className="h-4 w-4" /> Fee Structure
           </Button>
-          <Button onClick={() => { setPaymentError(""); setPaymentForm({ studentId: "", feeStructureId: "", amount: "", method: "CASH", notes: "", paidAt: "" }); setPaymentDialog(true); }} className="gap-2" disabled={structures.length === 0 || students.length === 0}>
-            <Receipt className="w-4 h-4" /> Record Payment
+          <Button
+            onClick={() => {
+              setPaymentError("");
+              setPaymentForm({
+                studentId: "",
+                feeStructureId: "",
+                amount: "",
+                method: "CASH",
+                paidAt: "",
+                referenceNumber: "",
+                remarks: "",
+              });
+              setPaymentDialog(true);
+            }}
+            className="gap-2"
+            disabled={structures.length === 0 || students.length === 0}
+          >
+            <Receipt className="h-4 w-4" /> Record Payment
           </Button>
         </div>
       </div>
@@ -152,13 +289,13 @@ export default function FeesClient({ initialStructures, initialPayments, initial
         {[
           { label: "Total Collected", value: `₹${totalCollected.toLocaleString("en-IN")}`, icon: TrendingUp, color: "bg-green-100 text-green-600" },
           { label: "This Month", value: `₹${thisMonthTotal.toLocaleString("en-IN")}`, icon: IndianRupee, color: "bg-blue-100 text-blue-600" },
-          { label: "Total Payments", value: payments.length, icon: CheckCircle, color: "bg-purple-100 text-purple-600" },
+          { label: "Fee Accounts", value: feeAccounts.length, icon: CheckCircle, color: "bg-purple-100 text-purple-600" },
         ].map((s) => (
           <Card key={s.label}>
-            <CardContent className="pt-4 pb-4">
+            <CardContent className="pb-4 pt-4">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${s.color}`}>
-                  <s.icon className="w-5 h-5" />
+                <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${s.color}`}>
+                  <s.icon className="h-5 w-5" />
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">{s.label}</p>
@@ -171,39 +308,65 @@ export default function FeesClient({ initialStructures, initialPayments, initial
       </div>
 
       <div className="flex border-b border-gray-200">
-        {(["structures", "payments"] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={cn(
-            "px-4 py-2.5 text-sm font-medium border-b-2 transition-colors",
-            tab === t ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
-          )}>
-            {t === "structures" ? `Fee Structures (${structures.length})` : `Payments (${payments.length})`}
+        {(["accounts", "payments", "structures"] as Tab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+              tab === t ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
+            )}
+          >
+            {t === "accounts"
+              ? `Fee Accounts (${feeAccounts.length})`
+              : t === "payments"
+                ? `Payments (${payments.length})`
+                : `Fee Structures (${structures.length})`}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-24 bg-gray-100 animate-pulse rounded-xl" />)}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-24 animate-pulse rounded-xl bg-gray-100" />
+          ))}
         </div>
       ) : tab === "structures" ? (
         structures.length === 0 ? (
-          <Card><CardContent className="py-20 text-center"><IndianRupee className="w-10 h-10 text-gray-300 mx-auto mb-3" /><p className="text-gray-500 font-medium">No fee structures yet</p></CardContent></Card>
+          <Card>
+            <CardContent className="py-20 text-center">
+              <IndianRupee className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+              <p className="font-medium text-gray-500">No fee structures yet</p>
+            </CardContent>
+          </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {structures.map((s) => (
-              <Card key={s.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="pt-4 pb-4">
+              <Card key={s.id} className="transition-shadow hover:shadow-md">
+                <CardContent className="pb-4 pt-4">
                   <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="font-semibold text-gray-900">{s.name}</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">₹{s.amount.toLocaleString("en-IN")}</p>
-                      <div className="flex gap-2 mt-2">
-                        <Badge variant="outline" className={cn("text-xs", FREQUENCY_COLORS[s.frequency])}>{FREQUENCY_LABELS[s.frequency]}</Badge>
-                        {s.class && <Badge variant="outline" className="text-xs">{s.class.name}</Badge>}
+                      <p className="mt-1 text-2xl font-bold text-gray-900">₹{s.amount.toLocaleString("en-IN")}</p>
+                      <div className="mt-2 flex gap-2">
+                        <Badge variant="outline" className={cn("text-xs", FREQUENCY_COLORS[s.frequency])}>
+                          {FREQUENCY_LABELS[s.frequency]}
+                        </Badge>
+                        {s.class && (
+                          <Badge variant="outline" className="text-xs">
+                            {s.class.name}
+                          </Badge>
+                        )}
                       </div>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-red-600" onClick={() => deleteStructure(s.id)}>
-                      <Trash2 className="w-3.5 h-3.5" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-gray-400 hover:text-red-600"
+                      onClick={() => deleteStructure(s.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </CardContent>
@@ -211,35 +374,145 @@ export default function FeesClient({ initialStructures, initialPayments, initial
             ))}
           </div>
         )
+      ) : tab === "accounts" ? (
+        feeAccounts.length === 0 ? (
+          <Card>
+            <CardContent className="py-20 text-center">
+              <Receipt className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+              <p className="font-medium text-gray-500">No student fee accounts to show</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Student Fee Accounts</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-3">
+                {feeAccounts.map((account) => (
+                  <div key={account.key} className="rounded-lg border border-gray-100 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {account.student.name} · {account.student.section.class.name}-{account.student.section.name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Roll {account.student.rollNo} · {account.feeStructure.name}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          "rounded px-2 py-1 text-xs font-medium",
+                          STATUS_COLORS[account.status] || "bg-gray-50 text-gray-600"
+                        )}
+                      >
+                        {account.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                      <div className="rounded bg-gray-50 px-3 py-2">
+                        <p className="text-gray-500">Total Fee</p>
+                        <p className="text-sm font-semibold text-gray-900">₹{account.totalFee.toLocaleString("en-IN")}</p>
+                      </div>
+                      <div className="rounded bg-gray-50 px-3 py-2">
+                        <p className="text-gray-500">Paid Till Date</p>
+                        <p className="text-sm font-semibold text-green-700">₹{account.paidTillDate.toLocaleString("en-IN")}</p>
+                      </div>
+                      <div className="rounded bg-gray-50 px-3 py-2">
+                        <p className="text-gray-500">Remaining</p>
+                        <p className="text-sm font-semibold text-amber-700">₹{account.remainingAmount.toLocaleString("en-IN")}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <p className="mb-1 text-xs font-medium text-gray-500">Payment History</p>
+                      {account.payments.length === 0 ? (
+                        <p className="text-xs text-gray-400">No payments recorded yet</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {account.payments.map((payment) => (
+                            <div key={payment.id} className="flex items-center justify-between rounded border border-gray-100 px-3 py-2 text-xs">
+                              <div>
+                                <p className="font-medium text-gray-800">
+                                  ₹{payment.amount.toLocaleString("en-IN")} · {payment.method || "Manual"}
+                                </p>
+                                <p className="text-gray-500">
+                                  {payment.paidAt ? format(new Date(payment.paidAt), "dd MMM yyyy") : "No payment date"}
+                                  {payment.referenceNumber ? ` · Ref: ${payment.referenceNumber}` : ""}
+                                </p>
+                              </div>
+                              <p className="text-gray-400">{payment.receiptNumber || "No receipt"}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )
       ) : payments.length === 0 ? (
-        <Card><CardContent className="py-20 text-center"><Receipt className="w-10 h-10 text-gray-300 mx-auto mb-3" /><p className="text-gray-500 font-medium">No payments recorded yet</p></CardContent></Card>
+        <Card>
+          <CardContent className="py-20 text-center">
+            <Receipt className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+            <p className="font-medium text-gray-500">No payments recorded yet</p>
+          </CardContent>
+        </Card>
       ) : (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Payment Records</CardTitle></CardHeader>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Payment Records</CardTitle>
+          </CardHeader>
           <CardContent className="pt-0">
             <div className="space-y-2">
               {payments.map((p) => (
-                <div key={p.id} className="flex items-center justify-between py-3 px-4 rounded-lg border border-gray-100 hover:bg-gray-50">
+                <div key={p.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-3 hover:bg-gray-50">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center text-green-700 font-semibold text-sm flex-shrink-0">
-                      {p.student.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-green-100 text-sm font-semibold text-green-700">
+                      {p.student.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-medium text-sm text-gray-900">{p.student.name}</p>
-                      <p className="text-xs text-gray-400">{p.student.section.class.name} - {p.student.section.name} · Roll {p.student.rollNo}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{p.feeStructure.name}</p>
-                    <div className="flex gap-1.5 mt-1 flex-wrap">
-                      <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded", STATUS_COLORS[p.status] || "bg-gray-50 text-gray-600")}>{p.status}</span>
-                      {p.method && <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded", METHOD_COLORS[p.method] || "bg-gray-50 text-gray-600")}>{p.method}</span>}
-                      {p.receiptNumber && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{p.receiptNumber}</span>}
+                      <p className="text-sm font-medium text-gray-900">{p.student.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {p.student.section.class.name} - {p.student.section.name} · Roll {p.student.rollNo}
+                      </p>
+                      <p className="mt-0.5 text-xs text-gray-400">{p.feeStructure.name}</p>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-medium", STATUS_COLORS[p.status] || "bg-gray-50 text-gray-600")}>
+                          {p.status}
+                        </span>
+                        {p.method && (
+                          <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-medium", METHOD_COLORS[p.method] || "bg-gray-50 text-gray-600")}>
+                            {METHOD_LABELS[p.method as ManualFeePaymentMethod] || p.method}
+                          </span>
+                        )}
+                        {p.referenceNumber && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                            Ref: {p.referenceNumber}
+                          </span>
+                        )}
+                        {p.receiptNumber && (
+                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                            {p.receiptNumber}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    {p.gatewayPaymentId && <p className="text-[10px] text-gray-400 mt-1">Gateway ID: {p.gatewayPaymentId}</p>}
                   </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-gray-900">₹{p.amount.toLocaleString("en-IN")}</p>
-                    <p className="text-xs text-gray-400">{p.paidAt ? format(new Date(p.paidAt), "dd MMM yyyy") : "Awaiting payment"}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{p.recordedBy ? `By ${p.recordedBy.name}` : p.paymentGateway || "Online"}</p>
+                  <div className="text-right">
+                    <p className="font-bold text-gray-900">₹{p.amount.toLocaleString("en-IN")}</p>
+                    <p className="text-xs text-gray-400">{p.paidAt ? format(new Date(p.paidAt), "dd MMM yyyy") : "No payment date"}</p>
+                    <p className="mt-0.5 text-[10px] text-gray-400">
+                      {p.recordedBy ? `By ${p.recordedBy.name}` : p.paymentGateway ? "Legacy gateway entry" : "Manual entry"}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -250,74 +523,173 @@ export default function FeesClient({ initialStructures, initialPayments, initial
 
       <Dialog open={structureDialog} onOpenChange={setStructureDialog}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Add Fee Structure</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Add Fee Structure</DialogTitle>
+          </DialogHeader>
           <div className="space-y-4 py-2">
-            {structureError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{structureError}</p>}
-            <div className="space-y-1.5"><Label>Fee Name *</Label><Input placeholder="e.g. Annual Tuition Fee" value={structureForm.name} onChange={(e) => setStructureForm({ ...structureForm, name: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Amount (₹) *</Label><Input type="number" placeholder="12000" value={structureForm.amount} onChange={(e) => setStructureForm({ ...structureForm, amount: e.target.value })} /></div>
+            {structureError && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{structureError}</p>}
+            <div className="space-y-1.5">
+              <Label>Fee Name *</Label>
+              <Input
+                placeholder="e.g. Annual Tuition Fee"
+                value={structureForm.name}
+                onChange={(e) => setStructureForm({ ...structureForm, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Amount (₹) *</Label>
+              <Input
+                type="number"
+                placeholder="12000"
+                value={structureForm.amount}
+                onChange={(e) => setStructureForm({ ...structureForm, amount: e.target.value })}
+              />
+            </div>
             <div className="space-y-1.5">
               <Label>Frequency *</Label>
               <Select value={structureForm.frequency} onValueChange={(v) => setStructureForm({ ...structureForm, frequency: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.entries(FREQUENCY_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(FREQUENCY_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Applicable Class (optional)</Label>
-              <Select value={structureForm.classId || "all"} onValueChange={(v) => setStructureForm({ ...structureForm, classId: v === "all" ? "" : v })}>
-                <SelectTrigger><SelectValue placeholder="All classes" /></SelectTrigger>
+              <Select
+                value={structureForm.classId || "all"}
+                onValueChange={(v) => setStructureForm({ ...structureForm, classId: v === "all" ? "" : v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All classes" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All classes</SelectItem>
-                  {classes.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  {classes.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStructureDialog(false)}>Cancel</Button>
-            <Button onClick={saveStructure} disabled={structureSaving}>{structureSaving ? "Saving..." : "Add"}</Button>
+            <Button variant="outline" onClick={() => setStructureDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveStructure} disabled={structureSaving}>
+              {structureSaving ? "Saving..." : "Add"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={paymentDialog} onOpenChange={setPaymentDialog}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Record Payment</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+          </DialogHeader>
           <div className="space-y-4 py-2">
-            {paymentError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{paymentError}</p>}
+            {paymentError && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{paymentError}</p>}
             <div className="space-y-1.5">
               <Label>Student *</Label>
               <Select value={paymentForm.studentId} onValueChange={(v) => setPaymentForm({ ...paymentForm, studentId: v })}>
-                <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
-                <SelectContent>{students.map((s) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.section.class.name}-{s.section.name}, Roll {s.rollNo})</SelectItem>)}</SelectContent>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select student" />
+                </SelectTrigger>
+                <SelectContent>
+                  {students.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name} ({s.section.class.name}-{s.section.name}, Roll {s.rollNo})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Fee Type *</Label>
               <Select value={paymentForm.feeStructureId} onValueChange={onFeeStructureChange}>
-                <SelectTrigger><SelectValue placeholder="Select fee type" /></SelectTrigger>
-                <SelectContent>{structures.map((s) => <SelectItem key={s.id} value={s.id}>{s.name} — ₹{s.amount.toLocaleString("en-IN")}</SelectItem>)}</SelectContent>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select fee type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {structures.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name} — ₹{s.amount.toLocaleString("en-IN")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>Amount Paid (₹) *</Label><Input type="number" placeholder="12000" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} /></div>
+            <div className="space-y-1.5">
+              <Label>Amount Received (₹) *</Label>
+              <Input
+                type="number"
+                placeholder="12000"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Payment Method</Label>
-                <Select value={paymentForm.method} onValueChange={(v) => setPaymentForm({ ...paymentForm, method: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{["CASH", "UPI", "ONLINE", "CHEQUE"].map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                <Label>Payment Method *</Label>
+                <Select
+                  value={paymentForm.method}
+                  onValueChange={(v) => setPaymentForm({ ...paymentForm, method: v as ManualFeePaymentMethod })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MANUAL_FEE_PAYMENT_METHODS.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {METHOD_LABELS[m]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Date</Label>
-                <input type="date" value={paymentForm.paidAt} onChange={(e) => setPaymentForm({ ...paymentForm, paidAt: e.target.value })} className="w-full h-10 px-3 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <Label>Payment Date</Label>
+                <input
+                  type="date"
+                  value={paymentForm.paidAt}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, paidAt: e.target.value })}
+                  className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
             </div>
-            <div className="space-y-1.5"><Label>Notes</Label><Input placeholder="Optional note..." value={paymentForm.notes} onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })} /></div>
+            <div className="space-y-1.5">
+              <Label>Reference Number (optional)</Label>
+              <Input
+                placeholder="e.g. UPI-ABC123"
+                value={paymentForm.referenceNumber}
+                onChange={(e) => setPaymentForm({ ...paymentForm, referenceNumber: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Remarks (optional)</Label>
+              <Input
+                placeholder="e.g. July payment"
+                value={paymentForm.remarks}
+                onChange={(e) => setPaymentForm({ ...paymentForm, remarks: e.target.value })}
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPaymentDialog(false)}>Cancel</Button>
-            <Button onClick={savePayment} disabled={paymentSaving}>{paymentSaving ? "Saving..." : "Record"}</Button>
+            <Button variant="outline" onClick={() => setPaymentDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={savePayment} disabled={paymentSaving}>
+              {paymentSaving ? "Recording..." : "Record"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

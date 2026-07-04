@@ -7,6 +7,7 @@ type ReceiptPdfInput = {
   paymentMethod: string;
   receiptNumber: string;
   paidAt: string;
+  referenceNumber?: string | null;
   gatewayPaymentId?: string | null;
 };
 
@@ -23,6 +24,7 @@ export function generateReceiptPdf(input: ReceiptPdfInput) {
     `Fee: ${input.feeTitle}`,
     `Amount: ${input.amount}`,
     `Payment Method: ${input.paymentMethod}`,
+    ...(input.referenceNumber ? [`Reference: ${input.referenceNumber}`] : []),
     ...(input.gatewayPaymentId ? [`Gateway Payment ID: ${input.gatewayPaymentId}`] : []),
     "",
     "This is a computer-generated receipt.",

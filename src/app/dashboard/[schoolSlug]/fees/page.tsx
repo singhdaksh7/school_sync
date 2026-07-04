@@ -1,6 +1,8 @@
 import { getSchoolBySlug } from "@/lib/school";
 import { prisma } from "@/lib/prisma";
 import { moneyToNumber } from "@/lib/money";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { notFound } from "next/navigation";
 import FeesClient from "./FeesClient";
 
 export default async function FeesPage({
@@ -11,11 +13,12 @@ export default async function FeesPage({
   const { schoolSlug } = await params;
   const school = await getSchoolBySlug(schoolSlug);
   if (!school) return null;
+  if (!(await isFeatureEnabled(school.id, "FEES"))) notFound();
 
   const [structures, payments, students, classes] = await Promise.all([
     prisma.feeStructure.findMany({
       where: { schoolId: school.id },
-      include: { class: { select: { name: true } } },
+      include: { class: { select: { id: true, name: true } } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.feePayment.findMany({

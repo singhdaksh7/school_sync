@@ -6,6 +6,7 @@ import { generateReceiptPdf } from "@/lib/receipt-pdf";
 import { moneyToNumber } from "@/lib/money";
 import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 import { canAccessSchool } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 export async function GET(
   req: NextRequest,
@@ -16,6 +17,10 @@ export async function GET(
     const auth = await getAuthenticatedGuardian(req);
     const session = auth ? null : await adminAuth();
     if (!auth && !session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth) {
+      const denied = await requireSchoolFeature(auth.guardian.schoolId, "FEES");
+      if (denied) return denied;
+    }
 
     const payment = await prisma.feePayment.findFirst({
       where: {
@@ -48,6 +53,9 @@ export async function GET(
       }
     } else if (!session?.user?.id || !(await canAccessSchool(payment.schoolId, session.user.id))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    } else {
+      const denied = await requireSchoolFeature(payment.schoolId, "FEES");
+      if (denied) return denied;
     }
 
     const pdf = generateReceiptPdf({
@@ -56,9 +64,10 @@ export async function GET(
       classSection: `${payment.student.section.class.name}-${payment.student.section.name}`,
       feeTitle: payment.feeStructure.name,
       amount: `Rs. ${moneyToNumber(payment.amount).toLocaleString("en-IN")}`,
-      paymentMethod: payment.method ?? payment.paymentGateway ?? "ONLINE",
+      paymentMethod: payment.method ?? payment.paymentGateway ?? "MANUAL",
       receiptNumber: payment.receiptNumber,
       paidAt: format(payment.paidAt, "dd MMM yyyy, hh:mm a"),
+      referenceNumber: payment.referenceNumber,
       gatewayPaymentId: payment.gatewayPaymentId,
     });
 

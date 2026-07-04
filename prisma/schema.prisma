@@ -643,7 +643,8 @@ model FeePayment {
   id               String       @id @default(cuid())
   amount           Decimal      @db.Decimal(10, 2)
   paidAt           DateTime?
-  method           String? // CASH, ONLINE, CHEQUE, UPI
+  method           String? // CASH, UPI, BANK_TRANSFER, CHEQUE, OTHER (ONLINE retained for legacy rows)
+  referenceNumber  String?
   notes            String?
   paymentGateway   String?
   gatewayOrderId   String?      @unique
