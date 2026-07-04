@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { canWriteSchool, hasPrismaErrorCode, sessionRole } from "@/lib/tenant";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { normalizeHostname } from "@/lib/school-resolver";
+import { resolveManagedOrLegacyFileUrl } from "@/lib/file-service";
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DOMAIN_RE = /^(?!-)(?:[a-z0-9-]{1,63}\.)+[a-z]{2,63}$/;
@@ -46,6 +47,7 @@ export async function GET(
       name: true,
       customDomain: true,
       logoUrl: true,
+      logoFileId: true,
       primaryColor: true,
       secondaryColor: true,
       appName: true,
@@ -54,7 +56,8 @@ export async function GET(
   });
   if (!school) return NextResponse.json({ error: "School not found" }, { status: 404 });
 
-  return NextResponse.json(school);
+  const logoUrl = await resolveManagedOrLegacyFileUrl(school.logoUrl, school.logoFileId);
+  return NextResponse.json({ ...school, logoUrl });
 }
 
 export async function PATCH(
@@ -108,6 +111,7 @@ export async function PATCH(
         name: true,
         customDomain: true,
         logoUrl: true,
+        logoFileId: true,
         primaryColor: true,
         secondaryColor: true,
         appName: true,
@@ -115,7 +119,8 @@ export async function PATCH(
       },
     });
 
-    return NextResponse.json(updated);
+    const logoUrl = await resolveManagedOrLegacyFileUrl(updated.logoUrl, updated.logoFileId);
+    return NextResponse.json({ ...updated, logoUrl });
   } catch (error) {
     if (hasPrismaErrorCode(error, "P2002")) {
       return NextResponse.json({ error: "Custom domain is already in use" }, { status: 409 });

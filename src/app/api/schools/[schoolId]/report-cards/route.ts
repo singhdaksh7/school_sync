@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { reportCardInclude, serializeReportCard } from "@/lib/report-cards";
 import { canAccessSchool } from "@/lib/tenant";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { parsePagination, paginated } from "@/lib/pagination";
+import type { Prisma } from "@/generated/prisma/client";
 
 export async function GET(
   req: Request,
@@ -25,16 +27,24 @@ export async function GET(
   const examSchemeId = searchParams.get("examSchemeId");
   const status = searchParams.get("status");
 
-  const reportCards = await prisma.reportCard.findMany({
-    where: {
-      schoolId,
-      ...(sectionId ? { sectionId } : {}),
-      ...(examSchemeId ? { examSchemeId } : {}),
-      ...(status === "DRAFT" || status === "PUBLISHED" ? { status } : {}),
-    },
-    include: reportCardInclude,
-    orderBy: [{ status: "asc" }, { student: { rollNo: "asc" } }],
-  });
+  const { skip, take, page, limit } = parsePagination(searchParams, { maxLimit: 500, defaultLimit: 500 });
+  const where: Prisma.ReportCardWhereInput = {
+    schoolId,
+    ...(sectionId ? { sectionId } : {}),
+    ...(examSchemeId ? { examSchemeId } : {}),
+    ...(status === "DRAFT" || status === "PUBLISHED" ? { status } : {}),
+  };
+  const [reportCards, total] = await Promise.all([
+    prisma.reportCard.findMany({
+      where,
+      include: reportCardInclude,
+      orderBy: [{ status: "asc" }, { student: { rollNo: "asc" } }, { id: "asc" }],
+      skip,
+      take,
+    }),
+    prisma.reportCard.count({ where }),
+  ]);
 
-  return NextResponse.json({ reportCards: reportCards.map(serializeReportCard) });
+  const { pagination } = paginated([], total, { skip, take, page, limit });
+  return NextResponse.json({ reportCards: reportCards.map(serializeReportCard), pagination });
 }

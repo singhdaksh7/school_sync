@@ -1,43 +1,83 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import bcrypt from "bcryptjs";
+import { isStorageConfigured } from "@/lib/storage";
+import { getRateLimiterKind, isDistributedRateLimiterConfigured } from "@/lib/rate-limit";
+import { isJobWorkerConfigured } from "@/lib/jobs";
+
+/**
+ * Health endpoint.
+ *
+ * LIVENESS (default): cheap, dependency-free "the process is up" — safe to poll
+ * frequently. Never touches the database or any secret.
+ *
+ * READINESS (`?check=readiness`): reports whether required production
+ * dependencies are usable — DB connectivity, durable storage, a distributed
+ * rate-limiter, and job-worker configuration. It returns booleans/enums ONLY;
+ * it never exposes connection strings, hostnames, credentials, user data, or
+ * stack traces, and it is NOT a login/credential oracle.
+ *
+ * Three-state contract:
+ *   READY    — database up, and (dev/test, or in prod: distributed rate
+ *              limiting + storage + job worker are ALL configured).
+ *   DEGRADED — database up, but in production one or more of
+ *              storage/rate-limiter/job-worker is missing. Normal CRUD still
+ *              works; upload and batch-job routes independently refuse to
+ *              accept work they can never fulfil (see file-service.ts /
+ *              jobs.ts callers) rather than silently queuing stuck work.
+ *   NOT_READY — database is unreachable; nothing reliably works.
+ */
+const startedAt = Date.now();
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const testEmail = searchParams.get("email");
-  const testPassword = searchParams.get("password");
+  const check = searchParams.get("check");
 
-  const status: Record<string, unknown> = {
-    database_url_set: !!process.env.DATABASE_URL,
-    nextauth_secret_set: !!process.env.NEXTAUTH_SECRET,
-    nextauth_url: process.env.NEXTAUTH_URL || "not_set",
-  };
-
-  try {
-    const users = await prisma.user.findMany({ select: { email: true, id: true } });
-    status.db = "connected";
-    status.user_count = users.length;
-    // Show masked emails so user can identify their account
-    status.registered_emails = users.map((u) => {
-      const [local, domain] = u.email.split("@");
-      const masked = local.slice(0, 2) + "***@" + domain;
-      return masked;
+  if (check !== "readiness") {
+    return NextResponse.json({
+      status: "ok",
+      uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+      timestamp: new Date().toISOString(),
     });
-
-    // Test login if email+password provided
-    if (testEmail && testPassword) {
-      const user = await prisma.user.findUnique({ where: { email: testEmail } });
-      if (!user) {
-        status.login_test = "user_not_found";
-      } else {
-        const valid = await bcrypt.compare(testPassword, user.password);
-        status.login_test = valid ? "password_match" : "password_mismatch";
-      }
-    }
-  } catch (err) {
-    status.db = "error";
-    status.db_error = String(err);
   }
 
-  return NextResponse.json(status);
+  // ── Readiness ──────────────────────────────────────────────────────────────
+  let database: "up" | "down" = "down";
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    database = "up";
+  } catch {
+    database = "down";
+  }
+
+  const rateLimiterKind = getRateLimiterKind();
+  const distributedRateLimiting = isDistributedRateLimiterConfigured();
+  const storageConfigured = isStorageConfigured();
+  const jobWorkerConfigured = isJobWorkerConfigured();
+
+  const isProd = process.env.NODE_ENV === "production";
+  const productionDependenciesReady = distributedRateLimiting && storageConfigured && jobWorkerConfigured;
+
+  let status: "ready" | "degraded" | "not_ready";
+  if (database === "down") {
+    status = "not_ready";
+  } else if (isProd && !productionDependenciesReady) {
+    status = "degraded";
+  } else {
+    status = "ready";
+  }
+
+  return NextResponse.json(
+    {
+      status,
+      checks: {
+        database,
+        rateLimiter: rateLimiterKind,
+        distributedRateLimiting,
+        storageConfigured,
+        jobWorkerConfigured,
+      },
+      timestamp: new Date().toISOString(),
+    },
+    { status: status === "not_ready" ? 503 : 200 }
+  );
 }

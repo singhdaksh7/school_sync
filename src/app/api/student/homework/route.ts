@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getStudentAuth } from "@/lib/student-mobile-auth";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { resolveManagedOrLegacyUrl } from "@/lib/file-service";
 
 export async function GET(req: NextRequest) {
   try {
@@ -36,8 +37,12 @@ export async function GET(req: NextRequest) {
     });
     console.log(`[HW_DEBUG] query returned ${statuses.length} HomeworkStudentStatus row(s) for studentId=${auth.studentId}`);
 
-    const homework = statuses.map((item) => {
+    const homework = await Promise.all(statuses.map(async (item) => {
       const submission = item.homework.submissions.find((s) => s.studentId === item.studentId) || null;
+      const [attachmentUrl, submissionAttachmentUrl] = await Promise.all([
+        resolveManagedOrLegacyUrl(item.homework),
+        submission ? resolveManagedOrLegacyUrl(submission) : Promise.resolve(null),
+      ]);
       return {
         id: item.id,
         homeworkId: item.homeworkId,
@@ -48,7 +53,7 @@ export async function GET(req: NextRequest) {
         assignedAt: item.homework.createdAt,
         dueDate: item.homework.dueDate,
         deadlineAt: item.homework.deadlineAt,
-        attachmentUrl: item.homework.attachmentUrl,
+        attachmentUrl,
         homeworkStatus: item.homework.status,
         submissionStatus: submission?.submissionStatus ?? item.submissionStatus,
         submissionMethod: submission?.submissionMethod ?? item.submissionMethod,
@@ -57,11 +62,11 @@ export async function GET(req: NextRequest) {
         score: submission?.score ?? item.score,
         maxScore: submission?.maxScore ?? item.maxScore,
         teacherRemark: submission?.teacherRemark ?? item.teacherRemark,
-        submission,
+        submission: submission ? { ...submission, attachmentUrl: submissionAttachmentUrl } : null,
         teacher: item.homework.teacher,
         section: item.homework.section,
       };
-    });
+    }));
 
     return NextResponse.json({ homework });
   } catch (error) {

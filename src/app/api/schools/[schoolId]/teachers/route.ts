@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
 import { generateInviteToken } from "@/lib/invite-tokens";
+import { parsePagination, paginated } from "@/lib/pagination";
 
 async function verify(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -27,16 +28,26 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const teachers = await prisma.teacher.findMany({
-    where: { schoolId, isDeleted: false },
-    orderBy: { name: "asc" },
-    include: {
-      mentorSection: { include: { class: { select: { name: true } } } },
-      user: { select: { id: true } },
-      invites: { where: { usedAt: null, expiresAt: { gt: new Date() } }, select: { id: true } },
-    },
-  });
-  return NextResponse.json(teachers);
+  const { searchParams } = new URL(req.url);
+  // Teacher dropdowns/assignment flows need the whole roster, so the ceiling
+  // is generous (staff counts are inherently far smaller than student counts).
+  const { skip, take, page, limit } = parsePagination(searchParams, { maxLimit: 500 });
+  const where = { schoolId, isDeleted: false };
+  const [teachers, total] = await Promise.all([
+    prisma.teacher.findMany({
+      where,
+      orderBy: { name: "asc" },
+      include: {
+        mentorSection: { include: { class: { select: { name: true } } } },
+        user: { select: { id: true } },
+        invites: { where: { usedAt: null, expiresAt: { gt: new Date() } }, select: { id: true } },
+      },
+      skip,
+      take,
+    }),
+    prisma.teacher.count({ where }),
+  ]);
+  return NextResponse.json(paginated(teachers, total, { skip, take, page, limit }));
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {

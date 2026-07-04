@@ -141,12 +141,13 @@ export default function FeesClient({ initialStructures, initialPayments, initial
     setLoading(true);
     const [structRes, payRes] = await Promise.all([
       fetch(`/api/schools/${schoolId}/fee-structures`, { cache: "no-store" }),
-      fetch(`/api/schools/${schoolId}/fee-payments`, { cache: "no-store" }),
+      fetch(`/api/schools/${schoolId}/fee-payments?limit=100`, { cache: "no-store" }),
     ]);
     const structuresJson = await structRes.json();
     const paymentsJson = await payRes.json();
+    const paymentsList = Array.isArray(paymentsJson) ? paymentsJson : paymentsJson.data;
     setStructures(Array.isArray(structuresJson) ? structuresJson : []);
-    setPayments(Array.isArray(paymentsJson) ? paymentsJson : []);
+    setPayments(Array.isArray(paymentsList) ? paymentsList : []);
     setLoading(false);
   }
 

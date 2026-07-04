@@ -79,9 +79,10 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
   async function fetchTeachers() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/schools/${schoolId}/teachers`);
+      const res = await fetch(`/api/schools/${schoolId}/teachers?limit=500`);
       if (!res.ok) throw new Error("Failed to refresh teachers");
-      setTeachers(await res.json());
+      const body = await res.json();
+      setTeachers(body.data ?? body);
       setRefreshError("");
     } catch {
       setRefreshError("Could not refresh the teacher list. Please reload the page.");

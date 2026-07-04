@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
-import { getHomeworkForTeacherAccess, getTeacherByUserId } from "@/lib/homework";
+import { getHomeworkForTeacherAccess, getTeacherByUserId, withResolvedAttachments } from "@/lib/homework";
+import { resolveManagedOrLegacyUrl } from "@/lib/file-service";
 
 export async function GET(
   _req: Request,
@@ -45,5 +46,11 @@ export async function GET(
     orderBy: [{ student: { rollNo: "asc" } }, { submittedAt: "desc" }],
   });
 
-  return NextResponse.json({ homework, submissions });
+  // Managed file takes precedence over a legacy attachmentUrl on every
+  // submission returned here (see resolveManagedOrLegacyUrl).
+  const resolvedSubmissions = await Promise.all(
+    submissions.map(async (submission) => ({ ...submission, attachmentUrl: await resolveManagedOrLegacyUrl(submission) }))
+  );
+
+  return NextResponse.json({ homework: await withResolvedAttachments(homework), submissions: resolvedSubmissions });
 }

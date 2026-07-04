@@ -34,7 +34,7 @@ export async function GET(
   const template = await getOwnedTemplate(schoolId, templateId);
   if (!template) return NextResponse.json({ error: "Template not found" }, { status: 404 });
 
-  return NextResponse.json({ template: serializeTemplate(template) });
+  return NextResponse.json({ template: await serializeTemplate(template) });
 }
 
 export async function PATCH(
@@ -70,7 +70,7 @@ export async function PATCH(
     data,
   });
 
-  return NextResponse.json({ template: serializeTemplate(template) });
+  return NextResponse.json({ template: await serializeTemplate(template) });
 }
 
 export async function DELETE(

@@ -33,7 +33,7 @@ export async function GET(
     orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
   });
 
-  return NextResponse.json({ templates: templates.map(serializeTemplate) });
+  return NextResponse.json({ templates: await Promise.all(templates.map(serializeTemplate)) });
 }
 
 export async function POST(
@@ -73,5 +73,5 @@ export async function POST(
     });
   });
 
-  return NextResponse.json({ template: serializeTemplate(template) }, { status: 201 });
+  return NextResponse.json({ template: await serializeTemplate(template) }, { status: 201 });
 }

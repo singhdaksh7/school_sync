@@ -35,7 +35,7 @@ export async function GET(
   });
   if (!card) return NextResponse.json({ error: "Report card not found" }, { status: 404 });
 
-  const pdf = generateReportCardPdf(reportCardToPdfInput(card));
+  const pdf = await generateReportCardPdf(reportCardToPdfInput(card));
 
   return new Response(new Uint8Array(pdf), {
     headers: {

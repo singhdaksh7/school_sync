@@ -9,6 +9,7 @@ import { getClientIp } from "@/lib/request-ip";
 import { buildStudentPasswordHashes } from "@/lib/student-credentials";
 import { backfillHomeworkStatusForStudent } from "@/lib/homework";
 import { getStudentLimitInfo, withinStudentLimit, STUDENT_LIMIT_MESSAGE } from "@/lib/plan-limits";
+import { parsePagination, paginated } from "@/lib/pagination";
 
 function duplicateFieldMessage(err: unknown) {
   const target = (err as { meta?: { target?: unknown } })?.meta?.target;
@@ -45,13 +46,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
 
   const { searchParams } = new URL(req.url);
   const sectionId = searchParams.get("sectionId");
+  // A section/whole-school roster is needed in full by attendance and marks
+  // entry (every student must be markable, not one page of them), so the
+  // ceiling here is generous; the default stays small for the paginated
+  // students-management table when no explicit limit is requested.
+  const { skip, take, page, limit } = parsePagination(searchParams, { maxLimit: 500 });
 
-  const students = await prisma.student.findMany({
-    where: { schoolId, ...(sectionId ? { sectionId } : {}) },
-    include: { section: { include: { class: true } } },
-    orderBy: [{ section: { class: { name: "asc" } } }, { rollNo: "asc" }],
-  });
-  return NextResponse.json(students);
+  const where = { schoolId, ...(sectionId ? { sectionId } : {}) };
+  const [students, total] = await Promise.all([
+    prisma.student.findMany({
+      where,
+      include: { section: { include: { class: true } } },
+      orderBy: [{ section: { class: { name: "asc" } } }, { rollNo: "asc" }],
+      skip,
+      take,
+    }),
+    prisma.student.count({ where }),
+  ]);
+  return NextResponse.json(paginated(students, total, { skip, take, page, limit }));
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {

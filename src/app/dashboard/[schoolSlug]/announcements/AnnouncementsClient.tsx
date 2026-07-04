@@ -23,8 +23,9 @@ export default function AnnouncementsClient({ initialAnnouncements, schoolId }: 
 
   async function fetchData() {
     setLoading(true);
-    const res = await fetch(`/api/schools/${schoolId}/announcements`);
-    setAnnouncements(await res.json());
+    const res = await fetch(`/api/schools/${schoolId}/announcements?limit=100`);
+    const body = await res.json();
+    setAnnouncements(body.data ?? body);
     setLoading(false);
   }
 

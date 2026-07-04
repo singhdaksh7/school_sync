@@ -221,6 +221,139 @@ async function generateForTeacherDay(
   return summary;
 }
 
+interface TeacherDayJob {
+  teacherId: string;
+  fromPeriodExclusive?: number;
+  leaveRequestId?: string | null;
+}
+
+/**
+ * Batched version of {@link generateForTeacherDay} for MULTIPLE absent teachers
+ * on the SAME date (the auto-generate sweep). Fetches candidate teachers, the
+ * day's timetable, existing arrangements, and existing-arrangement idempotency
+ * keys ONCE for every job instead of once per absent teacher — no DB query
+ * runs inside the per-teacher/per-period loop. Business logic (subject
+ * preference, load-balancing by running substitution count, idempotent skip)
+ * is unchanged; only the query pattern is batched.
+ */
+async function generateForTeachersOnDate(
+  schoolId: string,
+  date: Date,
+  dbDay: number,
+  jobs: TeacherDayJob[],
+  excludeFromCandidates: Set<string>
+): Promise<GenerationSummary> {
+  const summary = emptySummary();
+  if (jobs.length === 0) return summary;
+  const teacherIds = jobs.map((j) => j.teacherId);
+
+  const [allSlots, teachers, daySlots, existingArrangements] = await Promise.all([
+    prisma.timetableSlot.findMany({
+      where: { schoolId, teacherId: { in: teacherIds }, dayOfWeek: dbDay },
+      select: { teacherId: true, period: true, sectionId: true, subject: true },
+      orderBy: { period: "asc" },
+    }),
+    // Same excludeFromCandidates set applies to every job in this sweep (it
+    // already contains every absent/early-leaving teacher for the date).
+    prisma.teacher.findMany({ where: { schoolId, isDeleted: false }, select: { id: true, subject: true } }),
+    prisma.timetableSlot.findMany({
+      where: { schoolId, dayOfWeek: dbDay, teacherId: { not: null } },
+      select: { teacherId: true, period: true },
+    }),
+    prisma.arrangement.findMany({
+      where: { schoolId, date, absentTeacherId: { in: teacherIds } },
+      select: { absentTeacherId: true, period: true, substituteTeacherId: true },
+    }),
+  ]);
+
+  const slotsByTeacher = new Map<string, { period: number; sectionId: string; subject: string | null }[]>();
+  for (const slot of allSlots) {
+    if (!slot.teacherId) continue;
+    const list = slotsByTeacher.get(slot.teacherId) ?? [];
+    list.push({ period: slot.period, sectionId: slot.sectionId, subject: slot.subject });
+    slotsByTeacher.set(slot.teacherId, list);
+  }
+
+  const candidates = teachers.filter((t) => !excludeFromCandidates.has(t.id));
+
+  const timetableBusyByPeriod = new Map<number, Set<string>>();
+  for (const s of daySlots) {
+    if (!s.teacherId) continue;
+    if (!timetableBusyByPeriod.has(s.period)) timetableBusyByPeriod.set(s.period, new Set());
+    timetableBusyByPeriod.get(s.period)!.add(s.teacherId);
+  }
+
+  // Mutable running state, updated in-memory as each job is processed — this
+  // reproduces the original per-teacher re-query (which always saw every
+  // arrangement committed so far in the sweep) without re-querying the DB.
+  const arrangementBusyByPeriod = new Map<number, Set<string>>();
+  const assignedCount = new Map<string, number>();
+  const existingKeys = new Set<string>();
+  for (const a of existingArrangements) {
+    existingKeys.add(`${a.absentTeacherId}|${a.period}`);
+    if (!a.substituteTeacherId) continue;
+    if (!arrangementBusyByPeriod.has(a.period)) arrangementBusyByPeriod.set(a.period, new Set());
+    arrangementBusyByPeriod.get(a.period)!.add(a.substituteTeacherId);
+    assignedCount.set(a.substituteTeacherId, (assignedCount.get(a.substituteTeacherId) ?? 0) + 1);
+  }
+
+  for (const job of jobs) {
+    const slots = (slotsByTeacher.get(job.teacherId) ?? []).filter(
+      (s) => job.fromPeriodExclusive == null || s.period > job.fromPeriodExclusive
+    );
+
+    for (const slot of slots) {
+      if (existingKeys.has(`${job.teacherId}|${slot.period}`)) continue;
+
+      const ttBusy = timetableBusyByPeriod.get(slot.period) ?? new Set<string>();
+      const arrBusy = arrangementBusyByPeriod.get(slot.period) ?? new Set<string>();
+      const free = candidates.filter((c) => !ttBusy.has(c.id) && !arrBusy.has(c.id));
+
+      let substituteId: string | null = null;
+      if (free.length > 0) {
+        const wantedSubject = slot.subject?.trim().toLowerCase();
+        free.sort((a, b) => {
+          const aSubject = wantedSubject && a.subject?.trim().toLowerCase() === wantedSubject ? 0 : 1;
+          const bSubject = wantedSubject && b.subject?.trim().toLowerCase() === wantedSubject ? 0 : 1;
+          if (aSubject !== bSubject) return aSubject - bSubject;
+          const aCount = assignedCount.get(a.id) ?? 0;
+          const bCount = assignedCount.get(b.id) ?? 0;
+          if (aCount !== bCount) return aCount - bCount;
+          return a.id.localeCompare(b.id);
+        });
+        substituteId = free[0].id;
+      }
+
+      await prisma.arrangement.create({
+        data: {
+          date,
+          dayOfWeek: dbDay,
+          period: slot.period,
+          subject: slot.subject,
+          sectionId: slot.sectionId,
+          absentTeacherId: job.teacherId,
+          substituteTeacherId: substituteId,
+          leaveRequestId: job.leaveRequestId ?? null,
+          schoolId,
+        },
+      });
+
+      existingKeys.add(`${job.teacherId}|${slot.period}`);
+      summary.arrangementsCreated++;
+      if (substituteId) {
+        summary.substitutesAssigned++;
+        assignedCount.set(substituteId, (assignedCount.get(substituteId) ?? 0) + 1);
+        arrBusy.add(substituteId);
+        arrangementBusyByPeriod.set(slot.period, arrBusy);
+      } else {
+        summary.unassigned++;
+      }
+    }
+  }
+
+  return summary;
+}
+
 /**
  * Called when a TEACHER full-day leave request is approved. Creates substitution
  * arrangements for every working day in the leave range.
@@ -303,21 +436,14 @@ export async function autoGenerateArrangementsForDate(
 
   const { fullyAbsent, earlyLeaves, excludeFromCandidates } = await getAbsenceContext(schoolId, date);
 
-  const summary = emptySummary();
-  for (const { teacherId } of fullyAbsent) {
-    const r = await generateForTeacherDay(schoolId, teacherId, date, dbDay, excludeFromCandidates, {});
-    summary.arrangementsCreated += r.arrangementsCreated;
-    summary.substitutesAssigned += r.substitutesAssigned;
-    summary.unassigned += r.unassigned;
-  }
-  for (const { teacherId, leaveAfterPeriod } of earlyLeaves) {
-    const r = await generateForTeacherDay(schoolId, teacherId, date, dbDay, excludeFromCandidates, {
-      fromPeriodExclusive: leaveAfterPeriod,
-    });
-    summary.arrangementsCreated += r.arrangementsCreated;
-    summary.substitutesAssigned += r.substitutesAssigned;
-    summary.unassigned += r.unassigned;
-  }
+  // Same processing order as before (fully-absent teachers first, then
+  // early-leave teachers), now batched into ONE query pass instead of one
+  // query set per absent teacher.
+  const jobs: TeacherDayJob[] = [
+    ...fullyAbsent.map(({ teacherId }) => ({ teacherId })),
+    ...earlyLeaves.map(({ teacherId, leaveAfterPeriod }) => ({ teacherId, fromPeriodExclusive: leaveAfterPeriod })),
+  ];
+  const summary = await generateForTeachersOnDate(schoolId, date, dbDay, jobs, excludeFromCandidates);
 
   return {
     dayOff: false,

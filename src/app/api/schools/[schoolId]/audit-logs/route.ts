@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { parsePagination, paginated } from "@/lib/pagination";
 
 async function canAccess(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -20,18 +21,28 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const { searchParams } = new URL(req.url);
   const entityType = searchParams.get("entityType");
   const action = searchParams.get("action");
-  const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 200);
+  // Audit logs grow unbounded over a school's lifetime, so this endpoint is
+  // paginated. Default 100/page, hard cap 200/page.
+  const pageParams = parsePagination(searchParams, { defaultLimit: 100, maxLimit: 200 });
 
-  const logs = await prisma.auditLog.findMany({
-    where: {
-      schoolId,
-      ...(entityType ? { entityType } : {}),
-      ...(action ? { action } : {}),
-    },
-    include: { user: { select: { name: true, email: true } } },
-    orderBy: { createdAt: "desc" },
-    take: limit,
-  });
+  const where = {
+    schoolId,
+    ...(entityType ? { entityType } : {}),
+    ...(action ? { action } : {}),
+  };
 
-  return NextResponse.json(logs);
+  // Stable ordering (createdAt desc, id desc) so pages never overlap/skip rows
+  // that share a timestamp.
+  const [logs, total] = await Promise.all([
+    prisma.auditLog.findMany({
+      where,
+      include: { user: { select: { name: true, email: true } } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: pageParams.skip,
+      take: pageParams.take,
+    }),
+    prisma.auditLog.count({ where }),
+  ]);
+
+  return NextResponse.json(paginated(logs, total, pageParams));
 }

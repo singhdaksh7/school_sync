@@ -83,7 +83,9 @@ export default function AuditLogsClient({ initialLogs, schoolId }: Props) {
     if (entity) q.set("entityType", entity);
     q.set("limit", "100");
     const res = await fetch(`/api/schools/${schoolId}/audit-logs?${q}`);
-    setLogs(await res.json());
+    const json = await res.json();
+    // Paginated contract: { data, pagination }. Guard against older/raw shapes.
+    setLogs(Array.isArray(json) ? json : json.data ?? []);
     setLoading(false);
   }, [schoolId]);
 

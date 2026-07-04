@@ -11,6 +11,7 @@ import {
   normalizeSubject,
   parseRequiredDate,
   validateHomeworkTeacherAssignment,
+  withResolvedAttachments,
 } from "@/lib/homework";
 
 export async function GET(req: Request) {
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
     orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
   });
 
-  return NextResponse.json({ assignments, homework });
+  return NextResponse.json({ assignments, homework: await Promise.all(homework.map(withResolvedAttachments)) });
 }
 
 export async function POST(req: Request) {
@@ -122,5 +123,5 @@ export async function POST(req: Request) {
     });
   }
 
-  return NextResponse.json(created, { status: 201 });
+  return NextResponse.json(created ? await withResolvedAttachments(created) : created, { status: 201 });
 }

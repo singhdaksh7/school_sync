@@ -3,6 +3,7 @@ import { requireFounderSession } from "@/lib/founder";
 import { prisma } from "@/lib/prisma";
 import { PAYMENT_PROOF_STATUSES, type PaymentProofStatusValue } from "@/lib/billing-status";
 import { getNextRenewalDate } from "@/lib/payment-overdue";
+import { resolveDownloadUrl } from "@/lib/file-service";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireFounderSession();
@@ -15,11 +16,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       school: { select: { id: true, name: true } },
       submittedBy: { select: { id: true, name: true, email: true } },
       reviewedBy: { select: { id: true, name: true } },
+      receiptFile: { select: { storageKey: true, visibility: true, originalFilename: true, contentType: true } },
     },
   });
   if (!submission) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({ submission });
+  // Founder-only BILLING_PRIVATE access. For a managed upload, resolve a
+  // short-lived signed URL into the same `receiptData` field the existing
+  // Founder UI already renders as an <img src>/<a href> — no frontend change
+  // needed. Legacy base64 rows keep their inline data URL as-is.
+  const { receiptFile, ...rest } = submission;
+  const receiptData = receiptFile ? await resolveDownloadUrl(receiptFile) : submission.receiptData;
+
+  return NextResponse.json({ submission: { ...rest, receiptData } });
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { resolveManagedOrLegacyUrl } from "@/lib/file-service";
 
 const DEFAULT_EXAM_MILESTONES = ["UT-1", "UT-2", "Half Yearly", "UT-3", "UT-4", "Final Exam"];
 
@@ -322,6 +323,27 @@ export function validateScore(score: number | null, maxScore: number | null) {
   if (maxScore !== null && maxScore < 0) return "Max score cannot be negative";
   if (score !== null && maxScore !== null && score > maxScore) return "Score cannot exceed max score";
   return null;
+}
+
+/**
+ * Resolves the managed-file (or legacy URL) attachment for a homework record
+ * and each of its submissions, so staff-facing responses never leak a stale
+ * signed URL and always prefer the managed file when one exists.
+ */
+export async function withResolvedAttachments<
+  T extends { attachmentUrl?: string | null; attachmentFileId?: string | null; submissions?: unknown[] }
+>(homework: T): Promise<T> {
+  const submissions = Array.isArray(homework.submissions) ? homework.submissions : [];
+  const [attachmentUrl, resolvedSubmissions] = await Promise.all([
+    resolveManagedOrLegacyUrl(homework),
+    Promise.all(
+      submissions.map(async (submission) => ({
+        ...(submission as object),
+        attachmentUrl: await resolveManagedOrLegacyUrl(submission as { attachmentUrl?: string | null; attachmentFileId?: string | null }),
+      }))
+    ),
+  ]);
+  return { ...homework, attachmentUrl, submissions: resolvedSubmissions };
 }
 
 export function homeworkIncludeForList() {

@@ -11,12 +11,15 @@ export default async function DeletedTeachersPage({
   const school = await getSchoolBySlug(schoolSlug);
   if (!school) return null;
 
+  // Server-rendered archival view (no pagination UI yet) — bounded to the
+  // most recent 100 so this never grows into an unbounded page load.
   const teachers = await prisma.teacher.findMany({
     where: { schoolId: school.id, isDeleted: true },
     include: {
       deletedBy: { select: { id: true, name: true } },
     },
     orderBy: { deletedAt: "desc" },
+    take: 100,
   });
 
   const snapshots = await prisma.auditLog.findMany({

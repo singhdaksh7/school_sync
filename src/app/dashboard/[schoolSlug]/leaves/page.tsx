@@ -17,7 +17,8 @@ export default async function LeavesPage({
       teacher: { select: { name: true, subject: true } },
       reviewedBy: { select: { name: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 100,
   });
 
   return <LeavesClient initialLeaves={JSON.parse(JSON.stringify(leaves))} schoolId={school.id} />;

@@ -67,13 +67,13 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
     setLoading(true);
     try {
       const [studentsRes, classesRes] = await Promise.all([
-        fetch(`/api/schools/${schoolId}/students`),
+        fetch(`/api/schools/${schoolId}/students?limit=500`),
         fetch(`/api/schools/${schoolId}/classes`),
       ]);
       if (!studentsRes.ok || !classesRes.ok) throw new Error("Failed to refresh students");
       const studentsData = await studentsRes.json();
       const classesData = await classesRes.json();
-      setStudents(studentsData);
+      setStudents(studentsData.data ?? studentsData);
       const allSections: Section[] = (classesData as ClassWithSections[]).flatMap((c) =>
         c.sections.map((s) => ({ id: s.id, name: s.name, class: { id: c.id, name: c.name } }))
       );
@@ -152,7 +152,13 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
     });
     const data = await res.json();
     setCsvLoading(false);
-    setCsvResults(data.results || []);
+    if (res.status === 202 && data.mode === "job") {
+      setCsvResults([{ name: `Import of ${data.totalItems} students queued (job ${data.jobId})`, success: true }]);
+    } else if (!res.ok) {
+      setCsvResults([{ name: data.error || "Import failed", success: false, error: data.error }]);
+    } else {
+      setCsvResults(data.results || []);
+    }
     setCsvDialogOpen(true);
     fetchData();
     if (fileRef.current) fileRef.current.value = "";

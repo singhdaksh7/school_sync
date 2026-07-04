@@ -50,7 +50,7 @@ export default function ResultsClient({ initialSchemes, initialSections, schoolI
   useEffect(() => {
     if (!selectedSection) return;
     fetch(`/api/schools/${schoolId}/students?sectionId=${selectedSection}`)
-      .then((r) => r.json()).then(setStudents);
+      .then((r) => r.json()).then((body) => setStudents(body.data ?? body));
   }, [schoolId, selectedSection]);
 
   const loadResults = useCallback(async (schemeId: string, sectionId: string) => {

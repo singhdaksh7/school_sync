@@ -14,7 +14,8 @@ export default async function AnnouncementsPage({
   const announcements = await prisma.announcement.findMany({
     where: { schoolId: school.id },
     include: { createdBy: { select: { name: true } } },
-    orderBy: { publishedAt: "desc" },
+    orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+    take: 100,
   });
 
   return <AnnouncementsClient initialAnnouncements={JSON.parse(JSON.stringify(announcements))} schoolId={school.id} />;

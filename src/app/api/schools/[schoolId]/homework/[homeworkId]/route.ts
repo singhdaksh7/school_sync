@@ -8,6 +8,7 @@ import {
   normalizeSubject,
   parseRequiredDate,
   validateHomeworkTeacherAssignment,
+  withResolvedAttachments,
 } from "@/lib/homework";
 
 export async function PATCH(
@@ -116,7 +117,7 @@ export async function PATCH(
     });
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json(updated ? await withResolvedAttachments(updated) : updated);
 }
 
 export async function DELETE(
@@ -143,5 +144,5 @@ export async function DELETE(
     include: homeworkIncludeForList(),
   });
 
-  return NextResponse.json(cancelled);
+  return NextResponse.json(await withResolvedAttachments(cancelled));
 }

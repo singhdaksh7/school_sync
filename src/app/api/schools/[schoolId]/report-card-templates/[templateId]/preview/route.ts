@@ -8,8 +8,8 @@ import {
   buildTemplateData,
   sampleReportCardData,
   templateToSnapshot,
+  type TemplateWithAssets,
 } from "@/lib/report-card-templates";
-import type { ReportCardTemplate } from "@/generated/prisma/client";
 
 /**
  * Render a PDF preview of a template using sample student data.
@@ -31,21 +31,28 @@ export async function POST(
     if (denied) return denied;
   }
 
-  const template = await prisma.reportCardTemplate.findFirst({ where: { id: templateId, schoolId } });
+  const template = await prisma.reportCardTemplate.findFirst({
+    where: { id: templateId, schoolId },
+    include: {
+      logoFile: { select: { storageKey: true, contentType: true } },
+      stampFile: { select: { storageKey: true, contentType: true } },
+      principalSignatureFile: { select: { storageKey: true, contentType: true } },
+    },
+  });
   if (!template) return NextResponse.json({ error: "Template not found" }, { status: 404 });
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-  let source: ReportCardTemplate = template;
+  let source: TemplateWithAssets = template;
   if (body && Object.keys(body).length > 0) {
     const result = buildTemplateData({ ...body, name: body.name || template.name }, false);
     if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
-    source = { ...template, ...result.data } as ReportCardTemplate;
+    source = { ...template, ...result.data } as TemplateWithAssets;
   }
 
   const snapshot = templateToSnapshot(source);
   const sample = sampleReportCardData();
-  const pdf = generateReportCardPdf({ ...sample, template: snapshot });
+  const pdf = await generateReportCardPdf({ ...sample, template: snapshot });
 
   return new Response(new Uint8Array(pdf), {
     headers: {

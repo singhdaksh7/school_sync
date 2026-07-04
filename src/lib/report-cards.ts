@@ -1,11 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
+import type { Exam, ExamScheme } from "@/generated/prisma/client";
 import {
   gradeFromBands,
   normalizeSnapshot,
   parseGradeBands,
   resolveTemplateForReportCard,
   templateToSnapshot,
+  type TemplateWithAssets,
 } from "@/lib/report-card-templates";
 
 export function gradeForPercentage(percentage: number) {
@@ -52,62 +54,125 @@ export async function getTeacherForSession(userId: string) {
   });
 }
 
-export async function generateReportCardForStudent(input: {
+type ExamResultForCard = Prisma.ExamResultGetPayload<{
+  include: { exam: { select: { id: true; name: true; maxMarks: true; order: true } } };
+}>;
+
+/**
+ * Shared, batch-wide dependencies for generating report cards across many
+ * students in one class/exam scheme: the exam scheme+exams, the resolved
+ * template, and every student's attendance/exam-result/published-card rows —
+ * ALL loaded with exactly one query each, regardless of how many students are
+ * in the batch (see buildReportCardBatchContext). Per-student generation reads
+ * from these maps instead of re-querying identical school/template/exam data.
+ */
+export type ReportCardBatchContext = {
   schoolId: string;
-  teacherId: string;
   sectionId: string;
   examSchemeId: string;
-  studentId: string;
-  classTeacherRemark?: string | null;
-}) {
-  const [student, scheme, attendances, examResults, section] = await Promise.all([
-    prisma.student.findFirst({
-      where: { id: input.studentId, schoolId: input.schoolId, sectionId: input.sectionId },
-      select: { id: true },
-    }),
+  scheme: ExamScheme & { exams: Exam[] };
+  template: TemplateWithAssets | null;
+  validStudentIds: Set<string>;
+  attendanceByStudentId: Map<string, { status: string }[]>;
+  examResultsByStudentId: Map<string, ExamResultForCard[]>;
+  publishedByStudentId: Map<string, Prisma.ReportCardGetPayload<{ include: typeof reportCardInclude }>>;
+};
+
+export async function buildReportCardBatchContext(input: {
+  schoolId: string;
+  sectionId: string;
+  examSchemeId: string;
+  studentIds: string[];
+}): Promise<ReportCardBatchContext | null> {
+  const [scheme, section, students, attendances, examResults, publishedCards] = await Promise.all([
     prisma.examScheme.findFirst({
       where: { id: input.examSchemeId, schoolId: input.schoolId },
       include: { exams: { orderBy: { order: "asc" } } },
     }),
+    prisma.section.findFirst({
+      where: { id: input.sectionId, class: { schoolId: input.schoolId } },
+      select: { classId: true },
+    }),
+    prisma.student.findMany({
+      where: { id: { in: input.studentIds }, schoolId: input.schoolId, sectionId: input.sectionId },
+      select: { id: true },
+    }),
     prisma.attendance.findMany({
-      where: { schoolId: input.schoolId, studentId: input.studentId },
-      select: { status: true },
+      where: { schoolId: input.schoolId, studentId: { in: input.studentIds } },
+      select: { studentId: true, status: true },
     }),
     prisma.examResult.findMany({
       where: {
-        studentId: input.studentId,
+        studentId: { in: input.studentIds },
         student: { schoolId: input.schoolId, sectionId: input.sectionId },
         exam: { schemeId: input.examSchemeId, scheme: { schoolId: input.schoolId } },
       },
       include: { exam: { select: { id: true, name: true, maxMarks: true, order: true } } },
       orderBy: { exam: { order: "asc" } },
     }),
-    prisma.section.findFirst({
-      where: { id: input.sectionId, class: { schoolId: input.schoolId } },
-      select: { classId: true },
+    prisma.reportCard.findMany({
+      where: {
+        studentId: { in: input.studentIds },
+        examSchemeId: input.examSchemeId,
+        schoolId: input.schoolId,
+        sectionId: input.sectionId,
+        status: "PUBLISHED",
+      },
+      include: reportCardInclude,
     }),
   ]);
+  if (!scheme) return null;
 
-  if (!student || !scheme) return null;
+  // Phase 8: pick a template (class-assigned → school default → none) ONCE
+  // for the whole batch (every student in one section shares the same
+  // template resolution).
+  const template = await resolveTemplateForReportCard({ schoolId: input.schoolId, classId: section?.classId ?? null });
 
-  const publishedCard = await prisma.reportCard.findFirst({
-    where: {
-      studentId: input.studentId,
-      examSchemeId: input.examSchemeId,
-      schoolId: input.schoolId,
-      sectionId: input.sectionId,
-      status: "PUBLISHED",
-    },
-    include: reportCardInclude,
-  });
+  const attendanceByStudentId = new Map<string, { status: string }[]>();
+  for (const a of attendances) {
+    if (!a.studentId) continue;
+    const list = attendanceByStudentId.get(a.studentId) ?? [];
+    list.push({ status: a.status });
+    attendanceByStudentId.set(a.studentId, list);
+  }
+  const examResultsByStudentId = new Map<string, ExamResultForCard[]>();
+  for (const r of examResults) {
+    const list = examResultsByStudentId.get(r.studentId) ?? [];
+    list.push(r);
+    examResultsByStudentId.set(r.studentId, list);
+  }
+  const publishedByStudentId = new Map(publishedCards.map((c) => [c.studentId, c]));
+
+  return {
+    schoolId: input.schoolId,
+    sectionId: input.sectionId,
+    examSchemeId: input.examSchemeId,
+    scheme,
+    template,
+    validStudentIds: new Set(students.map((s) => s.id)),
+    attendanceByStudentId,
+    examResultsByStudentId,
+    publishedByStudentId,
+  };
+}
+
+export async function generateReportCardForStudent(
+  ctx: ReportCardBatchContext,
+  input: {
+    teacherId: string;
+    studentId: string;
+    classTeacherRemark?: string | null;
+  }
+) {
+  if (!ctx.validStudentIds.has(input.studentId)) return null;
+
+  const publishedCard = ctx.publishedByStudentId.get(input.studentId);
   if (publishedCard) return publishedCard;
 
-  // Phase 8: pick a template (class-assigned → school default → none) so the
-  // report card can capture an immutable snapshot of branding/layout/grading.
-  const template = await resolveTemplateForReportCard({
-    schoolId: input.schoolId,
-    classId: section?.classId ?? null,
-  });
+  const { schoolId, sectionId, examSchemeId, scheme, template } = ctx;
+  const attendances = ctx.attendanceByStudentId.get(input.studentId) ?? [];
+  const examResults = ctx.examResultsByStudentId.get(input.studentId) ?? [];
+
   const gradeBands = template ? parseGradeBands(template.gradeBands) : null;
   const gradeFor = (pct: number) =>
     gradeBands && gradeBands.length > 0 ? gradeFromBands(pct, gradeBands) : gradeForPercentage(pct);
@@ -142,12 +207,12 @@ export async function generateReportCardForStudent(input: {
   };
 
   const card = await prisma.reportCard.upsert({
-    where: { studentId_examSchemeId: { studentId: input.studentId, examSchemeId: input.examSchemeId } },
+    where: { studentId_examSchemeId: { studentId: input.studentId, examSchemeId } },
     create: {
-      schoolId: input.schoolId,
+      schoolId,
       studentId: input.studentId,
-      sectionId: input.sectionId,
-      examSchemeId: input.examSchemeId,
+      sectionId,
+      examSchemeId,
       generatedByTeacherId: input.teacherId,
       status: "DRAFT",
       classTeacherRemark: input.classTeacherRemark?.trim() || null,
@@ -160,7 +225,7 @@ export async function generateReportCardForStudent(input: {
       subjects: { create: subjects },
     },
     update: {
-      sectionId: input.sectionId,
+      sectionId,
       generatedByTeacherId: input.teacherId,
       status: "DRAFT",
       publishedAt: null,
@@ -183,7 +248,14 @@ export async function generateReportCardForStudent(input: {
 }
 
 export const reportCardInclude = {
-  school: { select: { id: true, name: true, logoUrl: true } },
+  school: {
+    select: {
+      id: true,
+      name: true,
+      logoUrl: true,
+      logoFile: { select: { storageKey: true, contentType: true } },
+    },
+  },
   student: {
     select: {
       id: true,
@@ -205,7 +277,7 @@ export function serializeReportCard<T extends { attendanceSummary: string }>(car
 }
 
 type CardForPdf = {
-  school: { name: string; logoUrl: string | null };
+  school: { name: string; logoUrl: string | null; logoFile?: { storageKey: string; contentType: string } | null };
   student: { name: string; rollNo: string; section: { name: string; class: { name: string } } };
   examScheme: { name: string };
   generatedByTeacher: { name: string };
@@ -230,6 +302,7 @@ export function reportCardToPdfInput(card: CardForPdf) {
   return {
     schoolName: card.school.name,
     logoUrl: card.school.logoUrl,
+    schoolLogoAsset: card.school.logoFile ?? null,
     studentName: card.student.name,
     rollNo: card.student.rollNo,
     classSection: `${card.student.section.class.name}-${card.student.section.name}`,

@@ -13,6 +13,7 @@ import {
   calculateStudentFeeTotals,
   validateManualPaymentAmount,
 } from "@/lib/student-fee-ledger";
+import { parsePagination, paginated } from "@/lib/pagination";
 
 function serializePayment<T extends { amount: unknown; feeStructure?: { amount: unknown } | null; gatewaySignature?: string | null }>(payment: T) {
   const safePayment = { ...payment };
@@ -45,21 +46,30 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const { searchParams } = new URL(req.url);
   const studentId = searchParams.get("studentId");
   const feeStructureId = searchParams.get("feeStructureId");
+  const { skip, take, page, limit } = parsePagination(searchParams);
 
-  const payments = await prisma.feePayment.findMany({
-    where: {
-      schoolId,
-      ...(studentId ? { studentId } : {}),
-      ...(feeStructureId ? { feeStructureId } : {}),
-    },
-    include: {
-      student: { select: { name: true, rollNo: true, section: { select: { name: true, class: { select: { name: true } } } } } },
-      feeStructure: { select: { name: true, amount: true } },
-      recordedBy: { select: { name: true } },
-    },
-    orderBy: { paidAt: "desc" },
-  });
-  return NextResponse.json(payments.map(serializePayment));
+  const where = {
+    schoolId,
+    ...(studentId ? { studentId } : {}),
+    ...(feeStructureId ? { feeStructureId } : {}),
+  };
+  const [payments, total] = await Promise.all([
+    prisma.feePayment.findMany({
+      where,
+      include: {
+        student: { select: { name: true, rollNo: true, section: { select: { name: true, class: { select: { name: true } } } } } },
+        feeStructure: { select: { name: true, amount: true } },
+        recordedBy: { select: { name: true } },
+      },
+      orderBy: [{ paidAt: "desc" }, { id: "desc" }],
+      skip,
+      take,
+    }),
+    prisma.feePayment.count({ where }),
+  ]);
+  // Totals (paidTillDate/remainingAmount) are computed via a separate
+  // aggregate query at payment-creation time — never derived from this page.
+  return NextResponse.json(paginated(payments.map(serializePayment), total, { skip, take, page, limit }));
 }
 
 const createSchema = z.object({

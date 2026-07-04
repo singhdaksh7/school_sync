@@ -5,20 +5,29 @@ import { z } from "zod";
 import { sessionRole } from "@/lib/tenant";
 import { requireSchoolAccess } from "@/lib/teacher-authorization";
 import { logAudit } from "@/lib/audit";
+import { parsePagination, paginated } from "@/lib/pagination";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "ANNOUNCEMENTS", "VIEW");
   if (!access.ok) return access.response;
 
-  const announcements = await prisma.announcement.findMany({
-    where: { schoolId },
-    include: { createdBy: { select: { name: true } } },
-    orderBy: { publishedAt: "desc" },
-  });
-  return NextResponse.json(announcements);
+  const { searchParams } = new URL(req.url);
+  const { skip, take, page, limit } = parsePagination(searchParams);
+  const where = { schoolId };
+  const [announcements, total] = await Promise.all([
+    prisma.announcement.findMany({
+      where,
+      include: { createdBy: { select: { name: true } } },
+      orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+      skip,
+      take,
+    }),
+    prisma.announcement.count({ where }),
+  ]);
+  return NextResponse.json(paginated(announcements, total, { skip, take, page, limit }));
 }
 
 const createSchema = z.object({

@@ -10,6 +10,7 @@ import {
   parseOptionalNumber,
   validateScore,
 } from "@/lib/homework";
+import { resolveManagedOrLegacyUrl } from "@/lib/file-service";
 
 export async function PATCH(
   req: Request,
@@ -117,5 +118,6 @@ export async function PATCH(
     return saved;
   });
 
-  return NextResponse.json(updated);
+  const attachmentUrl = await resolveManagedOrLegacyUrl(updated);
+  return NextResponse.json({ ...updated, attachmentUrl });
 }

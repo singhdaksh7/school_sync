@@ -9,7 +9,9 @@ import {
   normalizeSubject,
   parseRequiredDate,
   validateHomeworkTeacherAssignment,
+  withResolvedAttachments,
 } from "@/lib/homework";
+import { parsePagination, buildPaginationMeta } from "@/lib/pagination";
 
 export async function GET(
   req: Request,
@@ -33,18 +35,27 @@ export async function GET(
   const teacherId = searchParams.get("teacherId") || undefined;
   const status = searchParams.get("status") || undefined;
 
-  const homework = await prisma.homework.findMany({
-    where: {
-      schoolId,
-      ...(sectionId ? { sectionId } : {}),
-      ...(classId ? { section: { classId } } : {}),
-      ...(subject ? { subject: { equals: subject, mode: "insensitive" } } : {}),
-      ...(teacherId ? { teacherId } : {}),
-      ...(status ? { status: status as "ACTIVE" | "CLOSED" | "CANCELLED" } : {}),
-    },
-    include: homeworkIncludeForList(),
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
-  });
+  // Admin dashboard needs the full filtered set to manage (edit/close/cancel),
+  // so the ceiling is generous rather than a small default page.
+  const { skip, take, page, limit } = parsePagination(searchParams, { maxLimit: 500, defaultLimit: 500 });
+  const where = {
+    schoolId,
+    ...(sectionId ? { sectionId } : {}),
+    ...(classId ? { section: { classId } } : {}),
+    ...(subject ? { subject: { equals: subject, mode: "insensitive" as const } } : {}),
+    ...(teacherId ? { teacherId } : {}),
+    ...(status ? { status: status as "ACTIVE" | "CLOSED" | "CANCELLED" } : {}),
+  };
+  const [homework, total] = await Promise.all([
+    prisma.homework.findMany({
+      where,
+      include: homeworkIncludeForList(),
+      orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }, { id: "desc" }],
+      skip,
+      take,
+    }),
+    prisma.homework.count({ where }),
+  ]);
 
   const teachers = await prisma.teacher.findMany({
     where: { schoolId, isDeleted: false },
@@ -59,7 +70,11 @@ export async function GET(
     }))
   );
 
-  return NextResponse.json({ homework, assignmentsByTeacher });
+  return NextResponse.json({
+    homework: await Promise.all(homework.map(withResolvedAttachments)),
+    pagination: buildPaginationMeta(total, page, limit),
+    assignmentsByTeacher,
+  });
 }
 
 export async function POST(
@@ -131,5 +146,5 @@ export async function POST(
     });
   });
 
-  return NextResponse.json(created, { status: 201 });
+  return NextResponse.json(created ? await withResolvedAttachments(created) : created, { status: 201 });
 }

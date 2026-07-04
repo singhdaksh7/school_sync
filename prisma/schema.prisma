@@ -129,6 +129,47 @@ enum ReportCardStatus {
   PUBLISHED
 }
 
+// ── Wave B: object storage + durable jobs ────────────────────────────────────
+
+enum StoredFileVisibility {
+  PUBLIC
+  TENANT_PRIVATE
+  SCOPED_PRIVATE
+  BILLING_PRIVATE
+}
+
+enum StoredFileCategory {
+  BRANDING_IMAGE
+  HOMEWORK_ATTACHMENT
+  HOMEWORK_SUBMISSION
+  PAYMENT_PROOF
+  REPORT_CARD_ASSET
+  STUDENT_IMPORT_SOURCE
+}
+
+// Uploader may be a User (staff), a Guardian (parent) or a Student — none of
+// which share one FK table — so uploader identity is recorded as an actor
+// type + id rather than a single foreign key.
+enum FileUploaderActorType {
+  USER
+  GUARDIAN
+  STUDENT
+  SYSTEM
+}
+
+enum JobType {
+  REPORT_CARD_BATCH_GENERATION
+  STUDENT_BULK_IMPORT
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 model User {
   id                     String                     @id @default(cuid())
   name                   String
@@ -180,6 +221,8 @@ model School {
   website                     String?
   customDomain                String?                    @unique
   logoUrl                     String?
+  logoFileId                  String?                    @unique
+  logoFile                    StoredFile?                @relation("SchoolLogoFile", fields: [logoFileId], references: [id], onDelete: SetNull)
   primaryColor                String?
   secondaryColor              String?
   appName                     String?
@@ -223,6 +266,8 @@ model School {
   paymentProofs               PaymentProofSubmission[]
   invoices                    Invoice[]
   notifications               FounderNotification[]
+  storedFiles                 StoredFile[]
+  backgroundJobs              BackgroundJob[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 }
@@ -533,6 +578,9 @@ model ReportCard {
   publishedAt          DateTime?
   templateId           String?
   template             ReportCardTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  // Immutable JSON snapshot of the template AND the exact managed asset ids/keys
+  // used at generation time (see report-card-templates.ts TemplateSnapshot),
+  // so later logo/stamp/signature replacements never change a historical PDF.
   templateSnapshot     Json?
   subjects             ReportCardSubject[]
   createdAt            DateTime            @default(now())
@@ -556,9 +604,15 @@ model ReportCardTemplate {
   layoutType                   String       @default("CLASSIC")
   paperSize                    String       @default("A4_PORTRAIT")
   logoUrl                      String?
+  logoFileId                   String?      @unique
+  logoFile                     StoredFile?  @relation("ReportCardTemplateLogoFile", fields: [logoFileId], references: [id], onDelete: SetNull)
   principalSignatureUrl        String?
+  principalSignatureFileId     String?      @unique
+  principalSignatureFile       StoredFile?  @relation("ReportCardTemplateSignatureFile", fields: [principalSignatureFileId], references: [id], onDelete: SetNull)
   classTeacherSignatureEnabled Boolean      @default(true)
   stampUrl                     String?
+  stampFileId                  String?      @unique
+  stampFile                    StoredFile?  @relation("ReportCardTemplateStampFile", fields: [stampFileId], references: [id], onDelete: SetNull)
   watermarkText                String?
   backgroundImageUrl           String?
   footerText                   String?
@@ -707,6 +761,8 @@ model Homework {
   dueDate         DateTime
   deadlineAt      DateTime
   attachmentUrl   String?
+  attachmentFileId String?                @unique
+  attachmentFile  StoredFile?             @relation("HomeworkAttachmentFile", fields: [attachmentFileId], references: [id], onDelete: SetNull)
   status          HomeworkStatus          @default(ACTIVE)
   studentStatuses HomeworkStudentStatus[]
   submissions     HomeworkSubmission[]
@@ -758,6 +814,8 @@ model HomeworkSubmission {
   guardianId       String?
   guardian         Guardian?                        @relation(fields: [guardianId], references: [id], onDelete: SetNull)
   attachmentUrl    String?
+  attachmentFileId String?                          @unique
+  attachmentFile   StoredFile?                       @relation("HomeworkSubmissionAttachmentFile", fields: [attachmentFileId], references: [id], onDelete: SetNull)
   fileName         String?
   fileType         String?
   submittedAt      DateTime                         @default(now())
@@ -1019,7 +1077,9 @@ model PaymentProofSubmission {
   amount          Decimal            @db.Decimal(10, 2)
   transactionRef  String?
   notes           String?
-  receiptData     String
+  receiptData     String?
+  receiptFileId   String?            @unique
+  receiptFile     StoredFile?        @relation("PaymentProofReceiptFile", fields: [receiptFileId], references: [id], onDelete: SetNull)
   receiptFileName String?
   receiptMimeType String?
   status          PaymentProofStatus @default(PENDING)
@@ -1071,4 +1131,66 @@ model FounderNotification {
 
   @@index([isRead, createdAt])
   @@index([schoolId])
+}
+
+// Durable metadata for objects stored in the object-storage provider. Bytes live
+// in the provider, never in Postgres. storageKey is server-generated and
+// tenant-namespaced (see src/lib/storage.ts). Replacement creates a NEW row +
+// NEW immutable object key so historical references never change under callers.
+model StoredFile {
+  id               String                @id @default(cuid())
+  schoolId         String?
+  school           School?               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  storageKey       String                @unique
+  originalFilename String
+  contentType      String
+  sizeBytes        Int
+  checksum         String?
+  category         StoredFileCategory
+  visibility       StoredFileVisibility
+  uploaderType     FileUploaderActorType @default(USER)
+  uploaderId       String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  schoolLogoFor                   School?                 @relation("SchoolLogoFile")
+  reportCardTemplateLogoFor       ReportCardTemplate?      @relation("ReportCardTemplateLogoFile")
+  reportCardTemplateStampFor      ReportCardTemplate?      @relation("ReportCardTemplateStampFile")
+  reportCardTemplateSignatureFor  ReportCardTemplate?      @relation("ReportCardTemplateSignatureFile")
+  homeworkAttachmentFor           Homework?                @relation("HomeworkAttachmentFile")
+  homeworkSubmissionAttachmentFor HomeworkSubmission?      @relation("HomeworkSubmissionAttachmentFile")
+  paymentProofReceiptFor          PaymentProofSubmission?  @relation("PaymentProofReceiptFile")
+
+  @@index([schoolId, category, createdAt])
+  @@index([schoolId, createdAt])
+}
+
+// Durable background-job records. Result payloads are bounded summaries only —
+// never large source files or generated documents.
+model BackgroundJob {
+  id             String    @id @default(cuid())
+  schoolId       String?
+  school         School?   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  type           JobType
+  status         JobStatus @default(PENDING)
+  payload        Json
+  totalItems     Int       @default(0)
+  processedItems Int       @default(0)
+  failedItems    Int       @default(0)
+  progress       Int       @default(0)
+  resultMetadata Json?
+  errorSummary   String?
+  createdById    String?
+  claimToken     String?
+  claimedAt      DateTime?
+  leaseExpiresAt DateTime?
+  attempts       Int       @default(0)
+  createdAt      DateTime  @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([schoolId, createdAt])
+  @@index([type, status])
 }

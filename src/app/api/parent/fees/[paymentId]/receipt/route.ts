@@ -7,6 +7,7 @@ import { moneyToNumber } from "@/lib/money";
 import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 import { canAccessSchool } from "@/lib/tenant";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { calculateStudentFeeTotals } from "@/lib/student-fee-ledger";
 
 export async function GET(
   req: NextRequest,
@@ -28,15 +29,16 @@ export async function GET(
         status: "PAID",
       },
       include: {
-        school: { select: { name: true } },
+        school: { select: { name: true, logoUrl: true } },
         student: {
           select: {
             id: true,
             name: true,
+            admissionNo: true,
             section: { select: { name: true, class: { select: { name: true } } } },
           },
         },
-        feeStructure: { select: { name: true } },
+        feeStructure: { select: { name: true, amount: true } },
       },
     });
 
@@ -58,9 +60,30 @@ export async function GET(
       if (denied) return denied;
     }
 
+    // Ledger context: paid-till-date across all PAID records for this
+    // student+fee structure, and the remaining balance (Decimal-safe via the
+    // money helper — no floating-point money math).
+    const paidAggregate = await prisma.feePayment.aggregate({
+      where: {
+        schoolId: payment.schoolId,
+        studentId: payment.studentId,
+        feeStructureId: payment.feeStructureId,
+        status: "PAID",
+      },
+      _sum: { amount: true },
+    });
+    const totalFee = moneyToNumber(payment.feeStructure.amount);
+    const paidTillDate = moneyToNumber(paidAggregate._sum.amount ?? 0);
+    const totals = calculateStudentFeeTotals(totalFee, paidTillDate);
+
+    // A legacy ONLINE record has a paymentGateway set; new manual records never
+    // do, so the gateway id is only surfaced for historical online receipts.
+    const isLegacyOnline = Boolean(payment.paymentGateway);
+
     const pdf = generateReceiptPdf({
       schoolName: payment.school.name,
       studentName: payment.student.name,
+      admissionNo: payment.student.admissionNo,
       classSection: `${payment.student.section.class.name}-${payment.student.section.name}`,
       feeTitle: payment.feeStructure.name,
       amount: `Rs. ${moneyToNumber(payment.amount).toLocaleString("en-IN")}`,
@@ -68,7 +91,10 @@ export async function GET(
       receiptNumber: payment.receiptNumber,
       paidAt: format(payment.paidAt, "dd MMM yyyy, hh:mm a"),
       referenceNumber: payment.referenceNumber,
-      gatewayPaymentId: payment.gatewayPaymentId,
+      remarks: payment.notes,
+      paidTillDate: `Rs. ${totals.paidTillDate.toLocaleString("en-IN")}`,
+      remainingAmount: `Rs. ${totals.remainingAmount.toLocaleString("en-IN")}`,
+      gatewayPaymentId: isLegacyOnline ? payment.gatewayPaymentId : null,
     });
 
     return new Response(new Uint8Array(pdf), {

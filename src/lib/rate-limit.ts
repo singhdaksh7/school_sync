@@ -63,6 +63,60 @@ export class MemoryRateLimiter implements RateLimiter {
   }
 }
 
+/**
+ * Distributed fixed-window limiter backed by an Upstash-compatible Redis REST API
+ * (the shape most serverless Redis providers expose). Uses `fetch` only — no SDK
+ * dependency — so it works in the Next.js/Neon serverless runtime without adding
+ * a vendor package. Provider details never leak to call sites; routes keep using
+ * the plain `rateLimit()` function.
+ *
+ * One atomic pipeline per check: INCR (count), PEXPIRE ... NX (arm the window on
+ * the first hit only), PTTL (remaining window for retry-after).
+ */
+export class RestRedisRateLimiter implements RateLimiter {
+  constructor(
+    private readonly url: string,
+    private readonly token: string,
+    private readonly fetchImpl: typeof fetch = fetch
+  ) {}
+
+  async check(key: string, policy: RateLimitPolicy): Promise<RateLimitResult> {
+    const namespaced = `ratelimit:${key}`;
+    const res = await this.fetchImpl(`${this.url.replace(/\/$/, "")}/pipeline`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([
+        ["INCR", namespaced],
+        ["PEXPIRE", namespaced, String(policy.windowMs), "NX"],
+        ["PTTL", namespaced],
+      ]),
+    });
+
+    if (!res.ok) {
+      // Surface a generic error; the caller decides fail-open vs fail-closed. We
+      // deliberately do NOT include the provider response body (may leak infra).
+      throw new Error(`rate-limit backend responded ${res.status}`);
+    }
+
+    const parsed = (await res.json()) as Array<{ result?: unknown; error?: string }>;
+    const count = Number(parsed?.[0]?.result ?? 0);
+    const pttlMs = Number(parsed?.[2]?.result ?? policy.windowMs);
+
+    if (!Number.isFinite(count) || count <= 0) {
+      throw new Error("rate-limit backend returned an unexpected payload");
+    }
+
+    if (count > policy.limit) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((pttlMs > 0 ? pttlMs : policy.windowMs) / 1000));
+      return { allowed: false, remaining: 0, retryAfterSeconds };
+    }
+    return { allowed: true, remaining: Math.max(0, policy.limit - count), retryAfterSeconds: 0 };
+  }
+}
+
 // Common policies, referenced from route handlers so limits stay consistent.
 export const RATE_LIMIT_POLICIES = {
   login: { limit: 8, windowMs: 15 * 60 * 1000 },          // staff/parent/mobile credential attempts
@@ -80,6 +134,31 @@ export function setRateLimiter(next: RateLimiter) {
   limiter = next;
 }
 
+/** True when the env is configured for a shared/distributed rate-limit backend. */
+export function isDistributedRateLimiterConfigured(): boolean {
+  return Boolean(process.env.RATE_LIMIT_REDIS_URL && process.env.RATE_LIMIT_REDIS_TOKEN);
+}
+
+/** Backend kind currently in use — surfaced by the readiness probe (never secrets). */
+export function getRateLimiterKind(): "redis" | "memory" {
+  return limiter instanceof RestRedisRateLimiter ? "redis" : "memory";
+}
+
+/**
+ * Selects the distributed limiter when its env is present. Idempotent and called
+ * lazily from {@link rateLimit} so importing this module never forces a backend
+ * choice at build time. In production without a shared backend it keeps the
+ * memory limiter but warns once (see {@link warnIfNonDistributed}).
+ */
+export function initRateLimiterFromEnv(): void {
+  if (limiter instanceof RestRedisRateLimiter) return;
+  const url = process.env.RATE_LIMIT_REDIS_URL;
+  const token = process.env.RATE_LIMIT_REDIS_TOKEN;
+  if (url && token) {
+    limiter = new RestRedisRateLimiter(url, token);
+  }
+}
+
 function warnIfNonDistributed() {
   if (
     !warnedAboutMemoryBackend &&
@@ -89,7 +168,8 @@ function warnIfNonDistributed() {
     warnedAboutMemoryBackend = true;
     console.warn(
       "[rate-limit] Using in-memory rate limiter in production. This is NOT distributed: " +
-        "each instance limits independently. Provision a shared backend and call setRateLimiter()."
+        "each instance limits independently. Set RATE_LIMIT_REDIS_URL + RATE_LIMIT_REDIS_TOKEN " +
+        "to enable the shared backend."
     );
   }
 }
@@ -99,10 +179,15 @@ function warnIfNonDistributed() {
  * (availability over strictness) — a limiter outage must not lock users out.
  */
 export async function rateLimit(key: string, policy: RateLimitPolicy): Promise<RateLimitResult> {
+  initRateLimiterFromEnv();
   warnIfNonDistributed();
   try {
     return await limiter.check(key, policy);
   } catch (err) {
+    // Availability policy: a limiter-backend outage must not lock legitimate
+    // users out of login. We fail OPEN but log so an outage is observable. The
+    // memory limiter is always available as an in-process fallback, so this only
+    // triggers on a distributed-backend network/HTTP failure.
     console.error("[rate-limit] limiter error, failing open:", err);
     return { allowed: true, remaining: policy.limit, retryAfterSeconds: 0 };
   }

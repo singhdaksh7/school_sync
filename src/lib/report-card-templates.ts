@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { ReportCardTemplate } from "@/generated/prisma/client";
+import { resolveManagedOrLegacyFileUrl } from "@/lib/file-service";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -31,18 +32,30 @@ export const DEFAULT_GRADE_BANDS: GradeBand[] = [
   { label: "F", min: 0, max: 49 },
 ];
 
+/** Immutable reference to the exact managed asset embedded at generation time. */
+export type ManagedAssetRef = { storageKey: string; contentType: string } | null;
+
 /**
  * The portion of a template that is persisted into ReportCard.templateSnapshot.
  * Excludes DB-only metadata (id, schoolId, timestamps, name/description).
+ *
+ * `logoAsset`/`stampAsset`/`signatureAsset` pin the EXACT StoredFile object
+ * used at generation time (by storage key, not by a mutable template FK) so a
+ * later logo/stamp/signature replacement never changes a historical PDF — see
+ * generateReportCardForStudent, which snapshots whatever the template's
+ * asset relations resolve to at that moment.
  */
 export type TemplateSnapshot = {
   templateName: string;
   layoutType: LayoutType;
   paperSize: PaperSize;
   logoUrl: string | null;
+  logoAsset: ManagedAssetRef;
   principalSignatureUrl: string | null;
+  signatureAsset: ManagedAssetRef;
   classTeacherSignatureEnabled: boolean;
   stampUrl: string | null;
+  stampAsset: ManagedAssetRef;
   watermarkText: string | null;
   backgroundImageUrl: string | null;
   footerText: string | null;
@@ -109,10 +122,21 @@ export function parseCustomSections(value: unknown): CustomSection[] {
     }));
 }
 
-/** Normalize a template DB record for API responses (typed JSON arrays). */
-export function serializeTemplate(template: ReportCardTemplate) {
+/**
+ * Normalize a template DB record for API responses (typed JSON arrays) and
+ * resolve managed branding assets over legacy URL columns when present.
+ */
+export async function serializeTemplate(template: ReportCardTemplate) {
+  const [logoUrl, stampUrl, principalSignatureUrl] = await Promise.all([
+    resolveManagedOrLegacyFileUrl(template.logoUrl, template.logoFileId),
+    resolveManagedOrLegacyFileUrl(template.stampUrl, template.stampFileId),
+    resolveManagedOrLegacyFileUrl(template.principalSignatureUrl, template.principalSignatureFileId),
+  ]);
   return {
     ...template,
+    logoUrl,
+    stampUrl,
+    principalSignatureUrl,
     assignedClassIds: Array.isArray(template.assignedClassIds)
       ? (template.assignedClassIds as unknown[]).filter((id): id is string => typeof id === "string")
       : [],
@@ -122,8 +146,18 @@ export function serializeTemplate(template: ReportCardTemplate) {
   };
 }
 
+export type TemplateWithAssets = ReportCardTemplate & {
+  logoFile?: { storageKey: string; contentType: string } | null;
+  stampFile?: { storageKey: string; contentType: string } | null;
+  principalSignatureFile?: { storageKey: string; contentType: string } | null;
+};
+
+function assetRef(file: { storageKey: string; contentType: string } | null | undefined): ManagedAssetRef {
+  return file ? { storageKey: file.storageKey, contentType: file.contentType } : null;
+}
+
 /** Build the immutable snapshot that is stored on a generated report card. */
-export function templateToSnapshot(template: ReportCardTemplate): TemplateSnapshot {
+export function templateToSnapshot(template: TemplateWithAssets): TemplateSnapshot {
   const gradeBands = parseGradeBands(template.gradeBands);
   return {
     templateName: template.name,
@@ -134,9 +168,12 @@ export function templateToSnapshot(template: ReportCardTemplate): TemplateSnapsh
       ? (template.paperSize as PaperSize)
       : "A4_PORTRAIT",
     logoUrl: template.logoUrl,
+    logoAsset: assetRef(template.logoFile),
     principalSignatureUrl: template.principalSignatureUrl,
+    signatureAsset: assetRef(template.principalSignatureFile),
     classTeacherSignatureEnabled: template.classTeacherSignatureEnabled,
     stampUrl: template.stampUrl,
+    stampAsset: assetRef(template.stampFile),
     watermarkText: template.watermarkText,
     backgroundImageUrl: template.backgroundImageUrl,
     footerText: template.footerText,
@@ -159,6 +196,14 @@ export function templateToSnapshot(template: ReportCardTemplate): TemplateSnapsh
   };
 }
 
+function normalizeAssetRef(value: unknown): ManagedAssetRef {
+  if (!value || typeof value !== "object") return null;
+  const ref = value as Partial<NonNullable<ManagedAssetRef>>;
+  return typeof ref.storageKey === "string" && typeof ref.contentType === "string"
+    ? { storageKey: ref.storageKey, contentType: ref.contentType }
+    : null;
+}
+
 /** Coerce an arbitrary stored JSON snapshot back into a typed snapshot. */
 export function normalizeSnapshot(value: unknown): TemplateSnapshot | null {
   if (!value || typeof value !== "object") return null;
@@ -173,9 +218,12 @@ export function normalizeSnapshot(value: unknown): TemplateSnapshot | null {
       ? (snap.paperSize as PaperSize)
       : "A4_PORTRAIT",
     logoUrl: snap.logoUrl ?? null,
+    logoAsset: normalizeAssetRef(snap.logoAsset),
     principalSignatureUrl: snap.principalSignatureUrl ?? null,
+    signatureAsset: normalizeAssetRef(snap.signatureAsset),
     classTeacherSignatureEnabled: snap.classTeacherSignatureEnabled ?? true,
     stampUrl: snap.stampUrl ?? null,
+    stampAsset: normalizeAssetRef(snap.stampAsset),
     watermarkText: snap.watermarkText ?? null,
     backgroundImageUrl: snap.backgroundImageUrl ?? null,
     footerText: snap.footerText ?? null,
@@ -226,10 +274,15 @@ export function gradeFromBands(percentage: number, bands?: GradeBand[] | null): 
 export async function resolveTemplateForReportCard(input: {
   schoolId: string;
   classId?: string | null;
-}): Promise<ReportCardTemplate | null> {
+}): Promise<TemplateWithAssets | null> {
   const templates = await prisma.reportCardTemplate.findMany({
     where: { schoolId: input.schoolId },
     orderBy: { updatedAt: "desc" },
+    include: {
+      logoFile: { select: { storageKey: true, contentType: true } },
+      stampFile: { select: { storageKey: true, contentType: true } },
+      principalSignatureFile: { select: { storageKey: true, contentType: true } },
+    },
   });
   if (templates.length === 0) return null;
 

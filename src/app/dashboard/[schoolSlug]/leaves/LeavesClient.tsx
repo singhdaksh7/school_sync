@@ -40,8 +40,9 @@ export default function LeavesClient({ initialLeaves, schoolId }: Props) {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/schools/${schoolId}/leaves?type=TEACHER`);
-    setLeaves(await res.json());
+    const res = await fetch(`/api/schools/${schoolId}/leaves?type=TEACHER&limit=100`);
+    const body = await res.json();
+    setLeaves(body.data ?? body);
     setLoading(false);
   }, [schoolId]);
 

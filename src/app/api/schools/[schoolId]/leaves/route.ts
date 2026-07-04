@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { canAccessSchool, studentBelongsToSchool, teacherBelongsToSchool, sessionRole } from "@/lib/tenant";
 import { requireSchoolAccess } from "@/lib/teacher-authorization";
+import { parsePagination, paginated } from "@/lib/pagination";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -16,20 +17,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const type = searchParams.get("type") as "STUDENT" | "TEACHER" | null;
   const status = searchParams.get("status") as "PENDING" | "APPROVED" | "REJECTED" | null;
 
-  const leaves = await prisma.leaveRequest.findMany({
-    where: {
-      schoolId,
-      ...(type ? { type } : {}),
-      ...(status ? { status } : {}),
-    },
-    include: {
-      student: { select: { name: true, rollNo: true, section: { select: { name: true, class: { select: { name: true } } } } } },
-      teacher: { select: { name: true, subject: true } },
-      reviewedBy: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  return NextResponse.json(leaves);
+  const { skip, take, page, limit } = parsePagination(searchParams);
+  const where = {
+    schoolId,
+    ...(type ? { type } : {}),
+    ...(status ? { status } : {}),
+  };
+  const [leaves, total] = await Promise.all([
+    prisma.leaveRequest.findMany({
+      where,
+      include: {
+        student: { select: { name: true, rollNo: true, section: { select: { name: true, class: { select: { name: true } } } } } },
+        teacher: { select: { name: true, subject: true } },
+        reviewedBy: { select: { name: true } },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip,
+      take,
+    }),
+    prisma.leaveRequest.count({ where }),
+  ]);
+  return NextResponse.json(paginated(leaves, total, { skip, take, page, limit }));
 }
 
 const createSchema = z.object({

@@ -28,7 +28,7 @@ export default async function ReportCardBuilderPage({
     <ReportCardBuilderClient
       schoolId={school.id}
       classes={classes}
-      initialTemplates={templates.map(serializeTemplate)}
+      initialTemplates={await Promise.all(templates.map(serializeTemplate))}
     />
   );
 }

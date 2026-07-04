@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { storagePublicUrl } from "@/lib/storage";
 
 export type BrandingSchool = {
   id: string;
@@ -6,6 +7,7 @@ export type BrandingSchool = {
   slug: string;
   customDomain: string | null;
   logoUrl: string | null;
+  logoFile?: { storageKey: string } | null;
   primaryColor: string | null;
   secondaryColor: string | null;
   appName: string | null;
@@ -61,9 +63,12 @@ export function hostnameFromHeaders(headers: HeaderReader) {
 
 export function brandingForSchool(school: BrandingSchool | null): BrandingResponse {
   if (!school) return DEFAULT_BRANDING;
+  // BRANDING_IMAGE is always PUBLIC visibility, so its public URL is a plain
+  // string join (see storagePublicUrl) — no signing/async needed here.
+  const managedLogoUrl = school.logoFile ? storagePublicUrl(school.logoFile.storageKey) : null;
   return {
     schoolName: school.name,
-    logoUrl: school.logoUrl,
+    logoUrl: managedLogoUrl ?? school.logoUrl,
     primaryColor: school.primaryColor || DEFAULT_BRANDING.primaryColor,
     secondaryColor: school.secondaryColor || DEFAULT_BRANDING.secondaryColor,
     appName: school.appName || school.name,
@@ -91,6 +96,7 @@ export async function resolveSchool(hostname: string | null | undefined) {
       slug: true,
       customDomain: true,
       logoUrl: true,
+      logoFile: { select: { storageKey: true } },
       primaryColor: true,
       secondaryColor: true,
       appName: true,
@@ -110,6 +116,7 @@ export async function resolveSchool(hostname: string | null | undefined) {
       slug: true,
       customDomain: true,
       logoUrl: true,
+      logoFile: { select: { storageKey: true } },
       primaryColor: true,
       secondaryColor: true,
       appName: true,

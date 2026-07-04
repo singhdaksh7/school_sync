@@ -56,9 +56,10 @@ export default function AttendanceClient({
   const fetchStudents = useCallback(async (sectionId: string) => {
     const url = sectionId !== "all"
       ? `/api/schools/${schoolId}/students?sectionId=${sectionId}`
-      : `/api/schools/${schoolId}/students`;
+      : `/api/schools/${schoolId}/students?limit=500`;
     const res = await fetch(url);
-    setStudents(await res.json());
+    const body = await res.json();
+    setStudents(body.data ?? body);
   }, [schoolId]);
 
   const fetchExisting = useCallback(async (d: string, type: string, sectionId: string | null) => {

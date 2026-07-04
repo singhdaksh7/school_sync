@@ -11,6 +11,7 @@ import {
   normalizeSubject,
   parseRequiredDate,
   validateHomeworkTeacherAssignment,
+  withResolvedAttachments,
 } from "@/lib/homework";
 
 export async function PATCH(
@@ -117,5 +118,5 @@ export async function PATCH(
     });
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json(updated ? await withResolvedAttachments(updated) : updated);
 }
