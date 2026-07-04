@@ -8,6 +8,7 @@ import { requireSchoolAccess } from "@/lib/teacher-authorization";
 import { getClientIp } from "@/lib/request-ip";
 import { buildStudentPasswordHashes } from "@/lib/student-credentials";
 import { backfillHomeworkStatusForStudent } from "@/lib/homework";
+import { getStudentLimitInfo, withinStudentLimit, STUDENT_LIMIT_MESSAGE } from "@/lib/plan-limits";
 
 function duplicateFieldMessage(err: unknown) {
   const target = (err as { meta?: { target?: unknown } })?.meta?.target;
@@ -64,6 +65,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     const data = schema.parse(body);
     if (!(await sectionBelongsToSchool(data.sectionId, schoolId))) {
       return NextResponse.json({ error: "Section not found in this school" }, { status: 400 });
+    }
+
+    const { maxStudents, currentCount } = await getStudentLimitInfo(schoolId);
+    if (!withinStudentLimit(currentCount, 1, maxStudents)) {
+      return NextResponse.json({ error: STUDENT_LIMIT_MESSAGE }, { status: 403 });
     }
 
     const { fatherPhoneHash, motherPhoneHash } = await buildStudentPasswordHashes(data.fatherPhone, data.motherPhone);

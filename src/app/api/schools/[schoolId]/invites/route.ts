@@ -6,6 +6,7 @@ import { canInviteRole, isInvitableRole, sessionRole } from "@/lib/tenant";
 import { sendStaffInviteEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
+import { generateInviteToken } from "@/lib/invite-tokens";
 
 const createSchema = z.object({
   name: z.string().min(2),
@@ -57,11 +58,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
+    const { rawToken, tokenHash } = generateInviteToken();
     const invite = await prisma.schoolInvite.create({
-      data: { name: body.name, email: body.email, schoolId, invitedById: session.user.id, expiresAt, role: body.role },
+      data: { name: body.name, email: body.email, schoolId, invitedById: session.user.id, expiresAt, role: body.role, tokenHash },
     });
 
-    const inviteLink = `${inviteBaseUrl(req)}/invite/${invite.token}`;
+    const inviteLink = `${inviteBaseUrl(req)}/invite/${rawToken}`;
 
     let emailError: string | null = null;
     try {

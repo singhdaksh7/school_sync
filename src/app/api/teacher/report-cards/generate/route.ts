@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { generateReportCardForStudent, getTeacherForSession, serializeReportCard } from "@/lib/report-cards";
 import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -11,6 +12,9 @@ export async function POST(req: Request) {
 
   const teacher = await getTeacherForSession(session.user.id);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "REPORT_CARDS");
+  if (featureDenied) return featureDenied;
   if (!teacher.mentorSectionId || !teacher.mentorSection) {
     return NextResponse.json({ error: "Only class mentors can generate report cards" }, { status: 403 });
   }

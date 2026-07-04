@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendStaffInviteEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
+import { generateInviteToken } from "@/lib/invite-tokens";
 
 function inviteBaseUrl(req: Request) {
   const configuredBaseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL;
@@ -30,9 +31,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ invite
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7);
-  const updated = await prisma.schoolInvite.update({ where: { id: inviteId }, data: { expiresAt } });
+  // Rotate the token on resend (only the hash is stored — old link is invalidated).
+  const { rawToken, tokenHash } = generateInviteToken();
+  const updated = await prisma.schoolInvite.update({ where: { id: inviteId }, data: { expiresAt, tokenHash } });
 
-  const inviteLink = `${inviteBaseUrl(req)}/invite/${updated.token}`;
+  const inviteLink = `${inviteBaseUrl(req)}/invite/${rawToken}`;
   let emailError: string | null = null;
   try {
     await sendStaffInviteEmail(updated.email, {

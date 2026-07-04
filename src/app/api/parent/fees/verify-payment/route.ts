@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { moneyToNumber } from "@/lib/money";
 import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 import { verifyRazorpayPaymentSignature } from "@/lib/razorpay";
+import { getClientIp } from "@/lib/request-ip";
+import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 
 const schema = z.object({
   razorpay_order_id: z.string().min(1),
@@ -26,6 +28,9 @@ export async function POST(req: NextRequest) {
   try {
     const auth = await getAuthenticatedGuardian(req);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const limit = await rateLimit(`payment-verify:${getClientIp(req) ?? auth.guardian.id}`, RATE_LIMIT_POLICIES.payment);
+    if (!limit.allowed) return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
 
     const data = schema.parse(await req.json());
     const payment = await prisma.feePayment.findFirst({

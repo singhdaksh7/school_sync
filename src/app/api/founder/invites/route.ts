@@ -5,6 +5,7 @@ import { z } from "zod";
 import { sendStaffInviteEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
+import { generateInviteToken } from "@/lib/invite-tokens";
 
 function inviteBaseUrl(req: Request) {
   const configuredBaseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL;
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
+    const { rawToken, tokenHash } = generateInviteToken();
     const invite = await prisma.schoolInvite.create({
       data: {
         name: body.name,
@@ -67,10 +69,11 @@ export async function POST(req: Request) {
         billingCycle: "MONTHLY",
         trialStartDate,
         trialExpiryDate,
+        tokenHash,
       },
     });
 
-    const inviteLink = `${inviteBaseUrl(req)}/invite/${invite.token}`;
+    const inviteLink = `${inviteBaseUrl(req)}/invite/${rawToken}`;
 
     let emailError: string | null = null;
     try {

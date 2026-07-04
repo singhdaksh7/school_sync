@@ -2,6 +2,7 @@ import { getMobileAuth } from "@/lib/mobile-auth";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionRole } from "@/lib/tenant";
+import { statusIsBlocked } from "@/lib/school-access";
 
 /**
  * Narrows the shared mobile JWT auth (from /api/mobile/student/login) down to a
@@ -47,9 +48,11 @@ export async function getStudentAuth(req: Request) {
 
   const student = await prisma.student.findUnique({
     where: { id: studentId },
-    include: { school: { select: { id: true, name: true, slug: true, logoUrl: true } } },
+    include: { school: { select: { id: true, name: true, slug: true, logoUrl: true, status: true } } },
   });
   if (!student) return null;
+  // A suspended/expired school blocks the web student session too.
+  if (statusIsBlocked(student.school.status)) return null;
 
   return {
     studentId: student.id,

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
+import { generateInviteToken } from "@/lib/invite-tokens";
 
 async function verify(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -32,7 +33,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
     include: {
       mentorSection: { include: { class: { select: { name: true } } } },
       user: { select: { id: true } },
-      invites: { where: { usedAt: null, expiresAt: { gt: new Date() } }, select: { token: true } },
+      invites: { where: { usedAt: null, expiresAt: { gt: new Date() } }, select: { id: true } },
     },
   });
   return NextResponse.json(teachers);
@@ -61,14 +62,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
 
     let inviteToken: string | null = null;
     if (data.email) {
-      const invite = await prisma.teacherInvite.create({
+      const { rawToken, tokenHash } = generateInviteToken();
+      await prisma.teacherInvite.create({
         data: {
           email: data.email,
           teacherId: teacher.id,
           expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+          tokenHash,
         },
       });
-      inviteToken = invite.token;
+      // Returned once; only the hash is stored, so this raw token cannot be
+      // re-displayed later — the admin regenerates a fresh link if lost.
+      inviteToken = rawToken;
     }
 
     return NextResponse.json({ ...teacher, inviteToken }, { status: 201 });

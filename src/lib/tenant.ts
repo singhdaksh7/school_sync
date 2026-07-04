@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { isSchoolAdminReadRole, statusIsBlocked } from "@/lib/school-access";
 
 export function sessionRole(user: unknown) {
   const role = (user as { role?: unknown })?.role;
@@ -9,18 +10,59 @@ export function hasPrismaErrorCode(error: unknown, code: string) {
   return (error as { code?: unknown })?.code === code;
 }
 
+/**
+ * Generic school-admin READ access. Role-aware: only SCHOOL_OWNER (via
+ * ownership) and SCHOOL_ADMIN / VICE_PRINCIPAL (via User.schoolId membership)
+ * pass. A TEACHER never passes here even though their User.schoolId is set —
+ * closing the invite-driven privilege-escalation path. Teachers must go through
+ * requireSchoolAccess / requireTeacherPermission (scoped RBAC) instead.
+ *
+ * Also enforces the school lifecycle: a SUSPENDED/EXPIRED school denies access
+ * regardless of role or a still-valid session. The status is re-read from the
+ * DB on every call so a live suspension can't be bypassed by an old JWT.
+ */
 export async function canAccessSchool(schoolId: string, userId: string) {
-  const school = await prisma.school.findUnique({
-    where: { id: schoolId },
-    include: { admins: { select: { id: true } } },
-  });
-  if (!school) return false;
-  return school.ownerId === userId || school.admins.some((admin) => admin.id === userId);
+  const [school, user] = await Promise.all([
+    prisma.school.findUnique({ where: { id: schoolId }, select: { ownerId: true, status: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { role: true, schoolId: true } }),
+  ]);
+  if (!school || !user) return false;
+  if (statusIsBlocked(school.status)) return false;
+  if (!isSchoolAdminReadRole(user.role)) return false;
+  if (school.ownerId === userId) return true;
+  return user.schoolId === schoolId;
 }
 
 export async function canWriteSchool(schoolId: string, userId: string, role?: string) {
+  // VICE_PRINCIPAL keeps its existing read-only policy for generic writes.
   if (role === "VICE_PRINCIPAL") return false;
   return canAccessSchool(schoolId, userId);
+}
+
+/**
+ * Membership check for the billing recovery path only (payment-proof upload).
+ * Deliberately status-EXEMPT so a suspended/expired school can still submit the
+ * proof that gets it reinstated. Limited to billing-capable roles (owner/admin).
+ */
+export async function canAccessSchoolForBilling(schoolId: string, userId: string, role?: string) {
+  if (role !== "SCHOOL_OWNER" && role !== "SCHOOL_ADMIN") return false;
+  const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { ownerId: true } });
+  if (!school) return false;
+  if (school.ownerId === userId) return true;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { schoolId: true } });
+  return user?.schoolId === schoolId;
+}
+
+/**
+ * Resolves a teacher by their linked userId, excluding soft-deleted teachers.
+ * Centralizes the `isDeleted: false` guard so a deactivated teacher can never
+ * be resolved as an active teacher anywhere (auth, mobile, homework, reports).
+ */
+export async function getActiveTeacherByUserId(userId: string) {
+  return prisma.teacher.findFirst({
+    where: { userId, isDeleted: false },
+    select: { id: true, schoolId: true },
+  });
 }
 
 const INVITABLE_ROLES = ["SCHOOL_ADMIN", "VICE_PRINCIPAL", "TEACHER"] as const;

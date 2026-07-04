@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { moneyToNumber } from "@/lib/money";
 import Anthropic from "@anthropic-ai/sdk";
+import { requireSchoolFeature } from "@/lib/feature-flags";
+import { schoolLifecycleGate } from "@/lib/school-access";
 import { subDays, startOfDay, format, differenceInDays } from "date-fns";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -24,6 +26,11 @@ export async function POST(req: Request) {
   const isOwner = school.ownerId === session.user.id;
   const isAdmin = await prisma.user.findFirst({ where: { id: session.user.id, schoolId } });
   if (!isOwner && !isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const blocked = await schoolLifecycleGate(schoolId);
+  if (blocked) return blocked;
+  const featureDenied = await requireSchoolFeature(schoolId, "AI_FEATURES");
+  if (featureDenied) return featureDenied;
 
   // Return cached result if still within 30 days
   const cached = await prisma.aIInsightCache.findUnique({ where: { schoolId } });

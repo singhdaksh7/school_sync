@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTeacherAuth } from "@/lib/mobile-auth";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { logAudit } from "@/lib/audit";
 import {
   getTeacherAssignments,
@@ -18,6 +19,9 @@ export async function GET(req: Request) {
 
   const teacher = await getTeacherByUserId(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "HOMEWORK");
+  if (featureDenied) return featureDenied;
 
   const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", "VIEW");
   if (denied) return denied;
@@ -47,6 +51,9 @@ export async function POST(req: Request) {
   const teacher = await getTeacherByUserId(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
+  const featureDenied = await requireSchoolFeature(teacher.schoolId, "HOMEWORK");
+  if (featureDenied) return featureDenied;
+
   const body = await req.json();
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const subject = normalizeSubject(body.subject);
@@ -70,7 +77,6 @@ export async function POST(req: Request) {
     where: { schoolId: teacher.schoolId, sectionId },
     select: { id: true },
   });
-  console.log(`[HW_DEBUG] creating homework schoolId=${teacher.schoolId} sectionId=${sectionId} subject=${subject} studentsSnapshotted=${students.length}`);
 
   const created = await prisma.$transaction(async (tx) => {
     const homework = await tx.homework.create({

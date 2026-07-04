@@ -4,11 +4,17 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
+import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
+import { hashInviteToken } from "@/lib/invite-tokens";
 
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+
+  const limit = await rateLimit(`invite-lookup:${getClientIp(req) ?? "unknown"}`, RATE_LIMIT_POLICIES.inviteLookup);
+  if (!limit.allowed) return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+
   const invite = await prisma.schoolInvite.findUnique({
-    where: { token },
+    where: { tokenHash: hashInviteToken(token) },
     include: { school: { select: { name: true, slug: true } }, invitedBy: { select: { name: true, email: true } } },
   });
 
@@ -40,7 +46,7 @@ const acceptSchema = z
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const invite = await prisma.schoolInvite.findUnique({
-    where: { token },
+    where: { tokenHash: hashInviteToken(token) },
     include: { school: true, invitedBy: { select: { role: true } }, plan: true },
   });
 
@@ -129,7 +135,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         });
       }
 
-      await tx.schoolInvite.update({ where: { token }, data: { usedAt: new Date() } });
+      await tx.schoolInvite.update({ where: { id: invite.id }, data: { usedAt: new Date() } });
     });
 
     await logAudit({

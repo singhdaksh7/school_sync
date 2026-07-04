@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateStaffForMobile, generateMobileToken } from "@/lib/mobile-auth";
 import { NoAccountError, InvalidPasswordError } from "@/lib/auth-errors";
+import { getClientIp } from "@/lib/request-ip";
+import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json();
     if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    }
+
+    const ip = getClientIp(req);
+    const limit = await rateLimit(`mobile-staff-login:${ip ?? "unknown"}:${email.trim().toLowerCase()}`, RATE_LIMIT_POLICIES.login);
+    if (!limit.allowed) {
+      return NextResponse.json({ error: "Too many attempts. Please try again later." }, { status: 429 });
     }
 
     const result = await authenticateStaffForMobile(email.trim(), password, req.headers);

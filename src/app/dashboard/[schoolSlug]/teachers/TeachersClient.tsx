@@ -18,7 +18,7 @@ interface Class { id: string; name: string; sections: Section[] }
 interface MentorSection { id: string; name: string; class: { name: string } }
 interface Teacher {
   id: string; name: string; email: string | null; phone: string | null; subject: string | null;
-  mentorSection: MentorSection | null; user: { id: string } | null; invites: { token: string }[];
+  mentorSection: MentorSection | null; user: { id: string } | null; invites: { id: string }[];
 }
 
 interface DeleteImpact {
@@ -165,11 +165,21 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function showExistingInvite(teacher: Teacher) {
-    if (teacher.invites.length > 0) {
+  async function showExistingInvite(teacher: Teacher) {
+    // Invite tokens are stored hashed, so a fresh link is minted on demand
+    // (this also rotates/invalidates any previous outstanding link).
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/teachers/${teacher.id}/invite`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.inviteToken) {
+        setRefreshError(data.error || "Could not generate an invite link.");
+        return;
+      }
       const origin = window.location.origin;
-      setInviteLink(`${origin}/teacher-invite/${teacher.invites[0].token}`);
+      setInviteLink(`${origin}/teacher-invite/${data.inviteToken}`);
       setCopied(false); setInviteDialogOpen(true);
+    } catch {
+      setRefreshError("Could not generate an invite link. Please try again.");
     }
   }
 

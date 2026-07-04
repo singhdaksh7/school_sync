@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { moneyToNumber, paiseFromRupees } from "@/lib/money";
 import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 import { createRazorpayOrder, getRazorpayConfig } from "@/lib/razorpay";
+import { requireSchoolFeature } from "@/lib/feature-flags";
+import { getClientIp } from "@/lib/request-ip";
+import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 
 const schema = z.object({
   studentId: z.string().min(1),
@@ -14,6 +17,12 @@ export async function POST(req: NextRequest) {
   try {
     const auth = await getAuthenticatedGuardian(req);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const limit = await rateLimit(`payment-order:${getClientIp(req) ?? auth.guardian.id}`, RATE_LIMIT_POLICIES.payment);
+    if (!limit.allowed) return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+
+    const featureDenied = await requireSchoolFeature(auth.guardian.schoolId, "FEES");
+    if (featureDenied) return featureDenied;
 
     const data = schema.parse(await req.json());
     if (!(await guardianCanAccessStudent(auth.guardian.id, auth.guardian.schoolId, data.studentId))) {

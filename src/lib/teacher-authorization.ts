@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canAccessSchool } from "@/lib/tenant";
+import { schoolLifecycleGate } from "@/lib/school-access";
 import {
   getTeacherScope,
   teacherHasAnyRoleAssignment,
@@ -65,6 +66,11 @@ export async function requireSchoolAccess(
   action: string,
   target?: AuthorizeTarget
 ): Promise<{ ok: true; teacherId: string | null } | { ok: false; response: NextResponse }> {
+  // Lifecycle first: a suspended/expired school blocks everyone (owner, admin,
+  // and any RBAC-permissioned teacher) before either access path is evaluated.
+  const blocked = await schoolLifecycleGate(schoolId);
+  if (blocked) return { ok: false, response: blocked };
+
   if (await canAccessSchool(schoolId, userId)) {
     return { ok: true, teacherId: null };
   }
@@ -73,7 +79,12 @@ export async function requireSchoolAccess(
     return { ok: false, response: forbidden("FORBIDDEN", `${module}:${action}`) };
   }
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId }, select: { id: true, schoolId: true } });
+  // Soft-deleted teachers are never resolved as active — no admin fallback,
+  // no scoped RBAC access.
+  const teacher = await prisma.teacher.findFirst({
+    where: { userId, isDeleted: false },
+    select: { id: true, schoolId: true },
+  });
   if (!teacher || teacher.schoolId !== schoolId) {
     return { ok: false, response: forbidden("FORBIDDEN", `${module}:${action}`) };
   }
@@ -94,6 +105,9 @@ export async function requireTeacherPermission(
   action: string,
   target?: AuthorizeTarget
 ): Promise<NextResponse | null> {
+  const blocked = await schoolLifecycleGate(schoolId);
+  if (blocked) return blocked;
+
   const result = await authorizeTeacher(teacherId, schoolId, module, action, target);
   if (!result.allowed) return forbidden(result.reason ?? "MISSING_PERMISSION", `${module}:${action}`);
   return null;

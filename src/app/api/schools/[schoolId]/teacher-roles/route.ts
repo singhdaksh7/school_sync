@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionRole, canAccessSchool, canWriteSchool } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { isValidPermission } from "@/lib/teacher-permissions";
 
 const permissionSchema = z.object({
@@ -23,6 +24,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "TEACHER_PERMISSIONS");
+    if (denied) return denied;
+  }
 
   const roles = await prisma.teacherCustomRole.findMany({
     where: { schoolId },
@@ -41,6 +46,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user))))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "TEACHER_PERMISSIONS");
+    if (denied) return denied;
+  }
 
   try {
     const data = createSchema.parse(await req.json());

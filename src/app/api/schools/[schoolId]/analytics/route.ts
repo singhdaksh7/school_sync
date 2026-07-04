@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { subDays, startOfDay, format } from "date-fns";
 
 type AnalyticsStudent = {
@@ -27,6 +28,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "ANALYTICS");
+    if (denied) return denied;
+  }
 
   const today = startOfDay(new Date());
   const thirtyDaysAgo = subDays(today, 30);

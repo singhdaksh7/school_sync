@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { canAccessSchool, classBelongsToSchool } from "@/lib/tenant";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { moneyToNumber } from "@/lib/money";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
@@ -10,6 +11,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "FEES");
+    if (denied) return denied;
+  }
 
   const structures = await prisma.feeStructure.findMany({
     where: { schoolId },
@@ -31,6 +36,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await requireSchoolFeature(schoolId, "FEES");
+    if (denied) return denied;
+  }
 
   try {
     const body = await req.json();

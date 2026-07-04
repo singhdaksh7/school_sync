@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateParentToken, normalizePhone } from "@/lib/parent-auth";
 import { hostnameFromHeaders, resolveSchool } from "@/lib/school-resolver";
+import { statusIsBlocked } from "@/lib/school-access";
+import { getClientIp } from "@/lib/request-ip";
+import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 
 function requestHostname(req: NextRequest) {
@@ -12,7 +15,7 @@ function findGuardiansForLogin(phone: string, schoolId?: string) {
   return prisma.guardian.findMany({
     where: { phone, ...(schoolId ? { schoolId } : {}) },
     include: {
-      school: { select: { id: true, slug: true } },
+      school: { select: { id: true, slug: true, status: true } },
     },
   });
 }
@@ -33,6 +36,12 @@ export async function POST(req: NextRequest) {
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    }
+
+    const ip = getClientIp(req);
+    const limit = await rateLimit(`parent-login:${ip ?? "unknown"}:${normalizedPhone}`, RATE_LIMIT_POLICIES.login);
+    if (!limit.allowed) {
+      return NextResponse.json({ error: "Too many attempts. Please try again later." }, { status: 429 });
     }
 
     const resolvedSchool = await resolveSchool(requestHostname(req));
@@ -63,6 +72,9 @@ export async function POST(req: NextRequest) {
     }
 
     const guardian = validGuardians[0];
+    if (statusIsBlocked(guardian.school.status)) {
+      return NextResponse.json({ error: "School access is suspended" }, { status: 403 });
+    }
     const token = generateParentToken({
       guardianId: guardian.id,
       name: guardian.name,

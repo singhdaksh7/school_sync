@@ -6,6 +6,7 @@ import { logAudit } from "@/lib/audit";
 import { moneyToNumber } from "@/lib/money";
 import { canAccessSchool, sessionRole } from "@/lib/tenant";
 import { requireSchoolAccess } from "@/lib/teacher-authorization";
+import { requireSchoolFeature } from "@/lib/feature-flags";
 import { getClientIp } from "@/lib/request-ip";
 
 function serializePayment<T extends { amount: unknown; feeStructure?: { amount: unknown } | null; gatewaySignature?: string | null }>(payment: T) {
@@ -31,6 +32,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "FEES", "VIEW");
   if (!access.ok) return access.response;
+  {
+    const denied = await requireSchoolFeature(schoolId, "FEES");
+    if (denied) return denied;
+  }
 
   const { searchParams } = new URL(req.url);
   const studentId = searchParams.get("studentId");

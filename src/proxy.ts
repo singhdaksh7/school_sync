@@ -102,7 +102,12 @@ export async function proxy(req: NextRequest) {
     if (schoolSlug) return NextResponse.redirect(new URL(`/dashboard/${schoolSlug}`, req.url));
   }
 
-  return NextResponse.next();
+  // Surface the current path to server layouts (they can't read it otherwise),
+  // so the dashboard layout can exempt the billing page from the suspended-school
+  // block without an infinite redirect loop.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {

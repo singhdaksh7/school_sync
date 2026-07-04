@@ -162,8 +162,10 @@ export function parseOptionalNumber(value: unknown) {
 }
 
 export async function getTeacherByUserId(userId: string) {
-  return prisma.teacher.findUnique({
-    where: { userId },
+  // Excludes soft-deleted teachers so a deactivated account can never create,
+  // check, or score homework.
+  return prisma.teacher.findFirst({
+    where: { userId, isDeleted: false },
     select: {
       id: true,
       schoolId: true,

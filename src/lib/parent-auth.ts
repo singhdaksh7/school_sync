@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { statusIsBlocked } from "@/lib/school-access";
 
 export interface ParentTokenPayload {
   guardianId: string;
@@ -59,10 +60,15 @@ export async function getAuthenticatedGuardian(req: NextRequest) {
       name: true,
       phone: true,
       email: true,
+      school: { select: { status: true } },
     },
   });
 
-  return guardian ? { decoded, guardian } : null;
+  if (!guardian) return null;
+  // A suspended/expired school blocks the parent even with a still-valid JWT.
+  if (statusIsBlocked(guardian.school.status)) return null;
+
+  return { decoded, guardian };
 }
 
 export async function guardianCanAccessStudent(guardianId: string, schoolId: string, studentId: string) {

@@ -17,7 +17,12 @@ export default async function TeachersPage({
       include: {
         mentorSection: { include: { class: true } },
         user: { select: { id: true } },
-        invites: { select: { token: true }, orderBy: { createdAt: "desc" }, take: 1 },
+        invites: {
+          where: { usedAt: null, expiresAt: { gt: new Date() } },
+          select: { id: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
       },
       orderBy: { name: "asc" },
     }),

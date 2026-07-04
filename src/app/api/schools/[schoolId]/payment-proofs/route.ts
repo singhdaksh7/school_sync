@@ -1,21 +1,19 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canAccessSchool, sessionRole } from "@/lib/tenant";
+import { canAccessSchoolForBilling, sessionRole } from "@/lib/tenant";
 import { createNotification } from "@/lib/founder-notifications";
 
 // ~2MB of original file data, base64-encoded (base64 inflates size by ~4/3).
 const MAX_RECEIPT_DATA_LENGTH = 2_900_000;
 
-function isSchoolBillingAdmin(role: string | undefined) {
-  return role === "SCHOOL_OWNER" || role === "SCHOOL_ADMIN";
-}
-
 export async function GET(_req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isSchoolBillingAdmin(sessionRole(session.user)) || !(await canAccessSchool(schoolId, session.user.id))) {
+  // Billing recovery path: intentionally status-EXEMPT so a suspended/expired
+  // school can still submit the payment proof that gets it reinstated.
+  if (!(await canAccessSchoolForBilling(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -43,7 +41,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const { schoolId } = await params;
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isSchoolBillingAdmin(sessionRole(session.user)) || !(await canAccessSchool(schoolId, session.user.id))) {
+  // Billing recovery path: intentionally status-EXEMPT so a suspended/expired
+  // school can still submit the payment proof that gets it reinstated.
+  if (!(await canAccessSchoolForBilling(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

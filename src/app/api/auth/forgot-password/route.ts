@@ -5,45 +5,34 @@ import { createPasswordResetToken } from "@/lib/password-reset";
 import { sendPasswordResetEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
+import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 
 const schema = z.object({ email: z.string().email() });
 
+// Always returned (whether or not the email maps to an account) so this endpoint
+// never reveals whether an account exists.
 const SENT_RESPONSE = {
-  message: "Password reset instructions have been sent to your email.",
+  message: "If an account exists for that email, password reset instructions have been sent.",
 };
-
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-
-// Best-effort, per-process rate limit (same tradeoff as getClientIp: good enough
-// on a long-running server, resets on cold start in serverless — no new infra for this).
-const recentRequests = new Map<string, { count: number; windowStart: number }>();
-
-function isRateLimited(key: string) {
-  const now = Date.now();
-  const entry = recentRequests.get(key);
-  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    recentRequests.set(key, { count: 1, windowStart: now });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > RATE_LIMIT_MAX;
-}
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { email } = schema.parse(body);
     const ipAddress = getClientIp(req);
-    const rateLimitKey = `${ipAddress ?? "unknown"}:${email.toLowerCase()}`;
 
-    if (isRateLimited(rateLimitKey)) {
+    const limit = await rateLimit(
+      `forgot-password:${ipAddress ?? "unknown"}:${email.toLowerCase()}`,
+      RATE_LIMIT_POLICIES.forgotPassword
+    );
+    if (!limit.allowed) {
       return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
     }
 
     const user = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, role: true } });
+    // Do not reveal whether the account exists — respond identically either way.
     if (!user) {
-      return NextResponse.json({ error: "No account found with that email." }, { status: 404 });
+      return NextResponse.json(SENT_RESPONSE);
     }
 
     const rawToken = await createPasswordResetToken(user.id);

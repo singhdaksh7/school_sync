@@ -231,7 +231,12 @@ model SchoolInvite {
   id              String            @id @default(cuid())
   name            String?
   email           String
+  // Legacy opaque id (kept for backward compatibility). Security lookups use
+  // tokenHash: only the SHA-256 hash of the raw token is stored; the raw token
+  // lives only in the emailed link. Rows created before the hashing migration
+  // have tokenHash = null and are therefore no longer resolvable.
   token           String            @unique @default(cuid())
+  tokenHash       String?           @unique
   role            UserRole          @default(SCHOOL_ADMIN)
   schoolId        String
   school          School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
@@ -336,7 +341,9 @@ model Teacher {
 model TeacherInvite {
   id        String    @id @default(cuid())
   email     String
+  // See SchoolInvite.tokenHash — raw token is emailed, only its hash is stored.
   token     String    @unique @default(cuid())
+  tokenHash String?   @unique
   teacherId String
   teacher   Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   usedAt    DateTime?

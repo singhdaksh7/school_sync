@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { hashInviteToken } from "@/lib/invite-tokens";
 
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const invite = await prisma.teacherInvite.findUnique({
-    where: { token },
+    where: { tokenHash: hashInviteToken(token) },
     include: { teacher: { select: { name: true, school: { select: { name: true } } } } },
   });
 
@@ -26,7 +27,7 @@ const schema = z.object({ password: z.string().min(6) });
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const invite = await prisma.teacherInvite.findUnique({
-    where: { token },
+    where: { tokenHash: hashInviteToken(token) },
     include: { teacher: true },
   });
 
@@ -63,7 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       data: { userId: user.id },
     });
 
-    await prisma.teacherInvite.update({ where: { token }, data: { usedAt: new Date() } });
+    await prisma.teacherInvite.update({ where: { id: invite.id }, data: { usedAt: new Date() } });
 
     return NextResponse.json({ success: true });
   } catch (err) {

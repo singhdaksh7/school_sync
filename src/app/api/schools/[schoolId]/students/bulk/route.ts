@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
 import { buildStudentPasswordHashes } from "@/lib/student-credentials";
 import { backfillHomeworkStatusForStudent } from "@/lib/homework";
+import { getStudentLimitInfo, withinStudentLimit, STUDENT_LIMIT_MESSAGE } from "@/lib/plan-limits";
 
 export async function POST(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -29,6 +30,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       sectionMap[key] = sec.id;
     }
   }
+
+  // Enforce the plan's student cap across genuinely-new creates. currentCount is
+  // read once; createdCount tracks successful inserts so skipped/failed rows
+  // (duplicates, bad data) never consume quota.
+  const { maxStudents, currentCount } = await getStudentLimitInfo(schoolId);
+  let createdCount = 0;
 
   const results: { name: string; success: boolean; error?: string }[] = [];
 
@@ -64,6 +71,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       continue;
     }
 
+    if (!withinStudentLimit(currentCount + createdCount, 1, maxStudents)) {
+      results.push({ name, success: false, error: STUDENT_LIMIT_MESSAGE });
+      continue;
+    }
+
     try {
       const { fatherPhoneHash, motherPhoneHash } = await buildStudentPasswordHashes(fatherPhone, motherPhone);
       const student = await prisma.student.create({
@@ -84,6 +96,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
         },
       });
       await backfillHomeworkStatusForStudent(student.id, schoolId, sectionId);
+      createdCount += 1;
       results.push({ name, success: true });
     } catch {
       results.push({ name, success: false, error: "Duplicate roll number/admission number or invalid data" });

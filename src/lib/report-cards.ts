@@ -33,8 +33,10 @@ export function parseAttendanceSummary(value: string) {
 }
 
 export async function getTeacherForSession(userId: string) {
-  return prisma.teacher.findUnique({
-    where: { userId },
+  // Excludes soft-deleted teachers so a deactivated mentor cannot generate,
+  // publish, or download report cards.
+  return prisma.teacher.findFirst({
+    where: { userId, isDeleted: false },
     include: {
       school: { select: { id: true, name: true, logoUrl: true } },
       mentorSection: {

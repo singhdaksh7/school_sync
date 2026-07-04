@@ -1,7 +1,9 @@
+import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSchoolBySlug } from "@/lib/school";
 import { sessionRole } from "@/lib/tenant";
+import { statusIsBlocked } from "@/lib/school-access";
 import { getSchoolFeatureFlags } from "@/lib/feature-flags";
 import { redirect, notFound } from "next/navigation";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -34,6 +36,20 @@ export default async function DashboardLayout({
     });
     if (userSchool) redirect(`/dashboard/${userSchool.slug}`);
     redirect("/no-school");
+  }
+
+  // Suspended/expired schools are blocked from every dashboard page (server
+  // components read via Prisma directly, so this is the page-level counterpart
+  // to the API-level lifecycle gate). The billing page is exempt so an owner/
+  // admin can still submit a payment proof to get reinstated.
+  if (statusIsBlocked(school.status)) {
+    const pathname = (await headers()).get("x-pathname") ?? "";
+    const onBilling = pathname.endsWith(`/dashboard/${schoolSlug}/billing`);
+    const canPay = role === "SCHOOL_OWNER" || role === "SCHOOL_ADMIN";
+    if (!onBilling) {
+      if (canPay) redirect(`/dashboard/${schoolSlug}/billing`);
+      redirect("/login");
+    }
   }
 
   const featureFlags = await getSchoolFeatureFlags(school.id);
