@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { parseCostGuardError } from "@/lib/cost-guard-error-handler";
+import { extractActivityItems, formatActivityCode, type OperationsActivityItem } from "@/lib/operations-command-center-dto";
 
 /**
  * GET .../operations/daily-summary's real response is DailyOperationsSummary
@@ -98,11 +99,6 @@ interface AttentionItemRow {
   message: string;
   metadata?: { count?: number };
   actionTarget?: string;
-}
-
-interface ActivityLogRow {
-  message: string;
-  timestamp: string;
 }
 
 interface RecentPaymentRow {
@@ -222,7 +218,12 @@ export default function OperationsCommandCenter({ schoolId, userRole, isEffectiv
         return;
       }
       const data = await res.json();
-      setSummary(data);
+      // GET .../operations/daily-summary embeds `activity` as the
+      // ActivityTimelinePage envelope ({ data: ActivityItem[]; total }), not
+      // a bare array — normalize once here so the rest of the component can
+      // treat it as an array (was previously `activity.map is not a
+      // function` once the object reached the JSX below).
+      setSummary({ ...data, activity: extractActivityItems(data.activity) });
     } catch (e) {
       setError("Failed to fetch daily operations summary.");
     } finally {
@@ -772,13 +773,15 @@ export default function OperationsCommandCenter({ schoolId, userRole, isEffectiv
                   <p className="text-xs text-gray-400 text-center py-6">No operational logs recorded today.</p>
                 ) : (
                   <div className="space-y-3.5 max-h-96 overflow-y-auto pr-1">
-                    {activity.map((act: ActivityLogRow, idx: number) => (
-                      <div key={idx} className="flex items-start gap-2.5 text-xs">
+                    {activity.map((act: OperationsActivityItem) => (
+                      <div key={act.id} className="flex items-start gap-2.5 text-xs">
                         <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1 shrink-0" />
                         <div className="flex-1">
-                          <p className="font-medium text-gray-700 leading-normal">{act.message}</p>
+                          <p className="font-medium text-gray-700 leading-normal">
+                            {act.actorName ? `${act.actorName} — ` : ""}{formatActivityCode(act.code)}
+                          </p>
                           <span className="text-[10px] text-gray-400 block mt-0.5">
-                            {new Date(act.timestamp).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
+                            {new Date(act.createdAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
                           </span>
                         </div>
                       </div>
