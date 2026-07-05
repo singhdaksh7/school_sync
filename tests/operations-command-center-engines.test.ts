@@ -8,7 +8,7 @@ import {
   type SchoolPeriodRow,
 } from "@/lib/school-time";
 import type { TodayOperationsContext, TeacherRosterRow, TimetableSlotRow } from "@/lib/operations-context";
-import { classifyTodayLectures, summarizeCoverage, classifyRiskLevel, computeCurrentPeriodOperations, computeNextPeriodRisk, NEXT_PERIOD_RISK_THRESHOLDS } from "@/lib/operations-lecture-coverage";
+import { classifyTodayLectures, summarizeCoverage, classifyRiskLevel, computeCurrentPeriodOperations, computeNextPeriodRisk, NEXT_PERIOD_RISK_THRESHOLDS, type UncoveredLectureDetail } from "@/lib/operations-lecture-coverage";
 import { computeTeacherTodayStatuses, summarizeTeacherStatuses, filterAndPaginateTeacherStatuses } from "@/lib/operations-teacher-status";
 import { computeTeacherWorkloadToday, LIGHT_LOAD_MAX_PERIODS } from "@/lib/operations-teacher-workload";
 import { computeNeedsAttention, type NeedsAttentionInputs } from "@/lib/operations-attention";
@@ -339,8 +339,8 @@ describe("computeTeacherWorkloadToday", () => {
 });
 
 // ── PART 14: needs attention priority ordering ────────────────────────────────
-const CURRENT_PERIOD_BASE = { status: "IN_PERIOD", periodNumber: 2, label: "P2", runningClasses: 0, normal: 0, substituted: 0, uncovered: 0, teachersInClass: 0, teachersFree: 0, teachersUnavailable: 0, uncoveredDetails: [] } as const;
-const NEXT_PERIOD_BASE = { hasNextPeriod: true, periodNumber: 3, label: "P3", startTime: "09:30", startsInMinutes: 30, scheduled: 0, unavailableTeacherLectures: 0, covered: 0, uncovered: 0, riskLevel: "NONE", uncoveredDetails: [] } as const;
+const CURRENT_PERIOD_BASE = { status: "IN_PERIOD" as const, periodNumber: 2, label: "P2", runningClasses: 0, normal: 0, substituted: 0, uncovered: 0, teachersInClass: 0, teachersFree: 0, teachersUnavailable: 0, uncoveredDetails: [] as UncoveredLectureDetail[] };
+const NEXT_PERIOD_BASE = { hasNextPeriod: true, periodNumber: 3, label: "P3", startTime: "09:30", startsInMinutes: 30, scheduled: 0, unavailableTeacherLectures: 0, covered: 0, uncovered: 0, riskLevel: "NONE" as const, uncoveredDetails: [] as UncoveredLectureDetail[] };
 
 function baseAttentionInputs(overrides: Partial<NeedsAttentionInputs> = {}): NeedsAttentionInputs {
   return {

@@ -126,6 +126,13 @@ export default function FeesClient({ initialStructures, initialPayments, initial
   });
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [receiptDialog, setReceiptDialog] = useState(false);
+  const [selectedReceiptPayment, setSelectedReceiptPayment] = useState<FeePayment | null>(null);
+
+  function handleViewReceipt(payment: FeePayment) {
+    setSelectedReceiptPayment(payment);
+    setReceiptDialog(true);
+  }
 
   const feeAccounts = useMemo(
     () =>
@@ -443,7 +450,45 @@ export default function FeesClient({ initialStructures, initialPayments, initial
                                   {payment.referenceNumber ? ` · Ref: ${payment.referenceNumber}` : ""}
                                 </p>
                               </div>
-                              <p className="text-gray-400">{payment.receiptNumber || "No receipt"}</p>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-[10px] text-blue-600 hover:text-blue-800 px-2 font-semibold"
+                                  onClick={() => handleViewReceipt({
+                                    id: payment.id,
+                                    amount: payment.amount,
+                                    paidAt: payment.paidAt ? String(payment.paidAt) : null,
+                                    method: payment.method,
+                                    referenceNumber: payment.referenceNumber,
+                                    notes: null,
+                                    receiptNumber: payment.receiptNumber || null,
+                                    status: payment.status,
+                                    studentId: account.studentId,
+                                    feeStructureId: account.feeStructureId,
+                                    createdAt: payment.createdAt ? String(payment.createdAt) : "",
+                                    paymentGateway: null,
+                                    gatewayPaymentId: null,
+                                    student: {
+                                      name: account.student.name,
+                                      rollNo: account.student.rollNo ?? "—",
+                                      section: {
+                                        name: account.student.section.name,
+                                        class: {
+                                          name: account.student.section.class.name,
+                                        }
+                                      }
+                                    },
+                                    feeStructure: {
+                                      name: account.feeStructure.name,
+                                      amount: account.feeStructure.amount,
+                                    },
+                                    recordedBy: null,
+                                  })}
+                                >
+                                  Receipt
+                                </Button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -508,12 +553,22 @@ export default function FeesClient({ initialStructures, initialPayments, initial
                       </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold text-gray-900">₹{p.amount.toLocaleString("en-IN")}</p>
-                    <p className="text-xs text-gray-400">{p.paidAt ? format(new Date(p.paidAt), "dd MMM yyyy") : "No payment date"}</p>
-                    <p className="mt-0.5 text-[10px] text-gray-400">
-                      {p.recordedBy ? `By ${p.recordedBy.name}` : p.paymentGateway ? "Legacy gateway entry" : "Manual entry"}
-                    </p>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="font-bold text-gray-900">₹{p.amount.toLocaleString("en-IN")}</p>
+                      <p className="text-xs text-gray-400">{p.paidAt ? format(new Date(p.paidAt), "dd MMM yyyy") : "No payment date"}</p>
+                      <p className="mt-0.5 text-[10px] text-gray-400">
+                        {p.recordedBy ? `Recorded by: ${p.recordedBy.name}` : p.paymentGateway ? "Online Payment" : "Manual Entry"}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs font-semibold"
+                      onClick={() => handleViewReceipt(p)}
+                    >
+                      Receipt
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -692,6 +747,180 @@ export default function FeesClient({ initialStructures, initialPayments, initial
               {paymentSaving ? "Recording..." : "Record"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={receiptDialog} onOpenChange={setReceiptDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Fee Payment Receipt</DialogTitle>
+          </DialogHeader>
+          {selectedReceiptPayment && (
+            <div className="space-y-6 py-4">
+              {/* Receipt Content Area */}
+              <div id="fee-receipt-print-area" className="border border-gray-200 rounded-xl p-5 bg-white space-y-4">
+                {/* Header */}
+                <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-base">SchoolSync ERP</h4>
+                    <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Fee Receipt</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-mono font-semibold text-gray-700 bg-gray-100/70 px-2 py-0.5 rounded">
+                      {selectedReceiptPayment.receiptNumber || `REC-${selectedReceiptPayment.id.slice(0, 8).toUpperCase()}`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Details grid */}
+                <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs">
+                  <div>
+                    <p className="text-gray-400 font-medium">Student Name</p>
+                    <p className="font-bold text-gray-800">{selectedReceiptPayment.student.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400 font-medium">Class / Section</p>
+                    <p className="font-bold text-gray-800">
+                      Class {selectedReceiptPayment.student.section.class.name} — Sec {selectedReceiptPayment.student.section.name}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400 font-medium">Roll Number</p>
+                    <p className="font-semibold text-gray-800">{selectedReceiptPayment.student.rollNo}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400 font-medium">Fee Category</p>
+                    <p className="font-semibold text-gray-800">{selectedReceiptPayment.feeStructure.name}</p>
+                  </div>
+                </div>
+
+                {/* Amount Section */}
+                <div className="bg-gray-50/80 rounded-xl p-3 flex justify-between items-center border border-gray-100 mt-2">
+                  <div>
+                    <p className="text-[10px] uppercase font-bold tracking-wider text-gray-400">Amount Paid</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {selectedReceiptPayment.paidAt ? format(new Date(selectedReceiptPayment.paidAt), "dd MMM yyyy") : "—"}
+                    </p>
+                  </div>
+                  <p className="text-xl font-bold text-gray-950">₹{selectedReceiptPayment.amount.toLocaleString("en-IN")}</p>
+                </div>
+
+                {/* Additional Info */}
+                <div className="grid grid-cols-2 gap-3 text-[11px] pt-1 text-gray-500">
+                  <div>
+                    <span className="font-medium text-gray-400">Payment Mode:</span>{" "}
+                    <span className="font-semibold">
+                      {selectedReceiptPayment.method ? (METHOD_LABELS[selectedReceiptPayment.method as ManualFeePaymentMethod] || selectedReceiptPayment.method) : "Manual"}
+                    </span>
+                  </div>
+                  {selectedReceiptPayment.referenceNumber && (
+                    <div>
+                      <span className="font-medium text-gray-400">Reference:</span>{" "}
+                      <span className="font-mono font-semibold">{selectedReceiptPayment.referenceNumber}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footnote */}
+                <div className="text-[10px] text-gray-400 text-center border-t border-gray-100 pt-3">
+                  This is a computer-generated receipt. No signature is required.
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setReceiptDialog(false)}>
+                  Close
+                </Button>
+                <Button className="flex-1 gap-2" onClick={() => {
+                  const printWindow = window.open("", "_blank");
+                  if (printWindow) {
+                    printWindow.document.write(`
+                      <html>
+                        <head>
+                          <title>Receipt - ${selectedReceiptPayment.receiptNumber || 'REC-' + selectedReceiptPayment.id.slice(0, 8).toUpperCase()}</title>
+                          <style>
+                            body { font-family: system-ui, sans-serif; padding: 40px; color: #111; }
+                            .border { border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; max-width: 480px; margin: 0 auto; }
+                            .flex { display: flex; justify-content: space-between; align-items: start; }
+                            .border-b { border-bottom: 1px solid #f3f4f6; padding-bottom: 12px; margin-bottom: 16px; }
+                            .grid { display: grid; grid-template-cols: 1fr 1fr; gap: 12px; }
+                            .text-xs { font-size: 12px; }
+                            .text-sm { font-size: 14px; }
+                            .text-xl { font-size: 20px; font-weight: bold; }
+                            .font-bold { font-weight: bold; }
+                            .font-semibold { font-weight: 600; }
+                            .text-gray-400 { color: #9ca3af; }
+                            .text-gray-500 { color: #6b7280; }
+                            .text-gray-700 { color: #374151; }
+                            .bg-gray-100 { background-color: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
+                            .bg-muted-box { background-color: #f9fafb; padding: 12px; border-radius: 8px; border: 1px solid #f3f4f6; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
+                            .text-center { text-align: center; }
+                            .mt-2 { margin-top: 8px; }
+                            .pt-3 { padding-top: 12px; border-top: 1px solid #f3f4f6; margin-top: 16px; }
+                            @media print { body { padding: 0; } .border { border: none; } }
+                          </style>
+                        </head>
+                        <body>
+                          <div class="border">
+                            <div class="flex border-b">
+                              <div>
+                                <h4 class="font-bold" style="margin:0;font-size:18px;">SchoolSync ERP</h4>
+                                <p style="margin:2px 0 0 0;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;">Fee Receipt</p>
+                              </div>
+                              <div style="text-align:right;">
+                                <span class="bg-gray-100 font-bold" style="font-size:11px;">${selectedReceiptPayment.receiptNumber || 'REC-' + selectedReceiptPayment.id.slice(0, 8).toUpperCase()}</span>
+                              </div>
+                            </div>
+                            <div class="grid" style="margin-top:16px;">
+                              <div>
+                                <div class="text-gray-500 text-xs">Student Name</div>
+                                <div class="font-bold text-sm">${selectedReceiptPayment.student.name}</div>
+                              </div>
+                              <div>
+                                <div class="text-gray-500 text-xs">Class / Section</div>
+                                <div class="font-bold text-sm">Class ${selectedReceiptPayment.student.section.class.name} — Sec ${selectedReceiptPayment.student.section.name}</div>
+                              </div>
+                              <div style="margin-top:8px;">
+                                <div class="text-gray-500 text-xs">Roll Number</div>
+                                <div class="font-semibold text-xs">${selectedReceiptPayment.student.rollNo}</div>
+                              </div>
+                              <div style="margin-top:8px;">
+                                <div class="text-gray-500 text-xs">Fee Category</div>
+                                <div class="font-semibold text-xs">${selectedReceiptPayment.feeStructure.name}</div>
+                              </div>
+                            </div>
+                            <div class="bg-muted-box">
+                              <div>
+                                <div style="font-size:9px;color:#6b7280;text-transform:uppercase;">Amount Paid</div>
+                                <div style="font-size:11px;color:#6b7280;">${selectedReceiptPayment.paidAt ? format(new Date(selectedReceiptPayment.paidAt), "dd MMM yyyy") : "—"}</div>
+                              </div>
+                              <div class="text-xl">₹${selectedReceiptPayment.amount.toLocaleString("en-IN")}</div>
+                            </div>
+                            <div class="flex mt-2" style="font-size:10px;color:#4b5563;">
+                              <div>
+                                <span class="text-gray-400">Payment Mode:</span> ${selectedReceiptPayment.method ? (METHOD_LABELS[selectedReceiptPayment.method as ManualFeePaymentMethod] || selectedReceiptPayment.method) : "Manual"}
+                              </div>
+                              ${selectedReceiptPayment.referenceNumber ? `<div><span class="text-gray-400">Reference:</span> ${selectedReceiptPayment.referenceNumber}</div>` : ''}
+                            </div>
+                            <div class="text-center text-gray-400 pt-3" style="font-size:9px;">
+                              This is a computer-generated receipt. No signature is required.
+                            </div>
+                          </div>
+                          <script>
+                            window.onload = function() { window.print(); window.close(); }
+                          </script>
+                        </body>
+                      </html>
+                    `);
+                    printWindow.document.close();
+                  }
+                }}>
+                  Print Receipt
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

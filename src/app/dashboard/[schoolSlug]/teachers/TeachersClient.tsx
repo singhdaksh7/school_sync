@@ -339,13 +339,11 @@ export default function TeachersClient({ initialTeachers, initialClasses, school
               </div>
             )}
 
-            {!editing && (
-              <p className="text-xs text-gray-400 bg-blue-50 px-3 py-2 rounded border border-blue-100">
-                If email is provided, an invite link will be generated so the teacher can set a password and access the portal.
-              </p>
-            )}
+            <p className="text-xs text-gray-500 bg-blue-50/70 p-3 rounded-xl border border-blue-100/50 mt-1">
+              If an email is provided, the teacher will receive or use an invite/access flow to set up portal access.
+            </p>
           </div>
-          <DialogFooter>
+          <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={save} disabled={saving}>{saving ? "Saving..." : editing ? "Save Changes" : "Add Teacher"}</Button>
           </DialogFooter>

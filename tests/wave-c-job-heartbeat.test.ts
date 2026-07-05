@@ -205,7 +205,9 @@ describe("job lease heartbeat — claim-token authority (src/lib/jobs.ts)", () =
 // identifiable: it's the ONLY call site that patches `leaseExpiresAt` alone
 // (claim/progress/complete/fail always touch other fields too).
 function countHeartbeatOnlyCalls(updateManyMock: ReturnType<typeof vi.fn>): number {
-  return updateManyMock.mock.calls.filter(([arg]: [{ data: Record<string, unknown> }]) => {
+  return updateManyMock.mock.calls.filter((callArgs: unknown[]) => {
+    const arg = callArgs[0] as { data?: Record<string, unknown> } | undefined;
+    if (!arg?.data) return false;
     const keys = Object.keys(arg.data);
     return keys.length === 1 && keys[0] === "leaseExpiresAt";
   }).length;

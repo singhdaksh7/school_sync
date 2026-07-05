@@ -1,5 +1,5 @@
 "use client";
-
+ 
 import { useState } from "react";
 import { CalendarOff, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,13 +8,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { format, isAfter, startOfToday } from "date-fns";
-
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+ 
 interface Holiday { id: string; name: string; date: string }
-
+ 
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
+ 
 interface Props { initialHolidays: Holiday[]; schoolId: string }
-
+ 
 export default function HolidaysClient({ initialHolidays, schoolId }: Props) {
   const [holidays, setHolidays] = useState<Holiday[]>(initialHolidays);
   const [loading, setLoading] = useState(false);
@@ -22,6 +23,8 @@ export default function HolidaysClient({ initialHolidays, schoolId }: Props) {
   const [form, setForm] = useState({ name: "", date: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [holidayToDelete, setHolidayToDelete] = useState<string | null>(null);
 
   async function fetchData() {
     setLoading(true);
@@ -43,7 +46,6 @@ export default function HolidaysClient({ initialHolidays, schoolId }: Props) {
   }
 
   async function deleteHoliday(id: string) {
-    if (!confirm("Remove this holiday?")) return;
     await fetch(`/api/schools/${schoolId}/holidays/${id}`, { method: "DELETE" });
     fetchData();
   }
@@ -109,7 +111,7 @@ export default function HolidaysClient({ initialHolidays, schoolId }: Props) {
                           <p className="text-xs text-gray-400">{format(d, "EEEE")}</p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-red-600" onClick={() => deleteHoliday(h.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-red-600" onClick={() => { setHolidayToDelete(h.id); setDeleteConfirmOpen(true); }}><Trash2 className="w-3.5 h-3.5" /></Button>
                     </div>
                   );
                 })}
@@ -136,6 +138,21 @@ export default function HolidaysClient({ initialHolidays, schoolId }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Holiday"
+        description="Are you sure you want to remove this holiday from the school calendar? This will make the day active for scheduling and attendance logs."
+        confirmText="Remove Holiday"
+        cancelText="Cancel"
+        isDestructive
+        onConfirm={() => {
+          if (holidayToDelete) {
+            void deleteHoliday(holidayToDelete);
+          }
+        }}
+      />
     </div>
   );
 }

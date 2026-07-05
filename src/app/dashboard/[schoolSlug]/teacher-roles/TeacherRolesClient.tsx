@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Plus, Trash2, ShieldCheck, UserPlus, X } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { Plus, Trash2, ShieldCheck, UserPlus, X, ShieldAlert, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -64,7 +65,75 @@ export default function TeacherRolesClient({
 }: Props) {
   const [roles, setRoles] = useState<Role[]>(initialRoles);
   const [teachers, setTeachers] = useState<TeacherItem[]>(initialTeachers);
+  const [activeTab, setActiveTab] = useState<"roles" | "delegation">("roles");
   const modules = useMemo(() => Object.keys(catalog), [catalog]);
+
+  const [delegationLoading, setDelegationLoading] = useState(false);
+  const [delegationSaving, setDelegationSaving] = useState(false);
+  const [delegationConfig, setDelegationConfig] = useState({
+    primaryTeacherId: "",
+    alternate1TeacherId: "",
+    alternate2TeacherId: "",
+    activeOperationsHeadTeacherId: null as string | null,
+    activeReasonCode: null as string | null,
+  });
+
+  const fetchDelegationConfig = async () => {
+    setDelegationLoading(true);
+    try {
+      const res = await fetch(`/api/schools/${schoolId}/operational-roles/teacher-operations`);
+      if (res.ok) {
+        const data = await res.json();
+        setDelegationConfig({
+          primaryTeacherId: data.primaryTeacherId || "",
+          alternate1TeacherId: data.alternate1TeacherId || "",
+          alternate2TeacherId: data.alternate2TeacherId || "",
+          activeOperationsHeadTeacherId: data.activeOperationsHeadTeacherId || null,
+          activeReasonCode: data.activeReasonCode || null,
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDelegationLoading(false);
+    }
+  };
+
+  const saveDelegationConfig = async () => {
+    setDelegationSaving(true);
+    try {
+      const ids = [delegationConfig.primaryTeacherId, delegationConfig.alternate1TeacherId, delegationConfig.alternate2TeacherId].filter(Boolean);
+      const uniques = new Set(ids);
+      if (ids.length !== uniques.size) {
+        alert("Validation Error: Cannot select duplicate teachers in the chain of command configuration.");
+        setDelegationSaving(false);
+        return;
+      }
+
+      const res = await fetch(`/api/schools/${schoolId}/operational-roles/teacher-operations`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(delegationConfig),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Operations delegation chain updated successfully.");
+        fetchDelegationConfig();
+      } else {
+        alert(data.error || "Failed to save configuration.");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDelegationSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "delegation") {
+      fetchDelegationConfig();
+    }
+  }, [activeTab]);
 
   // Create-role dialog state
   const [roleOpen, setRoleOpen] = useState(false);
@@ -264,8 +333,32 @@ export default function TeacherRolesClient({
         </div>
       </div>
 
-      {/* Roles list */}
-      <section className="space-y-3">
+      {/* Tab Switcher */}
+      <div className="flex border-b border-gray-150 mb-6 gap-2">
+        <button
+          onClick={() => setActiveTab("roles")}
+          className={cn(
+            "pb-3 text-sm font-semibold border-b-2 px-4 transition-colors",
+            activeTab === "roles" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900"
+          )}
+        >
+          Custom Roles & Permissions
+        </button>
+        <button
+          onClick={() => setActiveTab("delegation")}
+          className={cn(
+            "pb-3 text-sm font-semibold border-b-2 px-4 transition-colors",
+            activeTab === "delegation" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900"
+          )}
+        >
+          Operations Delegation Chain
+        </button>
+      </div>
+
+      {activeTab === "roles" ? (
+        <>
+          {/* Roles list */}
+          <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Roles</h2>
         {roles.length === 0 ? (
           <Card>
@@ -352,6 +445,89 @@ export default function TeacherRolesClient({
           </CardContent>
         </Card>
       </section>
+        </>
+      ) : (
+        <div className="max-w-xl">
+          <Card className="border border-gray-150 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-1.5"><ShieldAlert className="w-5 h-5 text-blue-600" /> Operations Delegation Chain of Command</CardTitle>
+              <CardDescription>Setup alternative operations administrators to manage daily tasks.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {delegationLoading ? (
+                <div className="py-6 text-center text-gray-400 text-xs">Loading delegation chain...</div>
+              ) : (
+                <>
+                  {delegationConfig.activeOperationsHeadTeacherId && (
+                    <div className="p-3 border border-blue-200 bg-blue-50/30 rounded-xl text-xs text-blue-900 leading-normal flex items-start gap-2.5">
+                      <ShieldCheck className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-bold">Effective Operations Head Today:</p>
+                        <p className="mt-0.5">
+                          {teachers.find((t) => t.id === delegationConfig.activeOperationsHeadTeacherId)?.name || "Unknown Teacher"}
+                        </p>
+                        {delegationConfig.activeReasonCode && (
+                          <p className="mt-1 font-semibold text-blue-700">Reason: {delegationConfig.activeReasonCode}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label>Primary Operations Head</Label>
+                      <Select
+                        value={delegationConfig.primaryTeacherId || "__none__"}
+                        onValueChange={(v) => setDelegationConfig((prev) => ({ ...prev, primaryTeacherId: v === "__none__" ? "" : v }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select primary head" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">None</SelectItem>
+                          {teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>First Backup Head (Alternate 1)</Label>
+                      <Select
+                        value={delegationConfig.alternate1TeacherId || "__none__"}
+                        onValueChange={(v) => setDelegationConfig((prev) => ({ ...prev, alternate1TeacherId: v === "__none__" ? "" : v }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select alternate 1" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">None</SelectItem>
+                          {teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Second Backup Head (Alternate 2)</Label>
+                      <Select
+                        value={delegationConfig.alternate2TeacherId || "__none__"}
+                        onValueChange={(v) => setDelegationConfig((prev) => ({ ...prev, alternate2TeacherId: v === "__none__" ? "" : v }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select alternate 2" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">None</SelectItem>
+                          {teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-2 border-t">
+                    <Button onClick={saveDelegationConfig} disabled={delegationSaving}>
+                      {delegationSaving ? "Saving..." : "Save Configuration"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Create-role dialog */}
       <Dialog open={roleOpen} onOpenChange={setRoleOpen}>

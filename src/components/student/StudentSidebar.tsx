@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -36,6 +37,21 @@ interface StudentSidebarProps {
 export default function StudentSidebar({ schoolName, collapsed = false, onClose }: StudentSidebarProps) {
   const pathname = usePathname();
   const { t } = useTranslation();
+
+  const [poweredBy, setPoweredBy] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/branding")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data && data.poweredBySchoolSync !== undefined) {
+          setPoweredBy(data.poweredBySchoolSync);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   return (
     <aside
@@ -115,21 +131,23 @@ export default function StudentSidebar({ schoolName, collapsed = false, onClose 
       </nav>
 
       {/* Footer */}
-      <div className="p-3">
-        <div
-          className={cn(
-            "flex items-center justify-center gap-1.5 rounded-xl border border-sidebar-border bg-muted/40 px-3 py-2.5 text-[11px] text-muted-foreground",
-            collapsed && "px-0"
-          )}
-        >
-          <Sparkles className="h-3 w-3 text-primary" />
-          {!collapsed && (
-            <span>
-              {t("common.poweredBy")} <span className="font-bold text-foreground">SchoolSync</span>
-            </span>
-          )}
+      {poweredBy && (
+        <div className="p-3">
+          <div
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-xl border border-sidebar-border bg-muted/40 px-3 py-2.5 text-[11px] text-muted-foreground",
+              collapsed && "px-0"
+            )}
+          >
+            <Sparkles className="h-3 w-3 text-primary" />
+            {!collapsed && (
+              <span>
+                {t("common.poweredBy")} <span className="font-bold text-foreground">SchoolSync</span>
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </aside>
   );
 }

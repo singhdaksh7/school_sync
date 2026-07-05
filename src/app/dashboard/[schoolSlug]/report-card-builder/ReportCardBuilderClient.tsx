@@ -194,6 +194,50 @@ export default function ReportCardBuilderClient({ schoolId, classes, initialTemp
     setNotice("Template saved.");
   }
 
+  async function uploadTemplateAsset(kind: "logo" | "signature" | "stamp", file: File) {
+    if (!form?.id) {
+      setError("Please save the template first before uploading assets.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const formData = new FormData();
+      formData.append("kind", kind);
+      formData.append("file", file);
+
+      const res = await fetch(`/api/schools/${schoolId}/report-card-templates/${form.id}/assets`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.code === "UPLOAD_QUOTA_EXCEEDED") {
+          setError("Upload quota exceeded. Please upgrade your SchoolSync subscription.");
+        } else {
+          setError(data.error || `Failed to upload ${kind}.`);
+        }
+        return;
+      }
+      
+      setForm((prev: Template | null) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          logoUrl: kind === "logo" ? data.file.url : prev.logoUrl,
+          principalSignatureUrl: kind === "signature" ? data.file.url : prev.principalSignatureUrl,
+          stampUrl: kind === "stamp" ? data.file.url : prev.stampUrl,
+        };
+      });
+      setNotice(`${kind} uploaded successfully.`);
+    } catch (e) {
+      setError("Network connection failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(template: Template) {
     if (!confirm(`Delete template "${template.name}"? Existing report cards keep their saved snapshot.`)) return;
     setBusy(true);
@@ -498,9 +542,9 @@ export default function ReportCardBuilderClient({ schoolId, classes, initialTemp
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField label="School Logo URL" value={form.logoUrl} onChange={(v) => update("logoUrl", v)} />
-                  <TextField label="Principal Signature URL" value={form.principalSignatureUrl} onChange={(v) => update("principalSignatureUrl", v)} />
-                  <TextField label="School Stamp URL" value={form.stampUrl} onChange={(v) => update("stampUrl", v)} />
+                  <UploadField label="School Logo URL" value={form.logoUrl} onChange={(v) => update("logoUrl", v)} onUpload={(file) => uploadTemplateAsset("logo", file)} disabled={busy || isNew} />
+                  <UploadField label="Principal Signature URL" value={form.principalSignatureUrl} onChange={(v) => update("principalSignatureUrl", v)} onUpload={(file) => uploadTemplateAsset("signature", file)} disabled={busy || isNew} />
+                  <UploadField label="School Stamp URL" value={form.stampUrl} onChange={(v) => update("stampUrl", v)} onUpload={(file) => uploadTemplateAsset("stamp", file)} disabled={busy || isNew} />
                   <TextField label="Background Image URL" value={form.backgroundImageUrl} onChange={(v) => update("backgroundImageUrl", v)} />
                   <TextField label="Watermark Text" value={form.watermarkText} onChange={(v) => update("watermarkText", v)} />
                   <TextField label="Footer Text" value={form.footerText} onChange={(v) => update("footerText", v)} />
@@ -643,6 +687,49 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
       <div className="flex gap-2">
         <Input type="color" className="w-14 px-1" value={value} onChange={(e) => onChange(e.target.value)} />
         <Input value={value} onChange={(e) => onChange(e.target.value)} />
+      </div>
+    </div>
+  );
+}
+
+function UploadField({ 
+  label, 
+  value, 
+  onChange, 
+  onUpload, 
+  disabled 
+}: { 
+  label: string; 
+  value: string | null; 
+  onChange: (v: string) => void; 
+  onUpload: (f: File) => void; 
+  disabled: boolean; 
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <div className="flex gap-2">
+        <Input 
+          value={value ?? ""} 
+          onChange={(e) => onChange(e.target.value)} 
+          className="flex-1 text-xs" 
+          placeholder="https://example.com/image.png"
+        />
+        <div className="relative overflow-hidden shrink-0">
+          <Button variant="outline" size="sm" type="button" disabled={disabled} className="h-9 text-xs">
+            Upload
+          </Button>
+          <input
+            type="file"
+            accept="image/*"
+            disabled={disabled}
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onUpload(file);
+            }}
+          />
+        </div>
       </div>
     </div>
   );

@@ -17,9 +17,10 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
-  Plus, Trash2, Wand2, CheckCircle, ArrowLeft, ArrowRight,
+  Plus, Trash2, Wand2, Wand2 as SparklesIcon, CheckCircle, ArrowLeft, ArrowRight,
   RefreshCw, Sparkles, Settings2, Layers, Shuffle, AlertTriangle, X, Users, CalendarClock, Edit3,
 } from "lucide-react";
+import SmartTimetableWorkspace from "@/components/timetable/SmartTimetableWorkspace";
 
 type Teacher = { id: string; name: string; subject: string | null };
 type Section = { id: string; name: string };
@@ -58,17 +59,17 @@ type RankedTeacher = { id: string; name: string; subject: string | null; periods
 const DAY_NAMES = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const SUBJECT_COLORS = [
-  "bg-blue-100 text-blue-800 border-blue-200",
-  "bg-green-100 text-green-800 border-green-200",
-  "bg-purple-100 text-purple-800 border-purple-200",
-  "bg-orange-100 text-orange-800 border-orange-200",
-  "bg-pink-100 text-pink-800 border-pink-200",
-  "bg-teal-100 text-teal-800 border-teal-200",
-  "bg-yellow-100 text-yellow-800 border-yellow-200",
-  "bg-indigo-100 text-indigo-800 border-indigo-200",
-  "bg-red-100 text-red-800 border-red-200",
-  "bg-cyan-100 text-cyan-800 border-cyan-200",
-];
+  { bg: "bg-indigo-50",  border: "border-indigo-200",  accent: "border-l-indigo-400",  name: "text-indigo-900",  sub: "text-indigo-500",  dot: "bg-indigo-400",  badge: "bg-indigo-100 text-indigo-700"  },
+  { bg: "bg-emerald-50", border: "border-emerald-200", accent: "border-l-emerald-400", name: "text-emerald-900", sub: "text-emerald-600", dot: "bg-emerald-400", badge: "bg-emerald-100 text-emerald-700" },
+  { bg: "bg-amber-50",   border: "border-amber-200",   accent: "border-l-amber-400",   name: "text-amber-900",   sub: "text-amber-600",   dot: "bg-amber-400",   badge: "bg-amber-100 text-amber-700"   },
+  { bg: "bg-rose-50",    border: "border-rose-200",    accent: "border-l-rose-400",    name: "text-rose-900",    sub: "text-rose-500",    dot: "bg-rose-400",    badge: "bg-rose-100 text-rose-700"    },
+  { bg: "bg-violet-50",  border: "border-violet-200",  accent: "border-l-violet-400",  name: "text-violet-900",  sub: "text-violet-500",  dot: "bg-violet-400",  badge: "bg-violet-100 text-violet-700"  },
+  { bg: "bg-teal-50",    border: "border-teal-200",    accent: "border-l-teal-400",    name: "text-teal-900",    sub: "text-teal-600",    dot: "bg-teal-400",    badge: "bg-teal-100 text-teal-700"    },
+  { bg: "bg-orange-50",  border: "border-orange-200",  accent: "border-l-orange-400",  name: "text-orange-900",  sub: "text-orange-600",  dot: "bg-orange-400",  badge: "bg-orange-100 text-orange-700"  },
+  { bg: "bg-sky-50",     border: "border-sky-200",     accent: "border-l-sky-400",     name: "text-sky-900",     sub: "text-sky-500",     dot: "bg-sky-400",     badge: "bg-sky-100 text-sky-700"     },
+  { bg: "bg-pink-50",    border: "border-pink-200",    accent: "border-l-pink-400",    name: "text-pink-900",    sub: "text-pink-500",    dot: "bg-pink-400",    badge: "bg-pink-100 text-pink-700"    },
+  { bg: "bg-lime-50",    border: "border-lime-200",    accent: "border-l-lime-400",    name: "text-lime-900",    sub: "text-lime-600",    dot: "bg-lime-400",    badge: "bg-lime-100 text-lime-700"    },
+] as const;
 
 let idCounter = 0;
 const newId = () => `subj-${Date.now()}-${++idCounter}`;
@@ -97,6 +98,7 @@ export default function CustomTimetableClient({
   periodsPerDay: defaultPeriods,
 }: Props) {
   const params = useParams<{ schoolSlug: string }>();
+  const [workspaceMode, setWorkspaceMode] = useState<"MANUAL" | "SMART">("MANUAL");
   const [step, setStep] = useState(1);
 
   // Step 1
@@ -380,8 +382,32 @@ export default function CustomTimetableClient({
         </p>
       </div>
 
-      {/* Step indicator */}
-      <div className="flex items-center gap-1 mb-8">
+      {/* Workspace Selector */}
+      <div className="flex border-b border-gray-150 mb-6 gap-2">
+        <button
+          onClick={() => setWorkspaceMode("MANUAL")}
+          className={cn(
+            "pb-3 text-sm font-semibold border-b-2 px-4 transition-colors",
+            workspaceMode === "MANUAL" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900"
+          )}
+        >
+          Basic Custom Generator
+        </button>
+        <button
+          onClick={() => setWorkspaceMode("SMART")}
+          className={cn(
+            "pb-3 text-sm font-semibold border-b-2 px-4 transition-colors",
+            workspaceMode === "SMART" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900"
+          )}
+        >
+          Smart Timetable Workspace
+        </button>
+      </div>
+
+      {workspaceMode === "MANUAL" ? (
+        <>
+          {/* Step indicator */}
+          <div className="flex items-center gap-1 mb-8">
         {STEPS.map(({ n, label }, i) => (
           <div key={n} className="flex items-center">
             <div className={cn(
@@ -683,8 +709,10 @@ export default function CustomTimetableClient({
               <div className="flex flex-wrap gap-2 mb-4">
                 {subjects.map((s) => {
                   const teacher = initialTeachers.find((t) => t.id === s.teacherId);
+                  const color = getSubjectColor(s.name);
                   return (
-                    <span key={s.id} className={cn("px-2.5 py-1 rounded-full text-xs font-medium border", getSubjectColor(s.name))}>
+                    <span key={s.id} className={cn("inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border", color.badge)}>
+                      <span className={cn("w-2 h-2 rounded-full", color.dot)} />
                       {s.name} · {teacher?.name ?? "—"} ({s.weeklyCount}/wk
                       {s.dailyMode === "consecutive" ? ", 2×consecutive" : ", 1/day"})
                     </span>
@@ -692,38 +720,50 @@ export default function CustomTimetableClient({
                 })}
               </div>
 
-              <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <div className="overflow-x-auto rounded-xl border border-border shadow-sm">
                 <table className="w-full border-collapse text-sm min-w-[480px]">
                   <thead>
-                    <tr className="bg-gray-50">
-                      <th className="p-3 text-left text-gray-500 font-medium border-b border-gray-200 w-20">Period</th>
+                    <tr className="bg-gradient-to-r from-gray-50 to-gray-100">
+                      <th className="w-16 px-3 py-3.5 text-xs font-bold text-gray-400 uppercase tracking-wider text-center border-b border-r border-gray-200">Period</th>
                       {Array.from({ length: daysPerWeek }, (_, i) => (
-                        <th key={i + 1} className="p-3 text-center text-gray-700 font-semibold border-b border-gray-200">{DAY_NAMES[i + 1]}</th>
+                        <th key={i + 1} className="px-3 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider text-center border-b border-r border-gray-200 last:border-r-0">{DAY_NAMES[i + 1]}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {buildGrid().map((row, pIdx) => (
-                      <tr key={pIdx} className="border-b border-gray-100 last:border-0">
-                        <td className="p-3 text-gray-400 font-medium text-center text-xs">P{pIdx + 1}</td>
+                      <tr key={pIdx} className="group/row hover:bg-gray-50/60 transition-colors">
+                        <td className="px-3 py-2 text-center border-b border-r border-gray-100 last:border-b-0 bg-gray-50/80">
+                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white border border-gray-200 text-xs font-bold text-gray-500 shadow-sm">
+                            {pIdx + 1}
+                          </span>
+                        </td>
                         {row.map((cell, dIdx) => {
                           // Check if this cell continues from the cell above (consecutive visual)
                           const grid = buildGrid();
                           const above = pIdx > 0 ? grid[pIdx - 1][dIdx] : null;
                           const isConsecutiveWith = above && above.subject === cell?.subject && above.teacherId === cell?.teacherId;
                           return (
-                            <td key={dIdx} className="p-1.5">
+                            <td key={dIdx} className="p-1.5 border-b border-r border-gray-100 last:border-r-0">
                               {cell ? (
                                 <div className={cn(
-                                  "rounded-md p-2 text-center border",
-                                  getSubjectColor(cell.subject),
-                                  isConsecutiveWith && "rounded-t-none border-t-0 -mt-2 pt-1"
+                                  "rounded-xl p-2.5 border border-l-[3px] transition-all hover:shadow-sm min-h-[58px]",
+                                  getSubjectColor(cell.subject).bg,
+                                  getSubjectColor(cell.subject).border,
+                                  getSubjectColor(cell.subject).accent,
+                                  isConsecutiveWith && "rounded-t-none border-t-0 -mt-2 pt-1.5"
                                 )}>
-                                  <div className="font-semibold text-xs leading-tight">{cell.subject}</div>
-                                  <div className="text-xs opacity-70 truncate mt-0.5">{cell.teacherName}</div>
+                                  <p className={cn("text-xs font-bold leading-tight truncate", getSubjectColor(cell.subject).name)}>
+                                    {cell.teacherName}
+                                  </p>
+                                  <p className={cn("text-[10px] font-medium mt-0.5 truncate", getSubjectColor(cell.subject).sub)}>
+                                    {cell.subject}
+                                  </p>
                                 </div>
                               ) : (
-                                <div className="rounded-md p-2 text-center bg-gray-50 text-gray-300 text-xs border border-dashed border-gray-200">—</div>
+                                <div className="min-h-[58px] rounded-xl border border-dashed border-gray-200 flex items-center justify-center bg-gray-50/50">
+                                  <span className="text-[10px] text-gray-300 select-none">—</span>
+                                </div>
                               )}
                             </td>
                           );
@@ -772,6 +812,15 @@ export default function CustomTimetableClient({
             </div>
           </CardContent>
         </Card>
+      )}
+        </>
+      ) : (
+        <SmartTimetableWorkspace
+          schoolId={schoolId}
+          initialClasses={initialClasses}
+          initialTeachers={initialTeachers}
+          schoolSlug={params.schoolSlug}
+        />
       )}
 
       {/* ── Scheduling Options Dialog ── */}

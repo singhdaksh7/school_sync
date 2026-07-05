@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import Link from "next/link";
-import { Plus, Pencil, Trash2, GraduationCap, Search, Upload, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Trash2, GraduationCap, Search, Upload, ExternalLink, AlertTriangle, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { parseCSV } from "@/lib/csv-parse";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 
 interface Section { id: string; name: string; class: { id: string; name: string } }
 interface ClassWithSections { id: string; name: string; sections: { id: string; name: string }[] }
@@ -46,6 +47,8 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [refreshError, setRefreshError] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [studentToDelete, setStudentToDelete] = useState<string | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [csvLoading, setCsvLoading] = useState(false);
@@ -116,7 +119,6 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
   }
 
   async function deleteStudent(id: string) {
-    if (!confirm("Delete this student?")) return;
     setStudents((prev) => prev.filter((s) => s.id !== id));
     try {
       const res = await fetch(`/api/schools/${schoolId}/students/${id}`, { method: "DELETE" });
@@ -251,7 +253,7 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-purple-600" title="View profile"><ExternalLink className="w-3 h-3" /></Button>
                           </Link>
                           <Button variant="ghost" size="icon" onClick={() => openEdit(s)} className="h-7 w-7 text-gray-400 hover:text-blue-600"><Pencil className="w-3 h-3" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => deleteStudent(s.id)} className="h-7 w-7 text-gray-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => { setStudentToDelete(s.id); setDeleteConfirmOpen(true); }} className="h-7 w-7 text-gray-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></Button>
                         </div>
                       </div>
                       {s.admissionNo && (
@@ -347,33 +349,93 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
       </Dialog>
 
       <Dialog open={csvDialogOpen} onOpenChange={setCsvDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>CSV Import Results</DialogTitle></DialogHeader>
-          <div className="max-h-72 overflow-y-auto space-y-1.5 py-2">
-            {csvResults.map((r, i) => (
-              <div key={i} className={`flex items-start justify-between px-3 py-2 rounded-lg text-sm ${r.success ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
-                <div>
-                  <p className="font-medium">{r.name}</p>
-                  {!r.success && r.error && <p className="text-xs mt-0.5 opacity-75">{r.error}</p>}
-                </div>
-                <Badge variant={r.success ? "default" : "destructive"} className="text-xs ml-2 shrink-0">
-                  {r.success ? "Added" : "Failed"}
-                </Badge>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>CSV Import Summary</DialogTitle>
+          </DialogHeader>
+          
+          {/* Summary metrics bar */}
+          <div className="grid grid-cols-2 gap-4 rounded-xl border border-border bg-muted/40 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-100 text-green-700">
+                <CheckCircle className="h-5 w-5" />
               </div>
-            ))}
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Successful</p>
+                <p className="text-lg font-bold text-foreground">{csvResults.filter((r) => r.success).length} rows added</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-100 text-red-700">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Failed</p>
+                <p className="text-lg font-bold text-foreground">{csvResults.filter((r) => !r.success).length} rows failed</p>
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-gray-400">
-            {csvResults.filter((r) => r.success).length} added, {csvResults.filter((r) => !r.success).length} failed
-          </p>
-          <p className="text-xs text-gray-400 bg-blue-50 px-3 py-2 rounded border border-blue-100">
-            CSV format: <code>name,admissionno,rollno,class,section,email,phone,fathername,fatherphone,mothername,motherphone</code>
-            <br />Each row needs at least one of fatherphone/motherphone so the student can log in.
-          </p>
+
+          <div className="max-h-72 overflow-y-auto space-y-4 py-2 pr-1">
+            {/* Failures List (if any) */}
+            {csvResults.some(r => !r.success) && (
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-red-700 uppercase tracking-wider">Errors & Failed Rows</p>
+                <div className="space-y-1.5">
+                  {csvResults.filter(r => !r.success).map((r, i) => (
+                    <div key={i} className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50/50 p-3 text-sm">
+                      <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-red-900">{r.name}</p>
+                        {r.error && <p className="text-xs text-red-700 mt-1 font-medium bg-white/70 px-2.5 py-1.5 rounded border border-red-100">{r.error}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Success List (if any) */}
+            {csvResults.some(r => r.success) && (
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Successfully Imported</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {csvResults.filter(r => r.success).map((r, i) => (
+                    <div key={i} className="flex items-center gap-2 rounded-lg border border-green-100 bg-green-50/30 px-3 py-2 text-xs text-green-800">
+                      <CheckCircle className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                      <span className="font-medium truncate">{r.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-xs text-blue-800">
+            <span className="font-bold">Required CSV columns:</span> <code>name, admissionno, rollno, class, section, email, phone, fathername, fatherphone, mothername, motherphone</code>
+            <br />
+            <span className="font-semibold mt-1 block">Authentication rule:</span> Each row must provide at least one of <code>fatherphone</code> or <code>motherphone</code> to generate parental/student portal login credentials.
+          </div>
           <DialogFooter>
-            <Button onClick={() => setCsvDialogOpen(false)}>Close</Button>
+            <Button onClick={() => setCsvDialogOpen(false)} className="w-full sm:w-auto">Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Student"
+        description="Are you sure you want to delete this student? All their academic results, attendance logs, and homework submissions will be permanently deleted. This action cannot be undone."
+        confirmText="Delete Student"
+        cancelText="Cancel"
+        isDestructive
+        onConfirm={() => {
+          if (studentToDelete) {
+            void deleteStudent(studentToDelete);
+          }
+        }}
+      />
     </div>
   );
 }

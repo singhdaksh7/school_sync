@@ -395,7 +395,22 @@ function SubmitProofDialog({
     setUploadProgress(0);
     setError(null);
     try {
-      const receiptData = await readFileAsDataUrl(file);
+      setUploadProgress(10);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const uploadRes = await fetch(`/api/schools/${schoolId}/payment-proofs/receipt`, {
+        method: "POST",
+        body: formData,
+      });
+      const uploadData = await uploadRes.json().catch(() => null);
+      if (!uploadRes.ok) {
+        throw new Error(uploadData?.error || "Receipt file upload failed.");
+      }
+      setUploadProgress(60);
+
+      const receiptFileId = uploadData.file.id;
+
       const res = await fetch(`/api/schools/${schoolId}/payment-proofs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -405,13 +420,12 @@ function SubmitProofDialog({
           amount: Number(amount),
           transactionRef,
           notes,
-          receiptData,
-          receiptFileName: file.name,
-          receiptMimeType: file.type,
+          receiptFileId,
         }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Request failed");
+      setUploadProgress(100);
       onOpenChange(false);
       onSubmitted();
     } catch (e) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Award, Download, ListTree, Send, Wand2 } from "lucide-react";
+import { Award, Download, ListTree, Loader2, Send, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -43,6 +43,13 @@ export default function TeacherReportCardsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [subjectsCard, setSubjectsCard] = useState<ReportCard | null>(null);
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+  // Background job tracking (batch generation goes async above
+  // REPORT_CARD_SYNC_LIMIT students — see /api/teacher/report-cards/generate).
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
+  const [jobProgress, setJobProgress] = useState(0);
+  const [jobDeduplicated, setJobDeduplicated] = useState(false);
   const { has: hasPermission } = useTeacherPermissions();
   const canGenerate = hasPermission("REPORT_CARDS", "GENERATE");
   const canPublish = hasPermission("REPORT_CARDS", "PUBLISH");
@@ -66,8 +73,50 @@ export default function TeacherReportCardsPage() {
     const timer = window.setTimeout(() => {
       void loadReportCards();
     }, 0);
+    fetch("/api/teacher/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data?.school?.id && setSchoolId(data.school.id))
+      .catch(() => {});
     return () => window.clearTimeout(timer);
   }, []);
+
+  // Poll a queued batch-generation job at the frozen contract's cadence:
+  // 0-1min every 5s, 1-5min every 15s, 5min+ every 30s, stop on a terminal
+  // status. A deduplicated response (an identical job already existed) is
+  // tracked exactly the same way as one this request created.
+  useEffect(() => {
+    if (!activeJobId || !schoolId) return;
+    const startTime = Date.now();
+    let timer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/schools/${schoolId}/jobs/${activeJobId}`);
+        if (!res.ok) return;
+        const job = await res.json();
+        setJobStatus(job.status);
+        setJobProgress(Math.round(((job.processedItems + job.failedItems) / (job.totalItems || 1)) * 100));
+
+        if (job.status === "COMPLETED" || job.status === "FAILED") {
+          setActiveJobId(null);
+          setSaving(false);
+          await loadReportCards();
+          return;
+        }
+
+        const elapsed = Date.now() - startTime;
+        const delay = elapsed > 300000 ? 30000 : elapsed > 60000 ? 15000 : 5000;
+        timer = setTimeout(poll, delay);
+      } catch (e) {
+        console.error(e);
+        setActiveJobId(null);
+        setSaving(false);
+      }
+    };
+
+    poll();
+    return () => clearTimeout(timer);
+  }, [activeJobId, schoolId]);
 
   async function generateCards() {
     if (!examSchemeId) return;
@@ -79,11 +128,22 @@ export default function TeacherReportCardsPage() {
       body: JSON.stringify({ examSchemeId, classTeacherRemark: remark }),
     });
     const data = await res.json();
-    setSaving(false);
     if (!res.ok) {
+      setSaving(false);
       setError(data.error || t("teacherReportCards.couldNotGenerate"));
       return;
     }
+    if (data.mode === "job") {
+      // Large batch: enqueued as a background job (or an identical one was
+      // already running) — track it, don't treat the 202 as a finished sync
+      // generation.
+      setActiveJobId(data.jobId);
+      setJobStatus(data.status || "QUEUED");
+      setJobProgress(0);
+      setJobDeduplicated(Boolean(data.deduplicated));
+      return;
+    }
+    setSaving(false);
     await loadReportCards();
   }
 
@@ -113,6 +173,23 @@ export default function TeacherReportCardsPage() {
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {activeJobId && (
+        <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl space-y-2.5">
+          <div className="flex items-center justify-between text-xs text-blue-800 font-semibold">
+            <span className="flex items-center gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              {jobDeduplicated
+                ? "An identical batch generation is already running — tracking its progress..."
+                : "Report card batch generation running in the background..."}
+            </span>
+            <span>{jobStatus} ({jobProgress}%)</span>
+          </div>
+          <div className="w-full bg-blue-100 rounded-full h-2">
+            <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${jobProgress}%` }} />
+          </div>
         </div>
       )}
 

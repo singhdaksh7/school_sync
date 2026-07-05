@@ -128,6 +128,7 @@
     "goToSchoolLogin": "स्कूल लॉगिन पर जाएं"
   },
   "nav": {
+    "schoolOperations": "स्कूल संचालन",
     "dashboard": "डैशबोर्ड",
     "overview": "अवलोकन",
     "classesAndSections": "कक्षाएं और सेक्शन",
@@ -175,7 +176,12 @@
     "poweredBySchoolSync": "SchoolSync द्वारा संचालित",
     "teacherPortal": "शिक्षक पोर्टल",
     "studentPortal": "छात्र पोर्टल",
-    "founderPortal": "फाउंडर पोर्टल"
+    "founderPortal": "फाउंडर पोर्टल",
+    "groupPeople": "लोग",
+    "groupAcademics": "अकादमिक",
+    "groupExams": "परीक्षा और परिणाम",
+    "groupFinance": "प्रबंधन और वित्त",
+    "groupSystem": "सिस्टम और सेटिंग्स"
   },
   "founder": {
     "platformOverview": "प्लेटफ़ॉर्म अवलोकन",

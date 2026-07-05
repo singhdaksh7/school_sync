@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BarChart3, BookOpenCheck, CheckCircle2, ExternalLink, FileCheck2, Save, XCircle, CheckCheck, Square } from "lucide-react";
+import { BarChart3, BookOpenCheck, CheckCircle2, ExternalLink, FileCheck2, Save, XCircle, CheckCheck, Square, Paperclip } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,6 +70,7 @@ interface Homework {
   dueDate: string;
   deadlineAt: string;
   attachmentUrl: string | null;
+  attachmentFileId: string | null;
   status: HomeworkStatus;
   section: { name: string; class: { name: string } };
   teacher: { name: string };
@@ -120,6 +121,20 @@ function toDeadlineIso(value: string) {
 
 export default function TeacherHomeworkPage() {
   const { t } = useTranslation();
+  const [schoolId, setSchoolId] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/teacher/me")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.error && data.school?.id) {
+          setSchoolId(data.school.id);
+        }
+      });
+  }, []);
+
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [homework, setHomework] = useState<Homework[]>([]);
   const [selectedAssignmentKey, setSelectedAssignmentKey] = useState("");
@@ -259,16 +274,42 @@ export default function TeacherHomeworkPage() {
       }),
     });
     const data = await res.json();
-    setSaving(false);
     if (!res.ok) {
+      setSaving(false);
       setMessage(data.error || t("teacherHomework.couldNotCreate"));
       return;
     }
+
+    const homeworkId = data.id;
+
+    if (attachmentFile && schoolId && homeworkId) {
+      setUploadingAttachment(true);
+      const formData = new FormData();
+      formData.append("file", attachmentFile);
+      
+      const fileRes = await fetch(`/api/schools/${schoolId}/homework/${homeworkId}/attachment`, {
+        method: "POST",
+        body: formData,
+      });
+      const fileData = await fileRes.json();
+      setUploadingAttachment(false);
+
+      if (!fileRes.ok) {
+        if (fileData.code === "UPLOAD_QUOTA_EXCEEDED") {
+          setMessage("Homework metadata created, but attachment upload failed because the upload quota has been exceeded.");
+        } else {
+          setMessage(`Homework created, but attachment upload failed: ${fileData.error}`);
+        }
+      }
+    }
+
+    setSaving(false);
     setForm({ title: "", description: "", dueDate: "", attachmentUrl: "" });
+    setAttachmentFile(null);
     setSelectedAssignmentKey("");
     await loadHomework();
-    setSelectedHomeworkId(data.id);
-    setMessage(t("teacherHomework.homeworkCreated"));
+    setSelectedHomeworkId(homeworkId);
+    if (!message) setMessage(t("teacherHomework.homeworkCreated"));
   }
 
   async function updateHomeworkStatus(id: string, status: HomeworkStatus) {
@@ -403,9 +444,15 @@ export default function TeacherHomeworkPage() {
           </Select>
           <Input placeholder={t("teacherHomework.titlePlaceholder")} value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} />
           <Input aria-label={t("teacherHomework.dueDate")} type="date" value={form.dueDate} onChange={(e) => setForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
-          <Input placeholder={t("teacherHomework.attachmentUrlPlaceholder")} value={form.attachmentUrl} onChange={(e) => setForm((prev) => ({ ...prev, attachmentUrl: e.target.value }))} />
-          <Button onClick={createHomework} disabled={saving || assignments.length === 0} className="gap-2">
-            <BookOpenCheck className="w-4 h-4" /> {saving ? t("teacherHomework.saving") : t("teacherHomework.assign")}
+          <div className="flex flex-col gap-1">
+            <Input 
+              type="file" 
+              className="text-xs h-9" 
+              onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)} 
+            />
+          </div>
+          <Button onClick={createHomework} disabled={saving || uploadingAttachment || assignments.length === 0} className="gap-2">
+            <BookOpenCheck className="w-4 h-4" /> {saving ? t("teacherHomework.saving") : uploadingAttachment ? "Uploading file..." : t("teacherHomework.assign")}
           </Button>
           <textarea
             className="md:col-span-5 min-h-20 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -465,6 +512,15 @@ export default function TeacherHomeworkPage() {
                   <span>-</span>
                   <span>{t("teacherHomework.deadlineLabel", { date: formatDate(selectedHomework.deadlineAt) })}</span>
                 </div>
+                {selectedHomework.attachmentUrl ? (
+                  <div className="text-xs">
+                    <a href={selectedHomework.attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-blue-600 font-semibold hover:underline">
+                      <Paperclip className="w-3.5 h-3.5" /> View attachment file
+                    </a>
+                  </div>
+                ) : selectedHomework.attachmentFileId ? (
+                  <p className="text-xs text-gray-400 italic">Attachment no longer available (expired/deleted)</p>
+                ) : null}
                 {!canEdit && (
                   <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
                     {selectedHomework.status === "CANCELLED"

@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import {
   GraduationCap, LayoutDashboard, ClipboardCheck, CalendarDays,
   FileText, BookOpenCheck, RefreshCw, DoorOpen, ClipboardList,
-  User, X, Award, Sparkles, BookCheck,
+  User, X, Award, Sparkles, BookCheck, ShieldAlert
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { useState, useEffect } from "react";
 
 export interface TeacherNavItem {
   href: string;
@@ -40,6 +41,53 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
   const pathname = usePathname();
   const { t } = useTranslation();
   const base = "/teacher";
+
+  const [isEffectiveHead, setIsEffectiveHead] = useState(false);
+  const [poweredBy, setPoweredBy] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/branding")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data && data.poweredBySchoolSync !== undefined) {
+          setPoweredBy(data.poweredBySchoolSync);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const checkStatus = async () => {
+      try {
+        const res = await fetch("/api/teacher/operational-roles/self-status");
+        if (res.ok) {
+          const data = await res.json();
+          if (active) setIsEffectiveHead(!!data.isEffectiveOperationsHead);
+        } else {
+          if (active) setIsEffectiveHead(false);
+        }
+      } catch (e) {
+        if (active) setIsEffectiveHead(false);
+      }
+    };
+    checkStatus();
+    const interval = setInterval(checkStatus, 30000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const navItems = isEffectiveHead
+    ? [
+        { href: "/teacher", labelKey: "nav.dashboard", icon: LayoutDashboard },
+        { href: "/teacher/operations", labelKey: "nav.schoolOperations", icon: ShieldAlert },
+        ...TEACHER_NAV_ITEMS.filter((item) => item.href !== "/teacher"),
+      ]
+    : TEACHER_NAV_ITEMS;
 
   return (
     <aside
@@ -91,7 +139,7 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
 
       {/* Navigation */}
       <nav aria-label="Teacher navigation" className="no-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-1">
-        {TEACHER_NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = pathname === item.href || (item.href !== base && pathname.startsWith(item.href));
           const label = t(item.labelKey);
           return (
@@ -119,21 +167,23 @@ export default function TeacherSidebar({ schoolName, collapsed = false, onClose 
       </nav>
 
       {/* Footer */}
-      <div className="p-3">
-        <div
-          className={cn(
-            "flex items-center justify-center gap-1.5 rounded-xl border border-sidebar-border bg-muted/40 px-3 py-2.5 text-[11px] text-muted-foreground",
-            collapsed && "px-0"
-          )}
-        >
-          <Sparkles className="h-3 w-3 text-primary" />
-          {!collapsed && (
-            <span>
-              {t("common.poweredBy")} <span className="font-bold text-foreground">SchoolSync</span>
-            </span>
-          )}
+      {poweredBy && (
+        <div className="p-3">
+          <div
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-xl border border-sidebar-border bg-muted/40 px-3 py-2.5 text-[11px] text-muted-foreground",
+              collapsed && "px-0"
+            )}
+          >
+            <Sparkles className="h-3 w-3 text-primary" />
+            {!collapsed && (
+              <span>
+                {t("common.poweredBy")} <span className="font-bold text-foreground">SchoolSync</span>
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </aside>
   );
 }

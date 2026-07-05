@@ -1,5 +1,5 @@
 "use client";
-
+ 
 import { useState } from "react";
 import { Megaphone, Plus, Trash2, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,11 +8,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
-
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+ 
 interface Announcement { id: string; title: string; body: string; publishedAt: string; createdBy: { name: string } }
-
+ 
 interface Props { initialAnnouncements: Announcement[]; schoolId: string }
-
+ 
 export default function AnnouncementsClient({ initialAnnouncements, schoolId }: Props) {
   const [announcements, setAnnouncements] = useState<Announcement[]>(initialAnnouncements);
   const [loading, setLoading] = useState(false);
@@ -20,6 +21,8 @@ export default function AnnouncementsClient({ initialAnnouncements, schoolId }: 
   const [form, setForm] = useState({ title: "", body: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [announcementToDelete, setAnnouncementToDelete] = useState<string | null>(null);
 
   async function fetchData() {
     setLoading(true);
@@ -43,7 +46,6 @@ export default function AnnouncementsClient({ initialAnnouncements, schoolId }: 
   }
 
   async function deleteAnnouncement(id: string) {
-    if (!confirm("Delete this announcement?")) return;
     await fetch(`/api/schools/${schoolId}/announcements/${id}`, { method: "DELETE" });
     fetchData();
   }
@@ -81,7 +83,7 @@ export default function AnnouncementsClient({ initialAnnouncements, schoolId }: 
                       </div>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-red-600 flex-shrink-0" onClick={() => deleteAnnouncement(a.id)}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-red-600 flex-shrink-0" onClick={() => { setAnnouncementToDelete(a.id); setDeleteConfirmOpen(true); }}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -108,6 +110,21 @@ export default function AnnouncementsClient({ initialAnnouncements, schoolId }: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Announcement"
+        description="Are you sure you want to delete this announcement? It will be removed from all student and teacher dashboards immediately. This action cannot be undone."
+        confirmText="Delete notice"
+        cancelText="Cancel"
+        isDestructive
+        onConfirm={() => {
+          if (announcementToDelete) {
+            void deleteAnnouncement(announcementToDelete);
+          }
+        }}
+      />
     </div>
   );
 }

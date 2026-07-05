@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useTeacherPermissions } from "@/hooks/useTeacherPermissions";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { cn } from "@/lib/utils";
 
 interface Student { id: string; name: string; rollNo: string }
 interface TeachingSection { sectionId: string; sectionName: string; className: string; subject: string; students: Student[] }
@@ -86,6 +87,15 @@ export default function TeacherMarksPage() {
       setSaved(true); setTimeout(() => setSaved(false), 2500);
     }
   }
+
+  const anyValidationError = !!(
+    selectedSection &&
+    selectedExam &&
+    selectedSection.students.some((s) => {
+      const val = parseFloat(marks[s.id] || "");
+      return !isNaN(val) && (val > selectedExam.maxMarks || val < 0);
+    })
+  );
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
@@ -189,44 +199,62 @@ export default function TeacherMarksPage() {
                       <span>{t("teacherMarks.classSection", { className: selectedSection.className, sectionName: selectedSection.sectionName })}</span>
                       <span className="text-gray-400 font-normal text-sm ml-2">{t("teacherMarks.examMax", { exam: selectedExam.name, max: selectedExam.maxMarks })}</span>
                     </div>
-                    <Button onClick={submitMarks} disabled={saving || !canEnterMarks} className="gap-2">
+                    <Button onClick={submitMarks} disabled={saving || !canEnterMarks || anyValidationError} className="gap-2">
                       <Save className="w-4 h-4" />
                       {saving ? t("teacherMarks.saving") : saved ? t("teacherMarks.saved") : t("teacherMarks.submitMarks")}
                     </Button>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="pt-0">
+                <CardContent className="pt-0 space-y-4">
+                  {anyValidationError && (
+                    <div className="text-xs text-red-700 bg-red-50/70 p-3 rounded-xl border border-red-200/50 flex items-center gap-2">
+                      <span>⚠️ Marks cannot exceed the maximum limit ({selectedExam.maxMarks}) or be less than 0. Please correct the highlighted rows.</span>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
-                    {selectedSection.students.map((student) => (
-                      <div key={student.id} className="flex items-center gap-4 py-2.5 px-4 rounded-lg border border-gray-100 hover:bg-gray-50">
-                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-xs font-bold text-green-700 shrink-0">
-                          {student.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                    {selectedSection.students.map((student) => {
+                      const val = parseFloat(marks[student.id] || "");
+                      const hasError = !isNaN(val) && (val > selectedExam.maxMarks || val < 0);
+                      return (
+                        <div key={student.id} className={cn(
+                          "flex items-center gap-4 py-2.5 px-4 rounded-lg border hover:bg-gray-50 transition-colors",
+                          hasError ? "border-red-200 bg-red-50/20" : "border-gray-100"
+                        )}>
+                          <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-xs font-bold text-green-700 shrink-0">
+                            {student.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900 text-sm">{student.name}</p>
+                            <p className="text-xs text-gray-400">{t("teacherMarks.rollLabel", { roll: student.rollNo })}</p>
+                          </div>
+                          {existing[student.id] !== undefined && (
+                            <Badge variant="secondary" className="text-xs">{t("teacherMarks.prevLabel", { marks: existing[student.id] })}</Badge>
+                          )}
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={selectedExam.maxMarks}
+                                step={0.5}
+                                className={cn("w-20 text-center h-8", hasError && "border-red-500 focus-visible:ring-red-500 text-red-950")}
+                                placeholder="—"
+                                value={marks[student.id] ?? ""}
+                                onChange={(e) => setMarks((prev) => ({ ...prev, [student.id]: e.target.value }))}
+                              />
+                              <span className="text-xs text-gray-400 shrink-0">/ {selectedExam.maxMarks}</span>
+                            </div>
+                            {hasError && (
+                              <span className="text-[10px] text-red-600 font-semibold mt-0.5">Exceeds limit</span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-gray-900 text-sm">{student.name}</p>
-                          <p className="text-xs text-gray-400">{t("teacherMarks.rollLabel", { roll: student.rollNo })}</p>
-                        </div>
-                        {existing[student.id] !== undefined && (
-                          <Badge variant="secondary" className="text-xs">{t("teacherMarks.prevLabel", { marks: existing[student.id] })}</Badge>
-                        )}
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            min={0}
-                            max={selectedExam.maxMarks}
-                            step={0.5}
-                            className="w-20 text-center h-8"
-                            placeholder="—"
-                            value={marks[student.id] ?? ""}
-                            onChange={(e) => setMarks((prev) => ({ ...prev, [student.id]: e.target.value }))}
-                          />
-                          <span className="text-xs text-gray-400 shrink-0">/ {selectedExam.maxMarks}</span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   <div className="mt-4 flex justify-end">
-                    <Button onClick={submitMarks} disabled={saving || !canEnterMarks} className="gap-2">
+                    <Button onClick={submitMarks} disabled={saving || !canEnterMarks || anyValidationError} className="gap-2">
                       <Save className="w-4 h-4" />
                       {saving ? t("teacherMarks.saving") : saved ? t("teacherMarks.saved") : t("teacherMarks.submitMarks")}
                     </Button>

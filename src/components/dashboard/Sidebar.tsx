@@ -45,37 +45,73 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
   // stays visible — flags are opt-out, not opt-in.
   const flagEnabled = (key: FeatureFlagKeyValue) => featureFlags?.[key] ?? true;
 
-  const navItems = [
-    { href: base, label: t("nav.overview"), icon: LayoutDashboard, show: true },
-    { href: `${base}/classes`, label: t("nav.classesAndSections"), icon: BookOpen, show: true },
-    { href: `${base}/teachers`, label: t("nav.teachers"), icon: Users, show: true },
-    { href: `${base}/teachers/deleted`, label: t("nav.deletedTeachers"), icon: UserMinus, show: isOwnerOrAdmin },
-    { href: `${base}/teacher-roles`, label: t("nav.teacherRoles"), icon: ShieldCheck, show: isOwnerOrAdmin && flagEnabled("TEACHER_PERMISSIONS") },
-    { href: `${base}/students`, label: t("nav.students"), icon: GraduationCap, show: true },
-    { href: `${base}/attendance`, label: t("nav.attendance"), icon: ClipboardCheck, show: flagEnabled("ATTENDANCE") },
-    { href: `${base}/reports`, label: t("nav.attendanceReports"), icon: BarChart2, show: flagEnabled("ATTENDANCE") },
-    { href: `${base}/timetable`, label: t("nav.timetable"), icon: CalendarDays, show: true },
-    { href: `${base}/custom-timetable`, label: t("nav.customTimetable"), icon: Wand2, show: isOwnerOrAdmin },
-    { href: `${base}/homework`, label: t("nav.homework"), icon: BookOpenCheck, show: flagEnabled("HOMEWORK") },
-    { href: `${base}/subjects`, label: t("nav.subjectMaster"), icon: ListTree, show: isOwnerOrAdmin },
-    { href: `${base}/exam-schemes`, label: t("nav.examSchemes"), icon: FileText, show: true },
-    { href: `${base}/exam-milestones`, label: t("nav.examMilestones"), icon: BookCheck, show: flagEnabled("NOTEBOOK_CHECKING") },
-    { href: `${base}/results`, label: t("nav.results"), icon: Award, show: true },
-    { href: `${base}/report-cards`, label: t("nav.reportCards"), icon: ClipboardList, show: flagEnabled("REPORT_CARDS") },
-    { href: `${base}/report-card-builder`, label: t("nav.reportCardBuilder"), icon: LayoutTemplate, show: isOwnerOrAdmin && flagEnabled("REPORT_CARD_BUILDER") },
-    { href: `${base}/fees`, label: t("nav.feeManagement"), icon: IndianRupee, show: flagEnabled("FEES") },
-    { href: `${base}/leaves`, label: t("nav.leaveManagement"), icon: ClipboardList, show: true },
-    { href: `${base}/substitutions`, label: t("nav.substitutions"), icon: Replace, show: true },
-    { href: `${base}/analytics`, label: t("nav.analytics"), icon: PieChart, show: flagEnabled("ANALYTICS") },
-    { href: `${base}/teachers/workload`, label: t("nav.teacherWorkload"), icon: BarChart, show: true },
-    { href: `${base}/announcements`, label: t("nav.announcements"), icon: Megaphone, show: true },
-    { href: `${base}/holidays`, label: t("nav.holidayCalendar"), icon: CalendarOff, show: true },
-    { href: `${base}/audit-logs`, label: t("nav.auditLogs"), icon: Activity, show: isOwnerOrAdmin },
-    { href: `${base}/invite`, label: t("nav.inviteStaff"), icon: UserPlus, show: isOwnerOrAdmin },
-    { href: `${base}/branding`, label: t("nav.branding"), icon: Palette, show: isOwnerOrAdmin && flagEnabled("WHITE_LABEL") },
-    { href: `${base}/billing`, label: t("nav.billing"), icon: CreditCard, show: isOwnerOrAdmin },
-    { href: `${base}/settings`, label: t("nav.settings"), icon: Settings, show: isOwnerOrAdmin },
-  ].filter((item) => item.show);
+  const groups = [
+    {
+      id: "overview",
+      title: null,
+      items: [
+        { href: base, label: t("nav.overview"), icon: LayoutDashboard, show: true },
+      ]
+    },
+    {
+      id: "people",
+      title: t("nav.groupPeople"),
+      items: [
+        { href: `${base}/students`, label: t("nav.students"), icon: GraduationCap, show: true },
+        { href: `${base}/teachers`, label: t("nav.teachers"), icon: Users, show: true },
+        { href: `${base}/teachers/deleted`, label: t("nav.deletedTeachers"), icon: UserMinus, show: isOwnerOrAdmin },
+        { href: `${base}/teacher-roles`, label: t("nav.teacherRoles"), icon: ShieldCheck, show: isOwnerOrAdmin && flagEnabled("TEACHER_PERMISSIONS") },
+      ]
+    },
+    {
+      id: "academics",
+      title: t("nav.groupAcademics"),
+      items: [
+        { href: `${base}/classes`, label: t("nav.classesAndSections"), icon: BookOpen, show: true },
+        { href: `${base}/subjects`, label: t("nav.subjectMaster"), icon: ListTree, show: isOwnerOrAdmin },
+        { href: `${base}/timetable`, label: t("nav.timetable"), icon: CalendarDays, show: true },
+        { href: `${base}/custom-timetable`, label: t("nav.customTimetable"), icon: Wand2, show: isOwnerOrAdmin },
+        { href: `${base}/homework`, label: t("nav.homework"), icon: BookOpenCheck, show: flagEnabled("HOMEWORK") },
+        { href: `${base}/attendance`, label: t("nav.attendance"), icon: ClipboardCheck, show: flagEnabled("ATTENDANCE") },
+        { href: `${base}/reports`, label: t("nav.attendanceReports"), icon: BarChart2, show: flagEnabled("ATTENDANCE") },
+        { href: `${base}/exam-milestones`, label: t("nav.examMilestones"), icon: BookCheck, show: flagEnabled("NOTEBOOK_CHECKING") },
+      ]
+    },
+    {
+      id: "exams",
+      title: t("nav.groupExams"),
+      items: [
+        { href: `${base}/exam-schemes`, label: t("nav.examSchemes"), icon: FileText, show: true },
+        { href: `${base}/results`, label: t("nav.results"), icon: Award, show: true },
+        { href: `${base}/report-cards`, label: t("nav.reportCards"), icon: ClipboardList, show: flagEnabled("REPORT_CARDS") },
+        { href: `${base}/report-card-builder`, label: t("nav.reportCardBuilder"), icon: LayoutTemplate, show: isOwnerOrAdmin && flagEnabled("REPORT_CARD_BUILDER") },
+      ]
+    },
+    {
+      id: "finance",
+      title: t("nav.groupFinance"),
+      items: [
+        { href: `${base}/fees`, label: t("nav.feeManagement"), icon: IndianRupee, show: flagEnabled("FEES") },
+        { href: `${base}/leaves`, label: t("nav.leaveManagement"), icon: ClipboardList, show: true },
+        { href: `${base}/substitutions`, label: t("nav.substitutions"), icon: Replace, show: true },
+        { href: `${base}/announcements`, label: t("nav.announcements"), icon: Megaphone, show: true },
+        { href: `${base}/holidays`, label: t("nav.holidayCalendar"), icon: CalendarOff, show: true },
+      ]
+    },
+    {
+      id: "system",
+      title: t("nav.groupSystem"),
+      items: [
+        { href: `${base}/analytics`, label: t("nav.analytics"), icon: PieChart, show: flagEnabled("ANALYTICS") },
+        { href: `${base}/teachers/workload`, label: t("nav.teacherWorkload"), icon: BarChart, show: true },
+        { href: `${base}/audit-logs`, label: t("nav.auditLogs"), icon: Activity, show: isOwnerOrAdmin },
+        { href: `${base}/invite`, label: t("nav.inviteStaff"), icon: UserPlus, show: isOwnerOrAdmin },
+        { href: `${base}/branding`, label: t("nav.branding"), icon: Palette, show: isOwnerOrAdmin && flagEnabled("WHITE_LABEL") },
+        { href: `${base}/billing`, label: t("nav.billing"), icon: CreditCard, show: isOwnerOrAdmin },
+        { href: `${base}/settings`, label: t("nav.settings"), icon: Settings, show: isOwnerOrAdmin },
+      ]
+    }
+  ];
 
   return (
     <aside className="flex h-full w-64 flex-col bg-sidebar text-sidebar-foreground md:m-2.5 md:h-[calc(100%-1.25rem)] md:rounded-2xl md:border md:border-sidebar-border md:shadow-sm">
@@ -108,30 +144,42 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
         </div>
       </div>
 
-      <div className="px-5 pb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{t("common.menu")}</div>
-
       {/* Nav */}
-      <nav className="no-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-1">
-        {navItems.map((item) => {
-          const active = pathname === item.href || (item.href !== base && pathname.startsWith(item.href));
+      <nav className="no-scrollbar flex-1 space-y-4 overflow-y-auto px-3 py-1">
+        {groups.map((group) => {
+          const visibleItems = group.items.filter((item) => item.show);
+          if (visibleItems.length === 0) return null;
+
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                active
-                  ? "bg-primary font-semibold text-primary-foreground shadow-md shadow-primary/25"
-                  : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            <div key={group.id} className="space-y-1">
+              {group.title && (
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
+                  {group.title}
+                </div>
               )}
-            >
-              {active && (
-                <span className="absolute left-0 top-1/2 h-5 w-1 -translate-x-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden="true" />
-              )}
-              <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
-              <span className="truncate">{item.label}</span>
-              {active && <ChevronRight className="ml-auto h-3.5 w-3.5" />}
-            </Link>
+              {visibleItems.map((item) => {
+                const active = pathname === item.href || (item.href !== base && pathname.startsWith(item.href));
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      active
+                        ? "bg-primary font-semibold text-primary-foreground shadow-md shadow-primary/25"
+                        : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {active && (
+                      <span className="absolute left-0 top-1/2 h-5 w-1 -translate-x-1.5 -translate-y-1/2 rounded-full bg-primary" aria-hidden="true" />
+                    )}
+                    <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                    {active && <ChevronRight className="ml-auto h-3.5 w-3.5" />}
+                  </Link>
+                );
+              })}
+            </div>
           );
         })}
       </nav>
