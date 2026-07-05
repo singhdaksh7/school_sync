@@ -5,6 +5,7 @@ import { generateReportCardPdf } from "@/lib/report-card-pdf";
 import { reportCardInclude, reportCardToPdfInput } from "@/lib/report-cards";
 import { canAccessSchool } from "@/lib/tenant";
 import { requireSchoolFeature, isFeatureEnabled } from "@/lib/feature-flags";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 export async function GET(
   _req: Request,
@@ -18,6 +19,10 @@ export async function GET(
   }
   {
     const denied = await requireSchoolFeature(schoolId, "REPORT_CARDS");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "PDF");
     if (denied) return denied;
   }
 

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import type { BackgroundJob, JobType, JobStatus, Prisma } from "@/generated/prisma/client";
 import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
+import { hasPrismaErrorCode } from "@/lib/tenant";
 
 // Batch thresholds — above these, work MUST go async to a job.
 export const REPORT_CARD_SYNC_LIMIT = 40;
@@ -70,10 +71,18 @@ export const smartTimetableGenerationPayloadSchema = z.object({
 });
 export type SmartTimetableGenerationPayload = z.infer<typeof smartTimetableGenerationPayloadSchema>;
 
+// Recurring maintenance job — see src/lib/file-retention.ts. Triggered by the
+// internal maintenance endpoint/script (PART 21), never directly by a school user.
+export const fileRetentionCleanupPayloadSchema = z.object({
+  triggeredBy: z.enum(["MAINTENANCE_ENDPOINT", "CLI"]),
+});
+export type FileRetentionCleanupPayload = z.infer<typeof fileRetentionCleanupPayloadSchema>;
+
 export const JOB_PAYLOAD_SCHEMAS = {
   REPORT_CARD_BATCH_GENERATION: reportCardBatchPayloadSchema,
   STUDENT_BULK_IMPORT: studentBulkImportPayloadSchema,
   SMART_TIMETABLE_GENERATION: smartTimetableGenerationPayloadSchema,
+  FILE_RETENTION_CLEANUP: fileRetentionCleanupPayloadSchema,
 } satisfies Record<JobType, z.ZodTypeAny>;
 
 /** Feature entitlement required to CREATE each job type (null = no catalog gate). */
@@ -81,31 +90,63 @@ export const JOB_TYPE_FEATURE: Record<JobType, FeatureFlagKeyValue | null> = {
   REPORT_CARD_BATCH_GENERATION: "REPORT_CARDS",
   STUDENT_BULK_IMPORT: null, // student management has no catalog feature key
   SMART_TIMETABLE_GENERATION: null, // timetable module has no catalog feature key (see feature-routes.ts)
+  FILE_RETENTION_CLEANUP: null, // internal maintenance job, no catalog feature key
 };
 
 // ── Creation ─────────────────────────────────────────────────────────────────
+/**
+ * Phase 4 concurrency closure (PART 11): a plain "look up, then create if
+ * absent" dedup check (job-dedup.ts's `findExistingEquivalentJob`) is a
+ * classic TOCTOU race — two simultaneous identical requests can both see "no
+ * active equivalent job" and both create one. The DB-level backstop is a
+ * PARTIAL UNIQUE INDEX (see the
+ * `20260709000000_job_dedup_active_unique_index` migration):
+ *   CREATE UNIQUE INDEX ... ON "BackgroundJob" (schoolId, type, payloadFingerprint)
+ *   WHERE status IN ('PENDING','RUNNING') AND payloadFingerprint IS NOT NULL
+ * A COMPLETED/FAILED job is outside that partial index, so it never blocks a
+ * later legitimate equivalent job — only two simultaneously-ACTIVE duplicates
+ * are impossible. When the second concurrent create hits the unique
+ * constraint (P2002), this function re-queries for the now-guaranteed-to-exist
+ * active job and returns it instead of failing the request — the caller sees
+ * a graceful "deduplicated" result either way, whether it was ITS OWN
+ * findExistingEquivalentJob pre-check or this DB-level fallback that caught it.
+ */
 export async function createJob(input: {
   type: JobType;
   schoolId: string | null;
   createdById?: string | null;
   payload: unknown;
   totalItems: number;
-}): Promise<{ ok: true; job: BackgroundJob } | { ok: false; error: string }> {
+  /** Stable fingerprint of the normalized payload — see src/lib/job-dedup.ts. Only set by job types that opt into duplicate-active-job protection. */
+  payloadFingerprint?: string;
+}): Promise<{ ok: true; job: BackgroundJob; deduplicated?: boolean } | { ok: false; error: string }> {
   const schema = JOB_PAYLOAD_SCHEMAS[input.type];
   const parsed = schema.safeParse(input.payload);
   if (!parsed.success) return { ok: false, error: "Invalid job payload" };
 
-  const job = await prisma.backgroundJob.create({
-    data: {
-      type: input.type,
-      schoolId: input.schoolId,
-      createdById: input.createdById ?? null,
-      payload: parsed.data as Prisma.InputJsonValue,
-      totalItems: input.totalItems,
-      status: "PENDING",
-    },
-  });
-  return { ok: true, job };
+  try {
+    const job = await prisma.backgroundJob.create({
+      data: {
+        type: input.type,
+        schoolId: input.schoolId,
+        createdById: input.createdById ?? null,
+        payload: parsed.data as Prisma.InputJsonValue,
+        totalItems: input.totalItems,
+        payloadFingerprint: input.payloadFingerprint ?? null,
+        status: "PENDING",
+      },
+    });
+    return { ok: true, job };
+  } catch (err) {
+    if (input.payloadFingerprint && hasPrismaErrorCode(err, "P2002")) {
+      const existing = await prisma.backgroundJob.findFirst({
+        where: { schoolId: input.schoolId, type: input.type, payloadFingerprint: input.payloadFingerprint, status: { in: ["PENDING", "RUNNING"] } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existing) return { ok: true, job: existing, deduplicated: true };
+    }
+    throw err;
+  }
 }
 
 // ── Reads (tenant-scoped by the caller) ──────────────────────────────────────

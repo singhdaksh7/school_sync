@@ -161,6 +161,7 @@ enum JobType {
   REPORT_CARD_BATCH_GENERATION
   STUDENT_BULK_IMPORT
   SMART_TIMETABLE_GENERATION
+  FILE_RETENTION_CLEANUP
 }
 
 enum JobStatus {
@@ -194,6 +195,7 @@ model User {
   paymentProofsReviewed  PaymentProofSubmission[]   @relation("PaymentProofReviewer")
   invoicesCreated        Invoice[]                  @relation("InvoiceCreator")
   teachersDeleted        Teacher[]                  @relation("TeacherDeletedBy")
+  operationalRoleAssignmentsCreated OperationalRoleAssignment[] @relation("OperationalRoleAssignmentCreatedBy")
   passwordResetTokens    PasswordResetToken[]
   timetableDraftsCreated TimetableDraft[]           @relation("TimetableDraftCreatedBy")
   createdAt              DateTime                   @default(now())
@@ -232,6 +234,13 @@ model School {
   status                      SchoolStatus               @default(ACTIVE)
   periodsPerDay               Int                        @default(6)
   teacherAttendanceCutoffTime String                     @default("09:30")
+  // School Operations Command Center: IANA timezone identifier used for every
+  // "today"/"current period" calculation (src/lib/school-time.ts). No prior
+  // School field expressed this explicitly — the whole app has always assumed
+  // server-local time IS school-local time. This default preserves that
+  // existing implicit assumption (India-first product) rather than silently
+  // changing behavior for schools that never configure it.
+  timezone                    String                     @default("Asia/Kolkata")
   // Smart Timetable: working days per week (1=Mon..N). Combined with
   // periodsPerDay this defines the weekly slot capacity (see
   // src/lib/timetable-capacity.ts). Nullable-free with a safe default so
@@ -290,6 +299,11 @@ model School {
   teacherSubjectEligibilities  TeacherSubjectEligibility[]
   timetableSubjectRequirements TimetableSubjectRequirement[]
   timetableDrafts              TimetableDraft[]
+  authSessions                 AuthSession[]
+  authLoginEvents              AuthLoginEvent[]
+  authFailureStates            AuthFailureState[]
+  periodSchedule                SchoolPeriodSchedule[]
+  operationalRoleAssignments    OperationalRoleAssignment[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 }
@@ -402,6 +416,7 @@ model Teacher {
   subjectEligibilities      TeacherSubjectEligibility[]
   preferredForRequirements  TimetableSubjectRequirement[] @relation("PreferredTeacher")
   timetableDraftSlots       TimetableDraftSlot[]
+  operationalRoleAssignments OperationalRoleAssignment[]
   isDeleted                 Boolean                    @default(false)
   deletedAt                 DateTime?
   deletedById               String?
@@ -441,6 +456,34 @@ model TimetableSlot {
   updatedAt DateTime @updatedAt
 
   @@unique([sectionId, dayOfWeek, period])
+}
+
+/**
+ * School Operations Command Center: the minimum honest clock-time mapping for
+ * TimetableSlot.period (see src/lib/school-time.ts). Uniform across every
+ * working day (no day-specific variation) — TimetableSlot itself has no
+ * day-specific period-count variation either, so this matches the existing
+ * architecture's granularity rather than inventing a bigger academic-calendar
+ * engine. A school with NO rows here has period timing genuinely unconfigured;
+ * the resolver returns an honest "not configured" state rather than fabricating
+ * period times (see docs/school-operations-command-center.md).
+ */
+model SchoolPeriodSchedule {
+  id             String   @id @default(cuid())
+  schoolId       String
+  school         School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  periodNumber   Int
+  label          String?
+  // Zero-padded 24h "HH:MM" — deliberately a plain string (not DateTime): this
+  // is a time-of-day, not an instant, and lexicographic string comparison of
+  // zero-padded HH:MM is a correct, simple ordering — no Date/timezone parsing
+  // needed to compare "is it currently within this period".
+  startTime      String
+  endTime        String
+  isInstructional Boolean @default(true)
+
+  @@unique([schoolId, periodNumber])
+  @@index([schoolId])
 }
 
 // ── Smart Timetable ──────────────────────────────────────────────────────────
@@ -1051,6 +1094,7 @@ model Arrangement {
   createdAt           DateTime      @default(now())
 
   @@unique([date, absentTeacherId, period])
+  @@index([schoolId, date])
 }
 
 model SectionTransfer {
@@ -1164,6 +1208,48 @@ model TeacherRoleAssignment {
   @@index([teacherId])
   @@index([roleId])
   @@index([schoolId])
+}
+
+/**
+ * Teacher Operations Head & Automatic Delegation (Phase 3). An ORDERED
+ * leadership chain per (schoolId, roleType) — priority 0 is Primary, priority
+ * > 0 is an Alternate, in ascending priority order. Deliberately NOT a fixed
+ * set of School.primaryTeacherId/alternateTeacherId columns — an arbitrary
+ * number of ordered alternates must be representable.
+ *
+ * `roleType` is a plain String (not a Prisma enum) matching the existing
+ * FeeStructure.frequency precedent in this schema — new role types (e.g. a
+ * future Academic Head) can be introduced without a schema migration, while
+ * only "TEACHER_OPERATIONS" is actually used/validated in this phase (see
+ * OPERATIONAL_ROLE_TYPES in operational-roles.ts).
+ *
+ * This table is NEVER mutated by the effective-head resolver — availability
+ * (leave/attendance/deletion/effective dates) is computed dynamically at read
+ * time from already-existing facts (LeaveRequest, Attendance, Teacher.isDeleted).
+ * No permission rows are ever copied onto an alternate.
+ */
+model OperationalRoleAssignment {
+  id             String    @id @default(cuid())
+  schoolId       String
+  school         School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  roleType       String // "TEACHER_OPERATIONS" (see OPERATIONAL_ROLE_TYPES)
+  teacherId      String
+  teacher        Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  priority       Int // 0 = Primary, 1..N = Alternate 1..N, ascending = failover order
+  isEnabled      Boolean   @default(true)
+  effectiveFrom  DateTime? @db.Date
+  effectiveUntil DateTime? @db.Date
+  createdById    String?
+  createdBy      User?     @relation("OperationalRoleAssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // One assignment per teacher per role per school, and one teacher per
+  // priority slot per role per school — both DB-enforced, not just
+  // pre-validated in application code (PART 32 concurrency safety).
+  @@unique([schoolId, roleType, teacherId])
+  @@unique([schoolId, roleType, priority])
+  @@index([teacherId])
 }
 
 // ─── SaaS billing foundations (Founder portal) ───────────────────────────────
@@ -1303,6 +1389,15 @@ model StoredFile {
   visibility       StoredFileVisibility
   uploaderType     FileUploaderActorType @default(USER)
   uploaderId       String?
+  // File retention (Cost Guard). retentionPolicy classifies the category's
+  // deletion semantics; expiresAt is server-derived (never client-supplied —
+  // see src/lib/file-retention.ts) and only meaningful for EXPIRING files;
+  // deletedAt is a tombstone (logical delete) — the object is removed from
+  // storage but the row is kept for audit/idempotent-retry safety. The
+  // serving route (/api/files/[fileId]) must reject any row with deletedAt set.
+  retentionPolicy  FileRetentionPolicy   @default(REFERENCE_MANAGED)
+  expiresAt        DateTime?
+  deletedAt        DateTime?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
@@ -1316,6 +1411,96 @@ model StoredFile {
 
   @@index([schoolId, category, createdAt])
   @@index([schoolId, createdAt])
+  @@index([expiresAt, deletedAt])
+}
+
+enum FileRetentionPolicy {
+  /** Has a computed expiresAt; eligible for automatic cleanup once past it. */
+  EXPIRING
+  /** Never auto-expires (e.g. SaaS payment proofs). */
+  LONG_TERM
+  /** Retained while referenced by its owning entity; not age-deleted (e.g. report-card assets, branding images). */
+  REFERENCE_MANAGED
+}
+
+// ── Cost Guard / Session Hardening ────────────────────────────────────────────
+// See docs/cost-guard-session-architecture.md. Actor identity fields
+// (userId/teacherId/guardianId/studentId) are deliberately plain scalar
+// columns, not Prisma relations — these are high-write, ephemeral tracking
+// tables, not core domain entities; the school-tenant boundary (the field
+// that actually matters for isolation) IS a proper relation below.
+
+enum SessionActorType {
+  PARENT
+  STUDENT
+  TEACHER
+  /** SCHOOL_OWNER / SCHOOL_ADMIN / VICE_PRINCIPAL, treated as one policy bucket per product decision (see docs). */
+  ADMIN_STAFF
+}
+
+/** A revocable mobile/API session — the server-side counterpart to a signed mobile JWT's `sid` claim (see src/lib/auth-sessions.ts). Never stores the raw token. */
+model AuthSession {
+  id                   String           @id @default(cuid())
+  schoolId             String
+  school               School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  actorType            SessionActorType
+  userId               String?
+  teacherId            String?
+  guardianId           String?
+  studentId            String?
+  sessionTokenHash     String           @unique
+  deviceInstallationId String?
+  deviceName           String?
+  platform             String?
+  createdAt            DateTime         @default(now())
+  lastSeenAt           DateTime         @default(now())
+  expiresAt            DateTime
+  idleExpiresAt        DateTime?
+  revokedAt            DateTime?
+  revokeReason         String?
+
+  @@index([schoolId, actorType, userId])
+  @@index([schoolId, actorType, teacherId])
+  @@index([schoolId, actorType, guardianId])
+  @@index([schoolId, actorType, studentId])
+  @@index([expiresAt])
+}
+
+/** One row per successful credential-based login — the durable rolling-24h quota source (src/lib/auth-login-quota.ts). Bounded by createdAt-indexed queries; not an unbounded history table in practice (see retention note in docs). */
+model AuthLoginEvent {
+  id         String           @id @default(cuid())
+  schoolId   String
+  school     School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  actorType  SessionActorType
+  userId     String?
+  teacherId  String?
+  guardianId String?
+  studentId  String?
+  ipHash     String?
+  createdAt  DateTime         @default(now())
+
+  @@index([schoolId, actorType, userId, createdAt])
+  @@index([schoolId, actorType, teacherId, createdAt])
+  @@index([schoolId, actorType, guardianId, createdAt])
+  @@index([schoolId, actorType, studentId, createdAt])
+  @@index([createdAt])
+}
+
+/** Atomic failed-password escalation state per (school + normalized identifier + auth flow) bucket — never keyed on confirmed account existence (src/lib/auth-failure.ts). */
+model AuthFailureState {
+  id              String    @id @default(cuid())
+  bucketKey       String    @unique
+  schoolId        String
+  school          School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  authFlow        String
+  failureCount    Int       @default(0)
+  windowStartedAt DateTime  @default(now())
+  lockedUntil     DateTime?
+  lastFailureAt   DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  @@index([schoolId])
+  @@index([lockedUntil])
 }
 
 // Durable background-job records. Result payloads are bounded summaries only —
@@ -1338,6 +1523,10 @@ model BackgroundJob {
   claimedAt      DateTime?
   leaseExpiresAt DateTime?
   attempts       Int       @default(0)
+  // Stable hash of (type + normalized payload) — lets job creation reuse an
+  // existing PENDING/RUNNING equivalent job instead of creating a duplicate
+  // (see src/lib/job-dedup.ts). Null for job types that don't opt in.
+  payloadFingerprint String?
   createdAt      DateTime  @default(now())
   startedAt      DateTime?
   completedAt    DateTime?
@@ -1346,6 +1535,26 @@ model BackgroundJob {
   @@index([status, createdAt])
   @@index([schoolId, createdAt])
   @@index([type, status])
+  @@index([schoolId, type, status, payloadFingerprint])
+  // NOTE (Phase 4, PART 11): a PARTIAL UNIQUE INDEX also exists on
+  // (schoolId, type, payloadFingerprint) WHERE status IN ('PENDING','RUNNING')
+  // AND payloadFingerprint IS NOT NULL — hand-authored in migration
+  // 20260709000000_job_dedup_active_unique_index since Prisma's schema
+  // language has no partial-index attribute. It is intentionally NOT
+  // expressed here as a `@@unique` (which cannot express the WHERE clause);
+  // `npx prisma migrate diff`/`db pull` will never "see" it and must not be
+  // used to silently drop it. See src/lib/jobs.ts's createJob for the
+  // P2002-catch application-side half of this concurrency closure.
+  // CAVEAT (verified against real Postgres, Phase 4): standard Postgres
+  // unique indexes treat NULL as distinct from NULL, so this index does NOT
+  // dedupe two active jobs that both have schoolId = NULL. Currently
+  // harmless — every job type that sets payloadFingerprint (
+  // REPORT_CARD_BATCH_GENERATION, SMART_TIMETABLE_GENERATION) always passes
+  // a real schoolId; only FILE_RETENTION_CLEANUP uses schoolId: null, and it
+  // never sets payloadFingerprint, so it falls outside this index's WHERE
+  // clause entirely. If a future job type combines schoolId: null with
+  // payloadFingerprint-based dedup, this index would need `NULLS NOT
+  // DISTINCT` (Postgres 15+) added to actually close that case.
 }
 
 // ── Wave C: custom-domain ownership verification ─────────────────────────────

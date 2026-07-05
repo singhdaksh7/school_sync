@@ -8,6 +8,7 @@ import { moneyToNumber } from "@/lib/money";
 import { requireSchoolAccess } from "@/lib/teacher-authorization";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -17,6 +18,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
   if (!access.ok) return access.response;
   {
     const denied = await requireSchoolFeature(schoolId, "FEES");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "STANDARD_READ");
     if (denied) return denied;
   }
 
@@ -45,6 +50,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   }
   {
     const denied = await requireSchoolFeature(schoolId, "FEES");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "MUTATION");
     if (denied) return denied;
   }
 

@@ -89,6 +89,12 @@ export const FEATURE_ROUTE_RULES: RouteRule[] = [
   { pattern: /^schools\/\[schoolId\]\/teachers\/\[teacherId\]\/permissions$/, feature: "TEACHER_PERMISSIONS" },
   { pattern: /^schools\/\[schoolId\]\/teachers\/\[teacherId\]\/roles(\/|$)/, feature: "TEACHER_PERMISSIONS" },
   { pattern: /^teacher\/permissions$/, feature: "TEACHER_PERMISSIONS" },
+  // Teacher Operations Head chain CONFIGURATION only (view + replace) — the
+  // same paid "custom teacher authority" capability as custom role config.
+  // The separate .../effective and teacher self-status reads are NOT gated
+  // (see EXEMPT_ROUTE_RATIONALES) so an already-configured chain keeps
+  // resolving operationally even if this entitlement later lapses.
+  { pattern: /^schools\/\[schoolId\]\/operational-roles\/teacher-operations$/, feature: "TEACHER_PERMISSIONS" },
 
   // ── NOTEBOOK_CHECKING (exam milestones ARE the notebook-check milestones; ────
   //    exam-milestone analytics is notebook-completion data, not the ANALYTICS
@@ -141,6 +147,17 @@ export const EXEMPT_ROUTE_RATIONALES: { pattern: RegExp; reason: string }[] = [
   { pattern: /^files\/\[fileId\]$/, reason: "Cross-cutting managed-file access route; authorization is by StoredFile visibility/category (see src/lib/storage.ts), not a single catalog feature." },
   { pattern: /^schools\/\[schoolId\]\/jobs(\/|$)/, reason: "Job listing/detail/cancel is infra, not a plan feature; the job TYPE is gated at creation time (e.g. REPORT_CARD_BATCH_GENERATION requires REPORT_CARDS at the teacher/report-cards/generate call site)." },
   { pattern: /^internal\//, reason: "Internal worker endpoint, authenticated by JOB_WORKER_SECRET — never reachable by a school user." },
+  // ── Operations Command Center (PART 24) ─────────────────────────────────────
+  // Every route here answers "what is happening at this school TODAY" from
+  // deterministic queries over data that is itself already gated by its own
+  // module flag (ATTENDANCE, HOMEWORK, REPORT_CARDS, FEES) at the underlying
+  // content route. None of this is deep historical/trend analytics (that
+  // remains ANALYTICS-gated at /schools/[schoolId]/analytics) — core Today
+  // Operations must stay available regardless of the ANALYTICS flag.
+  { pattern: /^schools\/\[schoolId\]\/operations(\/|$)/, reason: "Today-only operational dashboard (current day's teacher/attendance/coverage/workload/attention state), not historical analytics — must not require the ANALYTICS plan flag." },
+  // ── Teacher Operations Head & Automatic Delegation (Phase 3) ────────────────
+  { pattern: /^schools\/\[schoolId\]\/operational-roles\/teacher-operations\/effective$/, reason: "Dynamic effective-assignee resolution, not configuration — must keep resolving for an already-configured chain even if TEACHER_PERMISSIONS later lapses." },
+  { pattern: /^teacher\/operational-roles\/self-status$/, reason: "A teacher reading their own current delegation status — dynamic resolution, same rationale as the effective-status read above." },
 ];
 
 /** First-match classification of an API route path to its gating feature, or null. */

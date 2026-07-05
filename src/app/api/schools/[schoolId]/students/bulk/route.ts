@@ -5,6 +5,7 @@ import { getStudentLimitInfo } from "@/lib/plan-limits";
 import { importStudentRows, type ImportRow } from "@/lib/student-import";
 import { createJob, isJobWorkerConfigured, STUDENT_BULK_IMPORT_SYNC_LIMIT } from "@/lib/jobs";
 import { storeJsonSource } from "@/lib/file-service";
+import { enforceUploadQuota } from "@/lib/api-cost-guard";
 
 export async function POST(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -29,6 +30,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
         { status: 503 }
       );
     }
+
+    const denied = await enforceUploadQuota({ schoolId, actorType: role ?? "USER", actorId: session.user.id }, "STUDENT_IMPORT_SOURCE");
+    if (denied) return denied;
 
     const stored = await storeJsonSource({
       category: "STUDENT_IMPORT_SOURCE",

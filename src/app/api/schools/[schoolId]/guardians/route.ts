@@ -7,6 +7,8 @@ import { normalizePhone } from "@/lib/parent-auth";
 import { prisma } from "@/lib/prisma";
 import { allStudentsBelongToSchool, canAccessSchool, hasPrismaErrorCode, sessionRole } from "@/lib/tenant";
 import { getClientIp } from "@/lib/request-ip";
+import { revokeAllSessionsForActor } from "@/lib/auth-sessions";
+import { systemClock } from "@/lib/clock";
 
 const guardianSchema = z.object({
   name: z.string().min(2),
@@ -95,6 +97,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       },
       select: { id: true, name: true, phone: true, email: true, schoolId: true },
     });
+
+    // Setting/changing a guardian's password revokes their existing mobile
+    // sessions (PART 7/29) — the old credential could be compromised or the
+    // parent may have lost access, so any session issued under it should not
+    // silently keep working.
+    if (passwordHash) {
+      await revokeAllSessionsForActor({ schoolId, actorType: "PARENT", guardianId: guardian.id }, "PASSWORD_RESET", systemClock.now());
+    }
 
     await prisma.studentGuardian.createMany({
       data: studentIds.map((studentId) => ({

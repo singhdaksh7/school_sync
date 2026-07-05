@@ -7,6 +7,7 @@ import { moneyToNumber } from "@/lib/money";
 import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 import { canAccessSchool } from "@/lib/tenant";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 import { calculateStudentFeeTotals } from "@/lib/student-fee-ledger";
 
 export async function GET(
@@ -58,6 +59,15 @@ export async function GET(
     } else {
       const denied = await requireSchoolFeature(payment.schoolId, "FEES");
       if (denied) return denied;
+    }
+    {
+      const rateDenied = await enforceActorRateLimit(
+        auth
+          ? { schoolId: auth.guardian.schoolId, actorType: "PARENT", actorId: auth.guardian.id }
+          : { schoolId: payment.schoolId, actorType: "ADMIN_STAFF", actorId: session!.user!.id! },
+        "PDF"
+      );
+      if (rateDenied) return rateDenied;
     }
 
     // Ledger context: paid-till-date across all PAID records for this

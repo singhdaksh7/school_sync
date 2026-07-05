@@ -12,6 +12,7 @@ import {
   withResolvedAttachments,
 } from "@/lib/homework";
 import { parsePagination, buildPaginationMeta } from "@/lib/pagination";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 export async function GET(
   req: Request,
@@ -25,6 +26,10 @@ export async function GET(
   }
   {
     const denied = await requireSchoolFeature(schoolId, "HOMEWORK");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "STANDARD_READ");
     if (denied) return denied;
   }
 
@@ -89,6 +94,10 @@ export async function POST(
   }
   {
     const denied = await requireSchoolFeature(schoolId, "HOMEWORK");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "MUTATION");
     if (denied) return denied;
   }
 

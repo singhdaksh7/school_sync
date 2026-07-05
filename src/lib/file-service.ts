@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { getStorageProvider, generateStorageKey, storagePublicUrl, safeFilename, StorageError } from "@/lib/storage";
 import { validateUpload, type UploadCategory } from "@/lib/upload-validation";
 import type { StoredFile, StoredFileCategory, FileUploaderActorType } from "@/generated/prisma/client";
+import type { RetentionAssignment } from "@/lib/file-retention";
 
 export type UploaderRef = { type: FileUploaderActorType; id?: string | null };
 
@@ -25,6 +26,8 @@ export async function uploadManagedFile(params: {
   declaredContentType?: string;
   bytes: Uint8Array;
   uploader: UploaderRef;
+  /** Server-derived retention (PART 17-19) — omit to keep the schema default (REFERENCE_MANAGED, no expiry). Never accept this from client input. */
+  retention?: RetentionAssignment;
 }): Promise<UploadResult> {
   const validation = validateUpload(params.category, {
     declaredContentType: params.declaredContentType,
@@ -79,6 +82,7 @@ export async function uploadManagedFile(params: {
         visibility: validation.visibility,
         uploaderType: params.uploader.type,
         uploaderId: params.uploader.id ?? null,
+        ...(params.retention ? { retentionPolicy: params.retention.retentionPolicy, expiresAt: params.retention.expiresAt } : {}),
       },
     });
     return { ok: true, file };
@@ -138,6 +142,12 @@ export async function storeJsonSource(params: {
         visibility: "TENANT_PRIVATE",
         uploaderType: params.uploader.type,
         uploaderId: params.uploader.id ?? null,
+        // EXPIRING with no expiresAt yet — the owning job hasn't reached a
+        // terminal state, so the retention window (job completion + N days)
+        // isn't knowable yet. The job handler sets expiresAt once it finishes
+        // (see job-handlers.ts STUDENT_BULK_IMPORT). Never picked up by
+        // cleanup until expiresAt is actually set (PART 19).
+        retentionPolicy: "EXPIRING",
       },
     });
     return { ok: true, file };
@@ -205,7 +215,12 @@ export async function resolveManagedOrLegacyFileUrl(
 ): Promise<string | null> {
   if (managedFileId) {
     const file = await prisma.storedFile.findUnique({ where: { id: managedFileId } });
-    if (file) return resolveDownloadUrl(file);
+    if (file && !file.deletedAt) return resolveDownloadUrl(file);
+    // The managed file reference existed and was intentionally authoritative
+    // (PART 18) — a retention-expired/deleted managed file must NOT silently
+    // resurrect a stale legacy URL. No managed file at all (never uploaded)
+    // still falls through to the legacy column below.
+    if (file?.deletedAt) return null;
   }
   return legacyUrl ?? null;
 }

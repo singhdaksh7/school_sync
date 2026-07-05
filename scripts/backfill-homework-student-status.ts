@@ -41,12 +41,12 @@ async function main() {
       const missing = students.filter((s) => !covered.has(s.id));
       if (missing.length === 0) continue;
 
-      await prisma.homeworkStudentStatus.createMany({
+      const result = await prisma.homeworkStudentStatus.createMany({
         data: missing.map((s) => ({ homeworkId: hw.id, studentId: s.id, status: "PENDING" })),
         skipDuplicates: true,
       });
-      console.log(`  "${hw.title}" (${hw.id}): added ${missing.length} missing row(s)`);
-      totalCreated += missing.length;
+      console.log(`  "${hw.title}" (${hw.id}): added ${result.count} missing row(s)`);
+      totalCreated += result.count;
     }
 
     console.log(`Backfilled ${totalCreated} HomeworkStudentStatus row(s) in total.`);

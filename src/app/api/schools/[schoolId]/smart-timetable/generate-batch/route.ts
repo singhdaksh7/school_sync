@@ -4,6 +4,8 @@ import { canWriteSchool, sessionRole, classBelongsToSchool, sectionBelongsToScho
 import { createJob, isJobWorkerConfigured, SMART_TIMETABLE_SYNC_SECTION_LIMIT } from "@/lib/jobs";
 import { generateSectionsBatch, type BatchSectionInput } from "@/lib/smart-timetable-batch";
 import type { CompletionMode } from "@/lib/smart-timetable-generator";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
+import { findExistingEquivalentJob } from "@/lib/job-dedup";
 
 type SectionRequest = { classId: string; sectionId: string; completionMode?: CompletionMode };
 
@@ -20,6 +22,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const role = sessionRole(session.user);
   if (!(await canWriteSchool(schoolId, session.user.id, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const denied = await enforceActorRateLimit({ schoolId, actorType: role ?? "USER", actorId: session.user.id }, "JOB_CREATE");
+  if (denied) return denied;
 
   const body = await req.json();
   const { sections, generationSeed } = body as { sections: SectionRequest[]; generationSeed?: string };
@@ -41,15 +45,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
         { status: 503 }
       );
     }
+    const payload = { schoolId, createdById: session.user.id, sections, generationSeed };
+    const { fingerprint, existing } = await findExistingEquivalentJob(schoolId, "SMART_TIMETABLE_GENERATION", payload);
+    if (existing) {
+      return NextResponse.json({ mode: "job", jobId: existing.id, status: existing.status, totalItems: existing.totalItems, deduplicated: true }, { status: 202 });
+    }
     const created = await createJob({
       type: "SMART_TIMETABLE_GENERATION",
       schoolId,
       createdById: session.user.id,
-      payload: { schoolId, createdById: session.user.id, sections, generationSeed },
+      payload,
       totalItems: sections.length,
+      payloadFingerprint: fingerprint,
     });
     if (!created.ok) return NextResponse.json({ error: created.error }, { status: 400 });
-    return NextResponse.json({ mode: "job", jobId: created.job.id, status: created.job.status, totalItems: sections.length }, { status: 202 });
+    // `created.deduplicated` means a concurrent identical request won the
+    // create race between our own pre-check above and this call — report the
+    // WINNING job's actual stored totalItems, not this request's count.
+    return NextResponse.json(
+      { mode: "job", jobId: created.job.id, status: created.job.status, totalItems: created.job.totalItems, deduplicated: created.deduplicated ?? false },
+      { status: 202 }
+    );
   }
 
   const batchInput: BatchSectionInput[] = sections.map((s) => ({ classId: s.classId, sectionId: s.sectionId, completionMode: s.completionMode }));

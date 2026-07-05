@@ -5,6 +5,7 @@ import { moneyToNumber } from "@/lib/money";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { schoolLifecycleGate } from "@/lib/school-access";
+import { enforceActorRateLimit, enforceSchoolRateLimit } from "@/lib/api-cost-guard";
 import { subDays, startOfDay, format, differenceInDays } from "date-fns";
 
 const CACHE_DAYS = 30;
@@ -56,6 +57,17 @@ export async function POST(req: Request) {
       });
     }
   }
+
+  // AI quota is checked here — AFTER the cache-hit early-return above (a
+  // cache hit is a cheap DB read, not a provider call, and must not consume
+  // quota) but BEFORE the actual Anthropic invocation below (PART 27: rate
+  // limit occurs before the expensive/billable provider call; a request that
+  // reaches this point always counts, whether or not the provider call itself
+  // later succeeds).
+  const actorDenied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "AI_ACTOR");
+  if (actorDenied) return actorDenied;
+  const schoolDenied = await enforceSchoolRateLimit(schoolId, "AI_SCHOOL");
+  if (schoolDenied) return schoolDenied;
 
   // Build context for Claude
   const today = startOfDay(new Date());

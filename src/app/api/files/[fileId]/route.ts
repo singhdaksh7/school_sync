@@ -7,6 +7,10 @@ import { getAuthenticatedGuardian } from "@/lib/parent-auth";
 import { getStudentAuth } from "@/lib/student-mobile-auth";
 import { getStorageProvider, storagePublicUrl, MemoryStorageProvider } from "@/lib/storage";
 import { resolveDownloadUrl } from "@/lib/file-service";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
+import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
+import { rateLimitedResponse } from "@/lib/auth-response";
+import { getClientIp } from "@/lib/request-ip";
 
 /**
  * Controlled file-access route. StoredFile metadata (visibility + category +
@@ -22,7 +26,22 @@ import { resolveDownloadUrl } from "@/lib/file-service";
 export async function GET(req: NextRequest, { params }: { params: Promise<{ fileId: string }> }) {
   const { fileId } = await params;
   const file = await prisma.storedFile.findUnique({ where: { id: fileId } });
-  if (!file) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // A logically-deleted/expired managed file (PART 18) must never be served or
+  // presigned again, regardless of visibility — treat exactly like not-found.
+  if (!file || file.deletedAt) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Cost Guard DOWNLOAD ceiling (PART 23). Best-effort actor key: whichever
+  // identity is already resolvable at this point; unauthenticated/undetermined
+  // callers fall back to an IP-scoped ceiling rather than skipping the check.
+  const session = await auth();
+  if (session?.user?.id) {
+    const denied = await enforceActorRateLimit({ schoolId: file.schoolId ?? "platform", actorType: sessionRole(session.user) ?? "USER", actorId: session.user.id }, "DOWNLOAD");
+    if (denied) return denied;
+  } else {
+    const ip = getClientIp(req);
+    const ipLimit = await rateLimit(`download-ip:${ip ?? "unknown"}`, RATE_LIMIT_POLICIES.DOWNLOAD);
+    if (!ipLimit.allowed) return rateLimitedResponse(ipLimit.retryAfterSeconds);
+  }
 
   if (file.visibility === "PUBLIC") {
     const url = storagePublicUrl(file.storageKey);

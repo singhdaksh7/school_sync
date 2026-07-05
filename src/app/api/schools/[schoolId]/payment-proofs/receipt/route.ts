@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canAccessSchoolForBilling, sessionRole } from "@/lib/tenant";
 import { readUploadedFile, resolveDownloadUrl, uploadManagedFile } from "@/lib/file-service";
+import { enforceUploadQuota } from "@/lib/api-cost-guard";
+import { PAYMENT_PROOF_RETENTION } from "@/lib/file-retention";
 
 // Managed upload for a SaaS billing payment-proof receipt. This is the
 // billing-recovery path (canAccessSchoolForBilling), NOT the FEES feature, and
@@ -18,6 +20,9 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const denied = await enforceUploadQuota({ schoolId, actorType: sessionRole(session.user) ?? "USER", actorId: session.user.id }, "PAYMENT_PROOF");
+  if (denied) return denied;
+
   const upload = await readUploadedFile(req);
   if (!upload) return NextResponse.json({ error: "A receipt file is required" }, { status: 400 });
 
@@ -28,6 +33,7 @@ export async function POST(
     declaredContentType: upload.declaredContentType,
     bytes: upload.bytes,
     uploader: { type: "USER", id: session.user.id },
+    retention: PAYMENT_PROOF_RETENTION,
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 

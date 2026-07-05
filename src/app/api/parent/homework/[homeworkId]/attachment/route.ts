@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { readUploadedFile, resolveDownloadUrl, uploadManagedFile } from "@/lib/file-service";
+import { enforceUploadQuota } from "@/lib/api-cost-guard";
+import { homeworkSubmissionRetention } from "@/lib/file-retention";
 
 // Guardian upload for a homework submission attachment. Enforces the
 // guardian-child relationship and that the homework belongs to the guardian's
@@ -20,9 +22,12 @@ export async function POST(
     const featureDenied = await requireSchoolFeature(auth.guardian.schoolId, "HOMEWORK");
     if (featureDenied) return featureDenied;
 
+    const denied = await enforceUploadQuota({ schoolId: auth.guardian.schoolId, actorType: "PARENT", actorId: auth.guardian.id }, "HOMEWORK_SUBMISSION");
+    if (denied) return denied;
+
     const homework = await prisma.homework.findFirst({
       where: { id: homeworkId, schoolId: auth.guardian.schoolId },
-      select: { id: true, sectionId: true, status: true },
+      select: { id: true, sectionId: true, status: true, dueDate: true },
     });
     if (!homework) return NextResponse.json({ error: "Homework not found" }, { status: 404 });
     if (homework.status !== "ACTIVE") {
@@ -52,6 +57,7 @@ export async function POST(
       declaredContentType: upload.declaredContentType,
       bytes: upload.bytes,
       uploader: { type: "GUARDIAN", id: auth.guardian.id },
+      retention: homeworkSubmissionRetention(homework.dueDate),
     });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 

@@ -7,12 +7,16 @@
 
 import { prisma } from "@/lib/prisma";
 import type { BackgroundJob } from "@/generated/prisma/client";
-import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema, smartTimetableGenerationPayloadSchema } from "@/lib/jobs";
+import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema, smartTimetableGenerationPayloadSchema, fileRetentionCleanupPayloadSchema } from "@/lib/jobs";
 import { buildReportCardBatchContext, generateReportCardForStudent } from "@/lib/report-cards";
 import { importStudentRows, type ImportRow } from "@/lib/student-import";
 import { getStudentLimitInfo } from "@/lib/plan-limits";
 import { readManagedFileBytes } from "@/lib/file-service";
 import { generateSectionsBatch } from "@/lib/smart-timetable-batch";
+import { studentImportSourceRetention } from "@/lib/file-retention";
+import { systemClock } from "@/lib/clock";
+import { FILE_RETENTION_CLEANUP_BATCH_SIZE } from "@/lib/cost-guard-policy";
+import { getStorageProvider, StorageError } from "@/lib/storage";
 
 export type JobHelpers = {
   updateProgress: (processed: number, failed: number) => Promise<void>;
@@ -78,37 +82,55 @@ const handlers: Record<string, JobHandler> = {
       where: { id: payload.storedFileId, schoolId: payload.schoolId },
     });
     if (!file) throw new Error("Import source file not found");
-    const bytes = await readManagedFileBytes(file);
-    if (!bytes) throw new Error("Import source object is missing");
 
-    let rows: unknown;
-    try {
-      rows = JSON.parse(bytes.toString("utf8"));
-    } catch {
-      throw new Error("Import source is not valid JSON");
-    }
-    if (!Array.isArray(rows)) throw new Error("Import source must be a JSON array of rows");
-
-    // Re-evaluate the plan cap at processing time (not creation time).
-    const { maxStudents, currentCount } = await getStudentLimitInfo(payload.schoolId);
-    const summary = await importStudentRows(
-      payload.schoolId,
-      rows as ImportRow[],
-      { maxStudents, currentCount },
-      (processed, _created, failed) => updateProgress(processed, failed)
-    );
-
-    return {
-      processedItems: summary.total,
-      failedItems: summary.failed,
-      resultMetadata: {
-        total: summary.total,
-        created: summary.created,
-        skipped: summary.skipped,
-        failed: summary.failed,
-        sampleErrors: summary.results.filter((r) => !r.success).slice(0, 20),
-      },
+    // The import source's retention window (PART 19) only becomes knowable
+    // once this job reaches a terminal state — set it exactly once here,
+    // whichever path is taken, rather than trusting a value assigned at
+    // upload time.
+    const markRetention = async (status: "COMPLETED" | "FAILED") => {
+      const { retentionPolicy, expiresAt } = studentImportSourceRetention(status, systemClock.now());
+      await prisma.storedFile.update({ where: { id: file.id }, data: { retentionPolicy, expiresAt } }).catch((err) => {
+        console.error("[job-handlers] failed to set student-import retention expiry", { fileId: file.id, err });
+      });
     };
+
+    try {
+      const bytes = await readManagedFileBytes(file);
+      if (!bytes) throw new Error("Import source object is missing");
+
+      let rows: unknown;
+      try {
+        rows = JSON.parse(bytes.toString("utf8"));
+      } catch {
+        throw new Error("Import source is not valid JSON");
+      }
+      if (!Array.isArray(rows)) throw new Error("Import source must be a JSON array of rows");
+
+      // Re-evaluate the plan cap at processing time (not creation time).
+      const { maxStudents, currentCount } = await getStudentLimitInfo(payload.schoolId);
+      const summary = await importStudentRows(
+        payload.schoolId,
+        rows as ImportRow[],
+        { maxStudents, currentCount },
+        (processed, _created, failed) => updateProgress(processed, failed)
+      );
+
+      await markRetention("COMPLETED");
+      return {
+        processedItems: summary.total,
+        failedItems: summary.failed,
+        resultMetadata: {
+          total: summary.total,
+          created: summary.created,
+          skipped: summary.skipped,
+          failed: summary.failed,
+          sampleErrors: summary.results.filter((r) => !r.success).slice(0, 20),
+        },
+      };
+    } catch (err) {
+      await markRetention("FAILED");
+      throw err;
+    }
   },
 
   SMART_TIMETABLE_GENERATION: async (job, { updateProgress }) => {
@@ -144,6 +166,65 @@ const handlers: Record<string, JobHandler> = {
           assignedCount: r.assignedCount,
           requiredCount: r.requiredCount,
         })),
+      },
+    };
+  },
+
+  FILE_RETENTION_CLEANUP: async (job, { updateProgress }) => {
+    fileRetentionCleanupPayloadSchema.parse(job.payload);
+    const now = systemClock.now();
+
+    let provider;
+    try {
+      provider = getStorageProvider();
+    } catch (err) {
+      if (err instanceof StorageError && err.code === "NOT_CONFIGURED") {
+        // Nothing to clean up if storage was never configured — a safe no-op, not a failure.
+        return { processedItems: 0, failedItems: 0, resultMetadata: { batchSize: 0, deleted: 0, skipped: 0, failed: 0, storageNotConfigured: true } };
+      }
+      throw err;
+    }
+
+    // Bounded batch (PART 20) — never loads every expired file into memory.
+    const batch = await prisma.storedFile.findMany({
+      where: { retentionPolicy: "EXPIRING", deletedAt: null, expiresAt: { lte: now } },
+      orderBy: { expiresAt: "asc" },
+      take: FILE_RETENTION_CLEANUP_BATCH_SIZE,
+    });
+
+    let deleted = 0;
+    let failed = 0;
+    for (let i = 0; i < batch.length; i++) {
+      const file = batch[i];
+      try {
+        // Idempotent by provider contract: S3's DeleteObject and the in-memory
+        // provider's Map.delete are both no-ops (not errors) when the key is
+        // already gone — "already missing" is therefore automatically treated
+        // as a cleanable success here, never a failure.
+        await provider.deleteObject(file.storageKey);
+        await prisma.storedFile.update({ where: { id: file.id }, data: { deletedAt: now } });
+        deleted++;
+      } catch (err) {
+        // A transient storage error must NOT mark the row deleted — leave it
+        // for the next cleanup run to retry.
+        console.error("[job-handlers] file-retention cleanup: delete failed, will retry next run", {
+          fileId: file.id,
+          err: err instanceof Error ? err.message : err,
+        });
+        failed++;
+      }
+      await updateProgress(i + 1, failed);
+    }
+
+    return {
+      processedItems: batch.length,
+      failedItems: failed,
+      resultMetadata: {
+        batchSize: batch.length,
+        deleted,
+        skipped: 0,
+        failed,
+        hasMore: batch.length === FILE_RETENTION_CLEANUP_BATCH_SIZE,
       },
     };
   },

@@ -14,6 +14,7 @@ import {
   validateManualPaymentAmount,
 } from "@/lib/student-fee-ledger";
 import { parsePagination, paginated } from "@/lib/pagination";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 function serializePayment<T extends { amount: unknown; feeStructure?: { amount: unknown } | null; gatewaySignature?: string | null }>(payment: T) {
   const safePayment = { ...payment };
@@ -40,6 +41,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!access.ok) return access.response;
   {
     const denied = await requireSchoolFeature(schoolId, "FEES");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "STANDARD_READ");
     if (denied) return denied;
   }
 
@@ -98,6 +103,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   }
   {
     const denied = await requireSchoolFeature(schoolId, "FEES");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "MUTATION");
     if (denied) return denied;
   }
 

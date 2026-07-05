@@ -15,6 +15,8 @@ import {
   InvalidPasswordError as StudentInvalidPasswordError,
   AmbiguousSchoolError as StudentAmbiguousSchoolError,
 } from "@/lib/auth-errors";
+import { authBucketKey, guardAgainstLock, recordFailedCredential, completeSuccessfulWebLogin } from "@/lib/auth-login-flow";
+import { systemClock } from "@/lib/clock";
 
 async function requestHeaders() {
   return headers();
@@ -71,6 +73,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             throw new NoAccountError();
           }
 
+          const now = systemClock.now();
+          // Founder accounts have no school scope and are deliberately kept
+          // outside this durable lock/quota system (PART: FOUNDER policy).
+          const bucketSchoolId = user.role === "FOUNDER" ? null : (user.school?.id ?? user.ownedSchool?.id ?? resolvedSchool?.id ?? null);
+          const authFlow = "TEACHER" as const; // shared escalation table for all web staff logins (Owner/Admin/VP/Teacher) — see PART 5 audit note in docs
+          const bucketKey = bucketSchoolId ? authBucketKey(bucketSchoolId, authFlow, email) : null;
+
+          if (bucketKey) {
+            const lock = await guardAgainstLock(bucketKey, now);
+            if (lock.locked) throw new RateLimitedError();
+          }
+
           const valid = await bcrypt.compare(credentials.password as string, user.password);
           if (!valid) {
             await logAudit({
@@ -82,6 +96,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               ipAddress: ip,
               metadata: { reason: "invalid_password" },
             });
+            if (bucketKey && bucketSchoolId) await recordFailedCredential(bucketKey, bucketSchoolId, authFlow, now);
             throw new InvalidPasswordError();
           }
 
@@ -141,6 +156,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               return null;
             }
 
+            if (bucketKey) {
+              const completion = await completeSuccessfulWebLogin({
+                bucketKey,
+                actor: { schoolId: teacherProfile.schoolId, actorType: "TEACHER", userId: user.id, teacherId: teacherProfile.id },
+                now,
+              });
+              if (!completion.ok) throw new RateLimitedError();
+            }
+
             await auditSuccess();
             return {
               id: user.id,
@@ -163,6 +187,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (school && statusIsBlocked(school.status)) {
             await auditBlocked("school_blocked");
             return null;
+          }
+
+          if (bucketKey && school?.id) {
+            const completion = await completeSuccessfulWebLogin({
+              bucketKey,
+              actor: { schoolId: school.id, actorType: "ADMIN_STAFF", userId: user.id },
+              now,
+            });
+            if (!completion.ok) throw new RateLimitedError();
           }
 
           await auditSuccess();
@@ -195,6 +228,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const ip = getClientIpFromHeaders(req.headers);
         const identifier = (credentials.identifier as string).trim();
+        const schoolSlugHint = (() => {
+          const slug = (credentials as Record<string, unknown>).schoolSlug;
+          return typeof slug === "string" ? slug : null;
+        })();
 
         try {
           const limit = await rateLimit(
@@ -203,16 +240,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           );
           if (!limit.allowed) throw new RateLimitedError();
 
-          const result = await authenticateStudentForMobile(
-            identifier,
-            credentials.password as string,
-            req.headers,
-            (() => {
-              const slug = (credentials as Record<string, unknown>).schoolSlug;
-              return { slug: typeof slug === "string" ? slug : null };
-            })()
-          );
+          const now = systemClock.now();
+          const resolvedForBucket =
+            (await resolveSchool(hostnameFromHeaders(req.headers))) ??
+            (schoolSlugHint ? await prisma.school.findUnique({ where: { slug: schoolSlugHint }, select: { id: true } }) : null);
+          const bucketKey = resolvedForBucket ? authBucketKey(resolvedForBucket.id, "PARENT_STUDENT", identifier) : null;
+
+          if (bucketKey) {
+            const lock = await guardAgainstLock(bucketKey, now);
+            if (lock.locked) throw new RateLimitedError();
+          }
+
+          let result;
+          try {
+            result = await authenticateStudentForMobile(identifier, credentials.password as string, req.headers, { slug: schoolSlugHint });
+          } catch (err) {
+            if (bucketKey && resolvedForBucket && (err instanceof StudentNoAccountError || err instanceof StudentInvalidPasswordError)) {
+              await recordFailedCredential(bucketKey, resolvedForBucket.id, "PARENT_STUDENT", now);
+            }
+            throw err;
+          }
           if (!result) return null;
+
+          if (bucketKey) {
+            const completion = await completeSuccessfulWebLogin({
+              bucketKey,
+              actor: { schoolId: result.student.schoolId, actorType: "STUDENT", studentId: result.student.id },
+              now,
+            });
+            if (!completion.ok) throw new RateLimitedError();
+          }
 
           return {
             id: result.student.id,

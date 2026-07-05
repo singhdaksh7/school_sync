@@ -5,6 +5,7 @@ import { z } from "zod";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
 import { generateInviteToken } from "@/lib/invite-tokens";
 import { parsePagination, paginated } from "@/lib/pagination";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 async function verify(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -27,6 +28,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await verify(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "STANDARD_READ");
+    if (denied) return denied;
+  }
 
   const { searchParams } = new URL(req.url);
   // Teacher dropdowns/assignment flows need the whole roster, so the ceiling
@@ -56,6 +61,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "MUTATION");
+    if (denied) return denied;
   }
 
   try {

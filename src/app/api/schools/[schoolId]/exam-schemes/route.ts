@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { canAccessSchool, canWriteSchool, sessionRole } from "@/lib/tenant";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 const schemeSchema = z.object({
   name: z.string().min(2),
@@ -26,6 +27,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!isTeacherOfSchool && !(await canAccessSchool(schoolId, session.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: isTeacherOfSchool ? "TEACHER" : "ADMIN_STAFF", actorId: session.user.id }, "STANDARD_READ");
+    if (denied) return denied;
+  }
 
   const schemes = await prisma.examScheme.findMany({
     where: { schoolId },
@@ -41,6 +46,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const role = sessionRole(session.user);
   if (!(await canWriteSchool(schoolId, session.user.id, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "MUTATION");
+    if (denied) return denied;
+  }
 
   try {
     const body = schemeSchema.parse(await req.json());

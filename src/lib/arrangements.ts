@@ -451,3 +451,67 @@ export async function autoGenerateArrangementsForDate(
     ...summary,
   };
 }
+
+export type AssignArrangementResult =
+  | { ok: true; arrangementId: string }
+  | { ok: false; error: string; code: "TEACHER_NOT_IN_SCHOOL" | "SECTION_NOT_IN_SCHOOL" | "INVALID_PERIOD" };
+
+/**
+ * Teacher Operations Head Phase (PART 18/20): manual single-lecture
+ * substitute assignment. A genuine gap closed here — before this phase, NO
+ * route (not even for Admin) could assign one specific replacement to one
+ * specific uncovered lecture; only `autoGenerateArrangementsForDate` (a
+ * whole-date sweep) and `createArrangementsForLeave` (leave-approval
+ * trigger) existed. This is a thin, additive upsert on top of the existing
+ * `Arrangement` model's `(date, absentTeacherId, period)` unique key — it
+ * does NOT reimplement the day-specific ranking (`teacher-ranking.ts`'s
+ * `rankReplacementTeachers`, called by the route BEFORE this function, to
+ * present recommendations) or the auto-generation sweep.
+ * `substituteTeacherId: null` clears an existing arrangement's substitute
+ * (marks the lecture uncovered again) rather than deleting the row, so a
+ * `subject`/absence record is preserved for the audit trail.
+ */
+export async function assignArrangement(input: {
+  schoolId: string;
+  date: Date;
+  sectionId: string;
+  period: number;
+  subject: string | null;
+  absentTeacherId: string;
+  substituteTeacherId: string | null;
+}): Promise<AssignArrangementResult> {
+  const date = normalizeDate(input.date);
+  if (!Number.isInteger(input.period) || input.period < 1) {
+    return { ok: false, error: "period must be a positive integer", code: "INVALID_PERIOD" };
+  }
+
+  const [section, absentTeacher, substituteTeacher] = await Promise.all([
+    prisma.section.findFirst({ where: { id: input.sectionId, class: { schoolId: input.schoolId } }, select: { id: true } }),
+    prisma.teacher.findFirst({ where: { id: input.absentTeacherId, schoolId: input.schoolId, isDeleted: false }, select: { id: true } }),
+    input.substituteTeacherId
+      ? prisma.teacher.findFirst({ where: { id: input.substituteTeacherId, schoolId: input.schoolId, isDeleted: false }, select: { id: true } })
+      : Promise.resolve(null),
+  ]);
+  if (!section) return { ok: false, error: "Section not found in this school", code: "SECTION_NOT_IN_SCHOOL" };
+  if (!absentTeacher || (input.substituteTeacherId && !substituteTeacher)) {
+    return { ok: false, error: "Teacher not found in this school", code: "TEACHER_NOT_IN_SCHOOL" };
+  }
+
+  const dbDay = jsToDbDay(date.getDay()) ?? 0;
+  const arrangement = await prisma.arrangement.upsert({
+    where: { date_absentTeacherId_period: { date, absentTeacherId: input.absentTeacherId, period: input.period } },
+    create: {
+      date,
+      dayOfWeek: dbDay,
+      period: input.period,
+      subject: input.subject,
+      sectionId: input.sectionId,
+      absentTeacherId: input.absentTeacherId,
+      substituteTeacherId: input.substituteTeacherId,
+      schoolId: input.schoolId,
+    },
+    update: { substituteTeacherId: input.substituteTeacherId, subject: input.subject, sectionId: input.sectionId },
+  });
+
+  return { ok: true, arrangementId: arrangement.id };
+}

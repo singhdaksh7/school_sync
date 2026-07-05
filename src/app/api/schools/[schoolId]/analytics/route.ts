@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 import { subDays, startOfDay, format } from "date-fns";
 
 async function canAccess(schoolId: string, userId: string) {
@@ -27,6 +28,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
   if (!(await canAccess(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   {
     const denied = await requireSchoolFeature(schoolId, "ANALYTICS");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "EXPENSIVE_READ");
     if (denied) return denied;
   }
 

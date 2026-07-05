@@ -20,6 +20,8 @@
  *   RATE_LIMIT_REDIS_URL, RATE_LIMIT_REDIS_TOKEN  (or your provider's equivalents).
  */
 
+import { AUTH_IP_POLICY, API_COST_POLICIES, UPLOAD_GLOBAL_POLICY, UPLOAD_CATEGORY_POLICIES } from "@/lib/cost-guard-policy";
+
 export type RateLimitResult = {
   allowed: boolean;
   remaining: number;
@@ -118,12 +120,19 @@ export class RestRedisRateLimiter implements RateLimiter {
 }
 
 // Common policies, referenced from route handlers so limits stay consistent.
+// Cost Guard (PART 6/9/24) policies live in cost-guard-policy.ts as the single
+// source of truth and are re-exposed here so every route keeps using the one
+// `rateLimit()` entry point regardless of which policy set a key belongs to.
 export const RATE_LIMIT_POLICIES = {
-  login: { limit: 8, windowMs: 15 * 60 * 1000 },          // staff/parent/mobile credential attempts
-  studentLogin: { limit: 10, windowMs: 15 * 60 * 1000 },  // admissionNo + phone-derived password
+  login: { limit: 8, windowMs: 15 * 60 * 1000 },          // staff/parent/mobile credential attempts (legacy IP+email key — superseded by authIp + the account-scoped lock for new call sites)
+  studentLogin: { limit: 10, windowMs: 15 * 60 * 1000 },  // admissionNo + phone-derived password (legacy — see above)
   forgotPassword: { limit: 5, windowMs: 15 * 60 * 1000 }, // strict — avoids reset spam / enumeration
   inviteLookup: { limit: 20, windowMs: 15 * 60 * 1000 },  // invite token validation/acceptance
   payment: { limit: 15, windowMs: 5 * 60 * 1000 },        // create-order / verify-payment
+  authIp: AUTH_IP_POLICY,                                 // secondary network-abuse ceiling for auth endpoints (PART 6)
+  ...API_COST_POLICIES,
+  uploadGlobal: UPLOAD_GLOBAL_POLICY,
+  ...Object.fromEntries(Object.entries(UPLOAD_CATEGORY_POLICIES).map(([k, v]) => [`upload_${k}`, v])),
 } as const;
 
 let warnedAboutMemoryBackend = false;
@@ -175,19 +184,29 @@ function warnIfNonDistributed() {
 }
 
 /**
- * Applies a named policy to a key. Fail-open on unexpected limiter errors
- * (availability over strictness) — a limiter outage must not lock users out.
+ * Applies a named policy to a key. Fail-open on unexpected limiter errors by
+ * DEFAULT (availability over strictness) — a limiter outage must not lock
+ * users out of login/normal ERP operations. The memory limiter is always
+ * available as an in-process fallback, so this branch only triggers on a
+ * distributed-backend (e.g. Redis) network/HTTP failure.
+ *
+ * Phase 4 (PART 10): `failClosed` is an explicit opt-out of that default,
+ * for the narrow set of externally-billable categories (AI) where an
+ * available-but-wrong-answer quota check is worse than a clean temporary
+ * denial — see `api-cost-guard.ts`, which sets this automatically for
+ * AI_ACTOR/AI_SCHOOL only. Every other category (login, upload, standard
+ * ERP reads/mutations) is completely unaffected by this parameter existing.
  */
-export async function rateLimit(key: string, policy: RateLimitPolicy): Promise<RateLimitResult> {
+export async function rateLimit(key: string, policy: RateLimitPolicy, opts: { failClosed?: boolean } = {}): Promise<RateLimitResult> {
   initRateLimiterFromEnv();
   warnIfNonDistributed();
   try {
     return await limiter.check(key, policy);
   } catch (err) {
-    // Availability policy: a limiter-backend outage must not lock legitimate
-    // users out of login. We fail OPEN but log so an outage is observable. The
-    // memory limiter is always available as an in-process fallback, so this only
-    // triggers on a distributed-backend network/HTTP failure.
+    if (opts.failClosed) {
+      console.error("[rate-limit] limiter error on a cost-sensitive category, failing CLOSED:", err);
+      return { allowed: false, remaining: 0, retryAfterSeconds: 30 };
+    }
     console.error("[rate-limit] limiter error, failing open:", err);
     return { allowed: true, remaining: policy.limit, retryAfterSeconds: 0 };
   }

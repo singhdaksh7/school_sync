@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
+import { schoolLifecycleGate } from "@/lib/school-access";
+import { prisma } from "@/lib/prisma";
 import { autoGenerateArrangementsForDate } from "@/lib/arrangements";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
+import { canManageTeacherOperations } from "@/lib/operational-authorization";
+import { buildDelegatedAuditMetadata } from "@/lib/operational-audit";
 
 const bodySchema = z.object({
   date: z.string().optional(),
@@ -16,8 +20,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const role = sessionRole(session.user);
+  let delegatedTeacherId: string | null = null;
+  let delegatedOperational: Awaited<ReturnType<typeof canManageTeacherOperations>> | null = null;
+
   if (!(await canWriteSchool(schoolId, session.user.id, role))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (role !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    // PART 28: canWriteSchool above already lifecycle-gates the admin path,
+    // but a SUSPENDED/EXPIRED school must also block the teacher-delegation
+    // fallback — canManageTeacherOperations itself has no lifecycle awareness.
+    const blocked = await schoolLifecycleGate(schoolId);
+    if (blocked) return blocked;
+    const teacher = await prisma.teacher.findFirst({ where: { userId: session.user.id, isDeleted: false }, select: { id: true, schoolId: true } });
+    if (!teacher || teacher.schoolId !== schoolId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const operational = await canManageTeacherOperations({ schoolId, teacherId: teacher.id, capability: "ARRANGEMENTS_MANAGE" });
+    if (!operational.allowed) return NextResponse.json({ error: "Forbidden", reasonCode: operational.reasonCode }, { status: 403 });
+    delegatedTeacherId = teacher.id;
+    delegatedOperational = operational;
   }
 
   try {
@@ -35,7 +53,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     await logAudit({
       action: "ARRANGEMENTS_AUTO_GENERATED",
       entityType: "Arrangement",
-      metadata: result as unknown as Record<string, unknown>,
+      metadata: {
+        ...(result as unknown as Record<string, unknown>),
+        ...(delegatedTeacherId && delegatedOperational ? { operational: buildDelegatedAuditMetadata(delegatedTeacherId, delegatedOperational) } : {}),
+      },
       userId: session.user.id,
       schoolId,
       actorRole: role,

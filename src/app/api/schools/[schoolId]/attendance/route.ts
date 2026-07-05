@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { canAccessSchool, canWriteSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -12,6 +13,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   {
     const denied = await requireSchoolFeature(schoolId, "ATTENDANCE");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "STANDARD_READ");
     if (denied) return denied;
   }
 
@@ -62,6 +67,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   if (!(await canWriteSchool(schoolId, userId, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   {
     const denied = await requireSchoolFeature(schoolId, "ATTENDANCE");
+    if (denied) return denied;
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: userId }, "MUTATION");
     if (denied) return denied;
   }
 

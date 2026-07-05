@@ -5,6 +5,9 @@ import { hostnameFromHeaders, resolveSchool } from "@/lib/school-resolver";
 import { statusIsBlocked } from "@/lib/school-access";
 import { getClientIp } from "@/lib/request-ip";
 import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
+import { rateLimitedResponse, authLockResponse, newLoginLimitResponse, genericInvalidCredentialsResponse } from "@/lib/auth-response";
+import { authBucketKey, guardAgainstLock, recordFailedCredential, completeSuccessfulLogin, hashIp } from "@/lib/auth-login-flow";
+import { systemClock } from "@/lib/clock";
 import bcrypt from "bcryptjs";
 
 function requestHostname(req: NextRequest) {
@@ -24,7 +27,7 @@ type GuardianWithSchool = Awaited<ReturnType<typeof findGuardiansForLogin>>[numb
 
 export async function POST(req: NextRequest) {
   try {
-    const { phone, password } = await req.json();
+    const { phone, password, deviceInstallationId, deviceName, platform } = await req.json();
 
     if (!phone || !password) {
       return NextResponse.json(
@@ -35,23 +38,35 @@ export async function POST(req: NextRequest) {
 
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+      return genericInvalidCredentialsResponse();
     }
 
     const ip = getClientIp(req);
-    const limit = await rateLimit(`parent-login:${ip ?? "unknown"}:${normalizedPhone}`, RATE_LIMIT_POLICIES.login);
-    if (!limit.allowed) {
-      return NextResponse.json({ error: "Too many attempts. Please try again later." }, { status: 429 });
+    const ipLimit = await rateLimit(`auth-ip:${ip ?? "unknown"}`, RATE_LIMIT_POLICIES.authIp);
+    if (!ipLimit.allowed) return rateLimitedResponse(ipLimit.retryAfterSeconds);
+
+    const now = systemClock.now();
+    const resolvedSchool = await resolveSchool(requestHostname(req));
+
+    // Cost Guard's durable account-scoped lock/quota needs a schoolId. When no
+    // school is resolved (no white-label domain, no context yet), this
+    // legacy no-context path falls back to the original IP+phone rate limit
+    // only — documented, not a regression from prior behavior.
+    let bucketKey: string | null = null;
+    if (resolvedSchool) {
+      bucketKey = authBucketKey(resolvedSchool.id, "PARENT_STUDENT", normalizedPhone);
+      const lock = await guardAgainstLock(bucketKey, now);
+      if (lock.locked) return authLockResponse(lock.retryAfterSeconds!);
+    } else {
+      const legacyLimit = await rateLimit(`parent-login:${ip ?? "unknown"}:${normalizedPhone}`, RATE_LIMIT_POLICIES.login);
+      if (!legacyLimit.allowed) return rateLimitedResponse(legacyLimit.retryAfterSeconds);
     }
 
-    const resolvedSchool = await resolveSchool(requestHostname(req));
-    const guardians = await findGuardiansForLogin(
-      normalizedPhone,
-      resolvedSchool?.id
-    );
+    const guardians = await findGuardiansForLogin(normalizedPhone, resolvedSchool?.id);
 
     if (guardians.length === 0) {
-      return NextResponse.json({ error: "No account found with that phone number." }, { status: 404 });
+      if (bucketKey && resolvedSchool) await recordFailedCredential(bucketKey, resolvedSchool.id, "PARENT_STUDENT", now);
+      return genericInvalidCredentialsResponse();
     }
 
     const validGuardians: GuardianWithSchool[] = [];
@@ -60,21 +75,35 @@ export async function POST(req: NextRequest) {
       if (await bcrypt.compare(password, guardian.passwordHash)) validGuardians.push(guardian);
     }
 
-    if (validGuardians.length === 0) {
-      return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
-    }
-
-    if (validGuardians.length > 1) {
-      return NextResponse.json(
-        { error: "Multiple guardian accounts matched this phone. Please contact the school." },
-        { status: 409 }
-      );
+    if (validGuardians.length !== 1) {
+      // Zero matches (wrong password) and >1 matches (cross-school ambiguity)
+      // both fail closed with the same generic response (PART 3/5) — an
+      // unauthenticated caller learns nothing about which case occurred.
+      if (bucketKey && resolvedSchool) {
+        const afterFailure = await recordFailedCredential(bucketKey, resolvedSchool.id, "PARENT_STUDENT", now);
+        if (afterFailure.locked) return authLockResponse(afterFailure.retryAfterSeconds!);
+      }
+      return genericInvalidCredentialsResponse();
     }
 
     const guardian = validGuardians[0];
     if (statusIsBlocked(guardian.school.status)) {
       return NextResponse.json({ error: "School access is suspended" }, { status: 403 });
     }
+
+    let sid: string | undefined;
+    if (bucketKey) {
+      const completion = await completeSuccessfulLogin({
+        bucketKey,
+        actor: { schoolId: guardian.schoolId, actorType: "PARENT", guardianId: guardian.id },
+        device: { deviceInstallationId: deviceInstallationId ?? null, deviceName: deviceName ?? null, platform: platform ?? null },
+        now,
+        ipHash: ip ? hashIp(ip) : null,
+      });
+      if (!completion.ok) return newLoginLimitResponse(completion.retryAfterSeconds);
+      sid = completion.rawSessionId;
+    }
+
     const token = generateParentToken({
       guardianId: guardian.id,
       name: guardian.name,
@@ -83,6 +112,7 @@ export async function POST(req: NextRequest) {
       role: "PARENT",
       schoolId: guardian.schoolId,
       schoolSlug: guardian.school.slug,
+      sid,
     });
 
     return NextResponse.json({

@@ -10,6 +10,7 @@ import { buildStudentPasswordHashes } from "@/lib/student-credentials";
 import { backfillHomeworkStatusForStudent } from "@/lib/homework";
 import { getStudentLimitInfo, withinStudentLimit, STUDENT_LIMIT_MESSAGE } from "@/lib/plan-limits";
 import { parsePagination, paginated } from "@/lib/pagination";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 function duplicateFieldMessage(err: unknown) {
   const target = (err as { meta?: { target?: unknown } })?.meta?.target;
@@ -43,6 +44,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const access = await requireSchoolAccess(schoolId, session.user.id, sessionRole(session.user), "STUDENTS", "VIEW");
   if (!access.ok) return access.response;
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "STANDARD_READ");
+    if (denied) return denied;
+  }
 
   const { searchParams } = new URL(req.url);
   const sectionId = searchParams.get("sectionId");
@@ -71,6 +76,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "MUTATION");
+    if (denied) return denied;
+  }
 
   try {
     const body = await req.json();

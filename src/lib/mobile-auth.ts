@@ -7,6 +7,8 @@ import { getActiveTeacherByUserId, sessionRole } from "@/lib/tenant";
 import { statusIsBlocked } from "@/lib/school-access";
 import { classifyStudentMatches } from "@/lib/student-login";
 import { NoAccountError, InvalidPasswordError, AmbiguousSchoolError } from "@/lib/auth-errors";
+import { validateSession } from "@/lib/auth-sessions";
+import { systemClock } from "@/lib/clock";
 
 export type MobileRole = "SCHOOL_OWNER" | "SCHOOL_ADMIN" | "VICE_PRINCIPAL" | "TEACHER" | "STUDENT";
 
@@ -20,6 +22,8 @@ type MobileTokenPayload = {
   schoolSlug: string;
   name: string;
   email?: string | null;
+  /** Raw session identifier (see src/lib/auth-sessions.ts) — hashed before storage, never stored raw. Optional only for backward compatibility with any token issued before session tracking existed. */
+  sid?: string;
 };
 
 const STAFF_ROLES = new Set(["SCHOOL_OWNER", "SCHOOL_ADMIN", "VICE_PRINCIPAL", "TEACHER"]);
@@ -53,6 +57,16 @@ export async function getMobileAuth(req: Request) {
   if (!token) return null;
   const decoded = verifyMobileToken(token);
   if (!decoded) return null;
+
+  // A cryptographically valid JWT is not enough — the server-side session it
+  // references must still be un-revoked and un-expired (PART 8). Tokens
+  // issued before session tracking existed (no `sid` claim) pass through
+  // unchecked — a deliberate, documented transitional allowance (PART 35);
+  // every token issued from this point forward carries `sid`.
+  if (decoded.sid) {
+    const validation = await validateSession(decoded.sid, systemClock.now());
+    if (!validation.valid) return null;
+  }
 
   const school = await prisma.school.findFirst({
     where: { id: decoded.schoolId, slug: decoded.schoolSlug },
@@ -168,7 +182,7 @@ export async function authenticateStaffForMobile(email: string, password: string
  *   2. Otherwise fall back to the father/mother phone hash (the default
  *      first-login credential established at student creation).
  */
-async function studentPasswordMatches(
+export async function studentPasswordMatches(
   student: { passwordHash: string | null; fatherPhoneHash: string | null; motherPhoneHash: string | null },
   password: string
 ): Promise<boolean> {

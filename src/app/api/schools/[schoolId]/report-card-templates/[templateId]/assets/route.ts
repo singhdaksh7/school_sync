@@ -5,6 +5,7 @@ import { canWriteSchool, sessionRole } from "@/lib/tenant";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { resolveDownloadUrl, uploadManagedFile } from "@/lib/file-service";
 import { serializeTemplate } from "@/lib/report-card-templates";
+import { enforceUploadQuota } from "@/lib/api-cost-guard";
 
 const ASSET_KIND_FIELD: Record<string, "logoFileId" | "stampFileId" | "principalSignatureFileId"> = {
   logo: "logoFileId",
@@ -30,6 +31,9 @@ export async function POST(
     const denied = await requireSchoolFeature(schoolId, "REPORT_CARD_BUILDER");
     if (denied) return denied;
   }
+
+  const denied = await enforceUploadQuota({ schoolId, actorType: sessionRole(session.user) ?? "USER", actorId: session.user.id }, "REPORT_CARD_ASSET");
+  if (denied) return denied;
 
   const template = await prisma.reportCardTemplate.findFirst({ where: { id: templateId, schoolId } });
   if (!template) return NextResponse.json({ error: "Template not found" }, { status: 404 });

@@ -58,8 +58,16 @@ export async function runTeacherAutoAbsent(schoolId: string, markedById: string,
   const markedTeacherIds = new Set(existing.map((record) => record.teacherId).filter(Boolean));
   const missingTeachers = teachers.filter((teacher) => !markedTeacherIds.has(teacher.id));
 
+  // Phase 4 audit (PART 13): `missingTeachers.length` is the REQUESTED count,
+  // computed from a snapshot read — if a concurrent sweep (or a teacher
+  // self-marking) inserted one of these rows between that read and this
+  // write, `skipDuplicates` silently drops it and the actual insert count is
+  // lower. Report Prisma's own `createMany` result (the ACTUAL row count),
+  // never the pre-computed candidate list length, so a caller never sees an
+  // inflated "created" number.
+  let createdAbsent = 0;
   if (missingTeachers.length > 0) {
-    await prisma.attendance.createMany({
+    const result = await prisma.attendance.createMany({
       data: missingTeachers.map((teacher) => ({
         date,
         type: "TEACHER" as const,
@@ -70,12 +78,13 @@ export async function runTeacherAutoAbsent(schoolId: string, markedById: string,
       })),
       skipDuplicates: true,
     });
+    createdAbsent = result.count;
   }
 
   return {
     cutoffTime,
     cutoffPassed: true,
     checked: teachers.length,
-    createdAbsent: missingTeachers.length,
+    createdAbsent,
   };
 }

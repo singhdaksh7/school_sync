@@ -5,6 +5,8 @@ import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { createJob, REPORT_CARD_SYNC_LIMIT, isJobWorkerConfigured } from "@/lib/jobs";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
+import { findExistingEquivalentJob } from "@/lib/job-dedup";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -48,23 +50,42 @@ export async function POST(req: Request) {
         { status: 503 }
       );
     }
+    const denied = await enforceActorRateLimit({ schoolId: teacher.schoolId, actorType: "TEACHER", actorId: teacher.id }, "JOB_CREATE");
+    if (denied) return denied;
+
+    const payload = {
+      schoolId: teacher.schoolId,
+      teacherId: teacher.id,
+      sectionId: teacher.mentorSectionId,
+      examSchemeId,
+      studentIds: requestedStudentIds,
+      classTeacherRemark: classTeacherRemark ?? null,
+    };
+    // Fingerprint over a student-id-order-independent view — the same set of
+    // students re-submitted in a different enumeration order is still a
+    // duplicate request.
+    const { fingerprint, existing } = await findExistingEquivalentJob(teacher.schoolId, "REPORT_CARD_BATCH_GENERATION", {
+      ...payload,
+      studentIds: [...requestedStudentIds].sort(),
+    });
+    if (existing) {
+      return NextResponse.json({ mode: "job", jobId: existing.id, status: existing.status, totalItems: existing.totalItems, deduplicated: true }, { status: 202 });
+    }
+
     const created = await createJob({
       type: "REPORT_CARD_BATCH_GENERATION",
       schoolId: teacher.schoolId,
       createdById: session.user.id,
-      payload: {
-        schoolId: teacher.schoolId,
-        teacherId: teacher.id,
-        sectionId: teacher.mentorSectionId,
-        examSchemeId,
-        studentIds: requestedStudentIds,
-        classTeacherRemark: classTeacherRemark ?? null,
-      },
+      payload,
       totalItems: requestedStudentIds.length,
+      payloadFingerprint: fingerprint,
     });
     if (!created.ok) return NextResponse.json({ error: created.error }, { status: 400 });
+    // `created.deduplicated` means a concurrent identical request won the
+    // create race between our own pre-check above and this call — report the
+    // WINNING job's actual stored totalItems, not this request's count.
     return NextResponse.json(
-      { mode: "job", jobId: created.job.id, status: created.job.status, totalItems: requestedStudentIds.length },
+      { mode: "job", jobId: created.job.id, status: created.job.status, totalItems: created.job.totalItems, deduplicated: created.deduplicated ?? false },
       { status: 202 }
     );
   }

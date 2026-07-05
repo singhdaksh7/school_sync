@@ -14,6 +14,12 @@
     "seed:pilot": "tsx scripts/seed-pilot.ts",
     "pilot:verify": "tsx scripts/pilot-verify.ts",
     "pilot:verify:smart-timetable": "tsx scripts/smart-timetable-pilot-verify.ts",
+    "pilot:verify:operations": "tsx scripts/operations-pilot-verify.ts",
+    "pilot:verify:teacher-operations": "tsx scripts/teacher-operations-pilot-verify.ts",
+    "pilot:verify:cost-guard": "tsx scripts/cost-guard-pilot-verify.ts",
+    "pilot:verify:final-scenario": "tsx scripts/final-backend-pilot-scenario.ts",
+    "pilot:verify:all": "npm run pilot:verify && npm run pilot:verify:smart-timetable && npm run pilot:verify:operations && npm run pilot:verify:teacher-operations && npm run pilot:verify:cost-guard && npm run pilot:verify:final-scenario",
+    "maintenance:file-retention": "tsx scripts/maintenance-file-retention.ts",
     "scripts:typecheck": "tsc --noEmit -p tsconfig.scripts.json",
     "prisma:check-drift": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code"
   },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canAccessSchool, canWriteSchool, sessionRole } from "@/lib/tenant";
 import { getJobForSchool, cancelPendingJob } from "@/lib/jobs";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ schoolId: string; jobId: string }> }) {
   const { schoolId, jobId } = await params;
@@ -9,6 +10,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canAccessSchool(schoolId, session.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "JOB_STATUS");
+    if (denied) return denied;
   }
 
   // Tenant-scoped lookup: a job id from another school is not found here.
@@ -38,6 +43,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ scho
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await canWriteSchool(schoolId, session.user.id, sessionRole(session.user)))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  {
+    const denied = await enforceActorRateLimit({ schoolId, actorType: "ADMIN_STAFF", actorId: session.user.id }, "MUTATION");
+    if (denied) return denied;
   }
 
   // Only a not-yet-started job can be cancelled.

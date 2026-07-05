@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { generateReportCardPdf } from "@/lib/report-card-pdf";
 import { reportCardInclude, reportCardToPdfInput } from "@/lib/report-cards";
 import { requireSchoolFeature, isFeatureEnabled } from "@/lib/feature-flags";
+import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 export async function GET(
   req: NextRequest,
@@ -15,6 +16,10 @@ export async function GET(
 
   const featureDenied = await requireSchoolFeature(auth.guardian.schoolId, "REPORT_CARDS");
   if (featureDenied) return featureDenied;
+  {
+    const rateDenied = await enforceActorRateLimit({ schoolId: auth.guardian.schoolId, actorType: "PARENT", actorId: auth.guardian.id }, "PDF");
+    if (rateDenied) return rateDenied;
+  }
 
   const card = await prisma.reportCard.findFirst({
     where: {

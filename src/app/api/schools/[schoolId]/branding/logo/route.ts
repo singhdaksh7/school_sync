@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { canWriteSchool, sessionRole } from "@/lib/tenant";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { readUploadedFile, resolveDownloadUrl, uploadManagedFile } from "@/lib/file-service";
+import { enforceUploadQuota } from "@/lib/api-cost-guard";
 
 // Managed upload for the school's branding logo. Replaces trusting a
 // client-supplied `logoUrl` for the primary flow — the object is validated,
@@ -23,6 +24,9 @@ export async function POST(
     const denied = await requireSchoolFeature(schoolId, "WHITE_LABEL");
     if (denied) return denied;
   }
+
+  const denied = await enforceUploadQuota({ schoolId, actorType: sessionRole(session.user) ?? "USER", actorId: session.user.id }, "BRANDING_IMAGE");
+  if (denied) return denied;
 
   const upload = await readUploadedFile(req);
   if (!upload) return NextResponse.json({ error: "A logo file is required" }, { status: 400 });

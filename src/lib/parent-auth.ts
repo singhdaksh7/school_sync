@@ -2,6 +2,8 @@ import jwt from "jsonwebtoken";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { statusIsBlocked } from "@/lib/school-access";
+import { validateSession } from "@/lib/auth-sessions";
+import { systemClock } from "@/lib/clock";
 
 export interface ParentTokenPayload {
   guardianId: string;
@@ -11,6 +13,8 @@ export interface ParentTokenPayload {
   role: string;
   schoolId: string;
   schoolSlug: string;
+  /** Raw session identifier (see src/lib/auth-sessions.ts) — optional only for tokens issued before session tracking existed. */
+  sid?: string;
 }
 
 export function normalizePhone(phone: string) {
@@ -48,6 +52,11 @@ export async function getAuthenticatedGuardian(req: NextRequest) {
 
   const decoded = verifyParentToken(token);
   if (!decoded) return null;
+
+  if (decoded.sid) {
+    const validation = await validateSession(decoded.sid, systemClock.now());
+    if (!validation.valid) return null;
+  }
 
   const guardian = await prisma.guardian.findFirst({
     where: {
