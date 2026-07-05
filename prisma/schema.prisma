@@ -268,6 +268,7 @@ model School {
   notifications               FounderNotification[]
   storedFiles                 StoredFile[]
   backgroundJobs              BackgroundJob[]
+  customDomains               CustomDomain[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 }
@@ -1193,4 +1194,38 @@ model BackgroundJob {
   @@index([status, createdAt])
   @@index([schoolId, createdAt])
   @@index([type, status])
+}
+
+// ── Wave C: custom-domain ownership verification ─────────────────────────────
+// Separate from the legacy School.customDomain free-text field (kept, unused
+// for host resolution, for historical display only — see resolveSchool in
+// src/lib/school-resolver.ts). A hostname only resolves a school for public
+// serving once it reaches VERIFIED via a DNS TXT ownership check; PENDING/
+// FAILED/DISABLED never do (see src/lib/custom-domain.ts).
+
+enum CustomDomainStatus {
+  PENDING
+  VERIFYING
+  VERIFIED
+  FAILED
+  DISABLED
+}
+
+model CustomDomain {
+  id                 String              @id @default(cuid())
+  schoolId           String
+  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  hostname           String
+  normalizedHostname String              @unique
+  status             CustomDomainStatus  @default(PENDING)
+  verificationMethod String              @default("DNS_TXT")
+  verificationToken  String
+  lastCheckedAt      DateTime?
+  verifiedAt         DateTime?
+  failureReason      String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([schoolId])
+  @@index([status])
 }

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isStorageConfigured } from "@/lib/storage";
 import { getRateLimiterKind, isDistributedRateLimiterConfigured } from "@/lib/rate-limit";
 import { isJobWorkerConfigured } from "@/lib/jobs";
+import { requiredConfigReady } from "@/lib/config-validation";
 
 /**
  * Health endpoint.
@@ -53,9 +54,16 @@ export async function GET(req: Request) {
   const distributedRateLimiting = isDistributedRateLimiterConfigured();
   const storageConfigured = isStorageConfigured();
   const jobWorkerConfigured = isJobWorkerConfigured();
+  // Email/AI are feature-scoped, never block readiness — reported for
+  // operational visibility only (see config-validation.ts).
+  const emailConfigured = Boolean(process.env.RESEND_API_KEY);
+  const aiConfigured = Boolean(process.env.ANTHROPIC_API_KEY);
+  // Custom-domain verification always works when the DB is up — it's a pure
+  // DNS TXT lookup (src/lib/custom-domain.ts), no external provider config.
+  const customDomainVerificationCapability = database === "up";
 
   const isProd = process.env.NODE_ENV === "production";
-  const productionDependenciesReady = distributedRateLimiting && storageConfigured && jobWorkerConfigured;
+  const productionDependenciesReady = distributedRateLimiting && storageConfigured && jobWorkerConfigured && requiredConfigReady();
 
   let status: "ready" | "degraded" | "not_ready";
   if (database === "down") {
@@ -75,6 +83,9 @@ export async function GET(req: Request) {
         distributedRateLimiting,
         storageConfigured,
         jobWorkerConfigured,
+        emailConfigured,
+        aiConfigured,
+        customDomainVerificationCapability,
       },
       timestamp: new Date().toISOString(),
     },

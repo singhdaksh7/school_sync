@@ -254,6 +254,7 @@ export const reportCardInclude = {
       name: true,
       logoUrl: true,
       logoFile: { select: { storageKey: true, contentType: true } },
+      poweredBySchoolSync: true,
     },
   },
   student: {
@@ -277,7 +278,12 @@ export function serializeReportCard<T extends { attendanceSummary: string }>(car
 }
 
 type CardForPdf = {
-  school: { name: string; logoUrl: string | null; logoFile?: { storageKey: string; contentType: string } | null };
+  school: {
+    name: string;
+    logoUrl: string | null;
+    logoFile?: { storageKey: string; contentType: string } | null;
+    poweredBySchoolSync?: boolean;
+  };
   student: { name: string; rollNo: string; section: { name: string; class: { name: string } } };
   examScheme: { name: string };
   generatedByTeacher: { name: string };
@@ -296,13 +302,23 @@ type CardForPdf = {
  * Honors the immutable templateSnapshot when present; otherwise the PDF falls
  * back to the default layout (templateSnapshot === null) — this is what keeps
  * already-published cards stable when a template is later edited.
+ *
+ * `whiteLabelEnabled` mirrors the same WHITE_LABEL product rule as
+ * brandingForSchool (school-resolver.ts): the school-level logo FALLBACK (used
+ * only when no report-card template assigns its own asset) and the
+ * poweredBySchoolSync toggle are both WHITE_LABEL-gated branding, so when the
+ * feature is off the document falls back to no custom logo + forced platform
+ * attribution — never the raw stored `poweredBySchoolSync: false`. The
+ * template's OWN assets (REPORT_CARD_BUILDER-gated, a separate feature) are
+ * unaffected either way.
  */
-export function reportCardToPdfInput(card: CardForPdf) {
+export function reportCardToPdfInput(card: CardForPdf, opts: { whiteLabelEnabled: boolean } = { whiteLabelEnabled: true }) {
   const snapshot = normalizeSnapshot(card.templateSnapshot);
   return {
     schoolName: card.school.name,
-    logoUrl: card.school.logoUrl,
-    schoolLogoAsset: card.school.logoFile ?? null,
+    logoUrl: opts.whiteLabelEnabled ? card.school.logoUrl : null,
+    schoolLogoAsset: opts.whiteLabelEnabled ? card.school.logoFile ?? null : null,
+    poweredBySchoolSync: opts.whiteLabelEnabled ? (card.school.poweredBySchoolSync ?? false) : true,
     studentName: card.student.name,
     rollNo: card.student.rollNo,
     classSection: `${card.student.section.class.name}-${card.student.section.name}`,

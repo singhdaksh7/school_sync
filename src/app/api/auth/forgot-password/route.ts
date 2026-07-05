@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createPasswordResetToken } from "@/lib/password-reset";
-import { sendPasswordResetEmail } from "@/lib/email";
+import { sendPasswordResetEmail, resolveSchoolNameForUser } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
 import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
@@ -39,7 +39,8 @@ export async function POST(req: Request) {
     const baseUrl = process.env.NEXTAUTH_URL ?? new URL(req.url).origin;
     const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
 
-    await sendPasswordResetEmail(user.email, resetUrl);
+    const schoolName = await resolveSchoolNameForUser(user.id, user.role);
+    await sendPasswordResetEmail(user.email, resetUrl, schoolName);
     await logAudit({
       action: "PASSWORD_RESET_REQUESTED",
       entityType: "User",

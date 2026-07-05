@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -5,8 +6,21 @@ import { getSchoolBySlug } from "@/lib/school";
 import { sessionRole } from "@/lib/tenant";
 import { statusIsBlocked } from "@/lib/school-access";
 import { getSchoolFeatureFlags } from "@/lib/feature-flags";
+import { tenantAppNameForSchoolId } from "@/lib/school-resolver";
 import { redirect, notFound } from "next/navigation";
 import DashboardShell from "@/components/dashboard/DashboardShell";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ schoolSlug: string }>;
+}): Promise<Metadata> {
+  const { schoolSlug } = await params;
+  const school = await getSchoolBySlug(schoolSlug);
+  if (!school) return { title: "Dashboard | SchoolSync" };
+  const appName = await tenantAppNameForSchoolId(school.id);
+  return { title: `Dashboard | ${appName ?? "SchoolSync"}` };
+}
 
 export default async function DashboardLayout({
   children,

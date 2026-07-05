@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: schoolsync_ci
+          POSTGRES_PASSWORD: schoolsync_ci_disposable_pw
+          POSTGRES_DB: schoolsync_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Disposable CI-only Postgres service above — never live/staging Neon.
+      DATABASE_URL: postgresql://schoolsync_ci:schoolsync_ci_disposable_pw@localhost:5432/schoolsync_ci
+      DIRECT_URL: postgresql://schoolsync_ci:schoolsync_ci_disposable_pw@localhost:5432/schoolsync_ci
+      # Dummy, non-production values — just enough for build-time module
+      # initialization that reads these at import time (e.g. src/lib/prisma.ts).
+      NEXTAUTH_SECRET: ci-dummy-secret-not-a-real-secret
+      NEXTAUTH_URL: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Apply migration history to disposable CI database
+        run: npx prisma migrate deploy
+
+      - name: Migration drift check (schema.prisma vs. applied migrations)
+        run: npm run prisma:check-drift
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Worker typecheck
+        run: npm run worker:typecheck
+
+      - name: Scripts typecheck
+        run: npm run scripts:typecheck

@@ -18,6 +18,8 @@ type ReportCardPdfInput = {
   logoUrl?: string | null;
   /** School-level logo, used only when the template has no logo of its own. */
   schoolLogoAsset?: ManagedAssetRef;
+  /** Small platform attribution line (see school-resolver.ts WHITE_LABEL rule). */
+  poweredBySchoolSync?: boolean;
   studentName: string;
   rollNo: string;
   classSection: string;
@@ -373,6 +375,9 @@ export async function generateReportCardPdf(input: ReportCardPdfInput): Promise<
   if (t?.footerText) {
     b.rule();
     b.wrapped(t.footerText, { size: 8, color: MUTED });
+  }
+  if (input.poweredBySchoolSync) {
+    b.text("Powered by SchoolSync", { size: 7, color: MUTED });
   }
 
   return b.finish();

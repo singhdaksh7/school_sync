@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { generateReportCardPdf } from "@/lib/report-card-pdf";
 import { reportCardInclude, reportCardToPdfInput } from "@/lib/report-cards";
 import { canAccessSchool } from "@/lib/tenant";
-import { requireSchoolFeature } from "@/lib/feature-flags";
+import { requireSchoolFeature, isFeatureEnabled } from "@/lib/feature-flags";
 
 export async function GET(
   _req: Request,
@@ -27,7 +27,8 @@ export async function GET(
   });
   if (!card) return NextResponse.json({ error: "Report card not found" }, { status: 404 });
 
-  const pdf = await generateReportCardPdf(reportCardToPdfInput(card));
+  const whiteLabelEnabled = await isFeatureEnabled(schoolId, "WHITE_LABEL");
+  const pdf = await generateReportCardPdf(reportCardToPdfInput(card, { whiteLabelEnabled }));
 
   return new Response(new Uint8Array(pdf), {
     headers: {

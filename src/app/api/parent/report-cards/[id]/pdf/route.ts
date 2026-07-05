@@ -3,7 +3,7 @@ import { getAuthenticatedGuardian } from "@/lib/parent-auth";
 import { prisma } from "@/lib/prisma";
 import { generateReportCardPdf } from "@/lib/report-card-pdf";
 import { reportCardInclude, reportCardToPdfInput } from "@/lib/report-cards";
-import { requireSchoolFeature } from "@/lib/feature-flags";
+import { requireSchoolFeature, isFeatureEnabled } from "@/lib/feature-flags";
 
 export async function GET(
   req: NextRequest,
@@ -35,7 +35,8 @@ export async function GET(
   });
   if (!card) return NextResponse.json({ error: "Report card not found" }, { status: 404 });
 
-  const pdf = await generateReportCardPdf(reportCardToPdfInput(card));
+  const whiteLabelEnabled = await isFeatureEnabled(auth.guardian.schoolId, "WHITE_LABEL");
+  const pdf = await generateReportCardPdf(reportCardToPdfInput(card, { whiteLabelEnabled }));
 
   return new Response(new Uint8Array(pdf), {
     headers: {

@@ -19,6 +19,13 @@ export const STUDENT_BULK_IMPORT_SYNC_LIMIT = 100;
 // the job once the lease expires (crash recovery).
 export const JOB_LEASE_MS = 2 * 60 * 1000;
 
+// The processor renews the lease on this interval while a handler is still
+// executing (see job-processor.ts's heartbeat loop) — deliberately well
+// inside the lease window (1/4) so a couple of missed/slow heartbeats (a
+// transient DB error, GC pause, etc.) never let the lease expire out from
+// under a worker that is still legitimately processing.
+export const JOB_HEARTBEAT_INTERVAL_MS = 30 * 1000;
+
 // ── Payload schemas (never trust a DB Json blob without re-validation) ────────
 export const reportCardBatchPayloadSchema = z.object({
   schoolId: z.string().min(1),
@@ -169,18 +176,28 @@ export async function updateJobProgress(
   });
 }
 
-export async function completeJob(jobId: string, claimToken: string, resultMetadata: Prisma.InputJsonValue): Promise<void> {
-  await prisma.backgroundJob.updateMany({
+/**
+ * Marks a job COMPLETED — but ONLY if `claimToken` still matches the row's
+ * current claim (compare-and-swap, same pattern as claimNextJob/heartbeatJob).
+ * Returns false (a safe no-op, never an overwrite) when the claim is stale —
+ * e.g. the lease expired and a different worker already reclaimed the job.
+ * Callers MUST check the return value rather than assuming success.
+ */
+export async function completeJob(jobId: string, claimToken: string, resultMetadata: Prisma.InputJsonValue): Promise<boolean> {
+  const res = await prisma.backgroundJob.updateMany({
     where: { id: jobId, claimToken, status: "RUNNING" },
     data: { status: "COMPLETED", progress: 100, resultMetadata, completedAt: new Date(), claimToken: null, leaseExpiresAt: null },
   });
+  return res.count === 1;
 }
 
-export async function failJob(jobId: string, claimToken: string, errorSummary: string): Promise<void> {
-  await prisma.backgroundJob.updateMany({
+/** Same stale-claim protection as {@link completeJob}, for the failure path. */
+export async function failJob(jobId: string, claimToken: string, errorSummary: string): Promise<boolean> {
+  const res = await prisma.backgroundJob.updateMany({
     where: { id: jobId, claimToken, status: "RUNNING" },
     data: { status: "FAILED", errorSummary: errorSummary.slice(0, 500), completedAt: new Date(), claimToken: null, leaseExpiresAt: null },
   });
+  return res.count === 1;
 }
 
 /** Cancels a job that has not started. Returns false if it is already RUNNING/done. */

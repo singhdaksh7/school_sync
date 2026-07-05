@@ -7,9 +7,12 @@ import { requireSchoolFeature } from "@/lib/feature-flags";
 import { schoolLifecycleGate } from "@/lib/school-access";
 import { subDays, startOfDay, format, differenceInDays } from "date-fns";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
 const CACHE_DAYS = 30;
+
+function getAnthropicClient(): Anthropic | null {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  return apiKey ? new Anthropic({ apiKey }) : null;
+}
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -31,6 +34,14 @@ export async function POST(req: Request) {
   if (blocked) return blocked;
   const featureDenied = await requireSchoolFeature(schoolId, "AI_FEATURES");
   if (featureDenied) return featureDenied;
+
+  // The school's plan may have AI_FEATURES enabled even though the platform
+  // provider key isn't configured (e.g. a fresh dev/staging environment) —
+  // fail clean rather than crashing on the first Anthropic API call.
+  const client = getAnthropicClient();
+  if (!client) {
+    return NextResponse.json({ error: "AI features are not configured on this deployment" }, { status: 503 });
+  }
 
   // Return cached result if still within 30 days
   const cached = await prisma.aIInsightCache.findUnique({ where: { schoolId } });

@@ -114,6 +114,7 @@ export const FEATURE_ROUTE_RULES: RouteRule[] = [
   // ── WHITE_LABEL (per-school branding config; the public /api/branding tenant
   //    resolver is intentionally NOT gated) ────────────────────────────────────
   { pattern: /^schools\/\[schoolId\]\/branding(\/|$)/, feature: "WHITE_LABEL" },
+  { pattern: /^schools\/\[schoolId\]\/custom-domain(\/|$)/, feature: "WHITE_LABEL" },
 ];
 
 /**
