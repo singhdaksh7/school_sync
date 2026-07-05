@@ -13,6 +13,7 @@
     "worker:typecheck": "tsc --noEmit -p tsconfig.worker.json",
     "seed:pilot": "tsx scripts/seed-pilot.ts",
     "pilot:verify": "tsx scripts/pilot-verify.ts",
+    "pilot:verify:smart-timetable": "tsx scripts/smart-timetable-pilot-verify.ts",
     "scripts:typecheck": "tsc --noEmit -p tsconfig.scripts.json",
     "prisma:check-drift": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code"
   },

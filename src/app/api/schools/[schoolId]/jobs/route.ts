@@ -5,7 +5,7 @@ import { parsePagination, buildPaginationMeta } from "@/lib/pagination";
 import { listJobsForSchool } from "@/lib/jobs";
 import type { JobType } from "@/generated/prisma/client";
 
-const JOB_TYPES = new Set(["REPORT_CARD_BATCH_GENERATION", "STUDENT_BULK_IMPORT"]);
+const JOB_TYPES = new Set(["REPORT_CARD_BATCH_GENERATION", "STUDENT_BULK_IMPORT", "SMART_TIMETABLE_GENERATION"]);
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;

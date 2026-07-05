@@ -7,11 +7,12 @@
 
 import { prisma } from "@/lib/prisma";
 import type { BackgroundJob } from "@/generated/prisma/client";
-import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema } from "@/lib/jobs";
+import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema, smartTimetableGenerationPayloadSchema } from "@/lib/jobs";
 import { buildReportCardBatchContext, generateReportCardForStudent } from "@/lib/report-cards";
 import { importStudentRows, type ImportRow } from "@/lib/student-import";
 import { getStudentLimitInfo } from "@/lib/plan-limits";
 import { readManagedFileBytes } from "@/lib/file-service";
+import { generateSectionsBatch } from "@/lib/smart-timetable-batch";
 
 export type JobHelpers = {
   updateProgress: (processed: number, failed: number) => Promise<void>;
@@ -106,6 +107,43 @@ const handlers: Record<string, JobHandler> = {
         skipped: summary.skipped,
         failed: summary.failed,
         sampleErrors: summary.results.filter((r) => !r.success).slice(0, 20),
+      },
+    };
+  },
+
+  SMART_TIMETABLE_GENERATION: async (job, { updateProgress }) => {
+    const payload = smartTimetableGenerationPayloadSchema.parse(job.payload);
+    let processed = 0;
+    let failed = 0;
+
+    const { results } = await generateSectionsBatch({
+      schoolId: payload.schoolId,
+      createdById: payload.createdById,
+      generationSeed: payload.generationSeed,
+      sections: payload.sections,
+      onProgress: async (done, _total, latest) => {
+        processed = done;
+        if (latest.validationStatus !== "VALID") failed += 1;
+        await updateProgress(processed, failed);
+      },
+    });
+
+    return {
+      processedItems: processed,
+      failedItems: failed,
+      resultMetadata: {
+        sectionsTotal: payload.sections.length,
+        sectionsSucceeded: results.filter((r) => r.validationStatus === "VALID").length,
+        sectionsFailed: failed,
+        results: results.map((r) => ({
+          sectionId: r.sectionId,
+          draftId: r.draftId,
+          outcome: r.outcome,
+          validationStatus: r.validationStatus,
+          qualityScore: r.qualityScore,
+          assignedCount: r.assignedCount,
+          requiredCount: r.requiredCount,
+        })),
       },
     };
   },

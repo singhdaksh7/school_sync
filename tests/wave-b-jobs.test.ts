@@ -2,9 +2,11 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   reportCardBatchPayloadSchema,
   studentBulkImportPayloadSchema,
+  smartTimetableGenerationPayloadSchema,
   JOB_TYPE_FEATURE,
   REPORT_CARD_SYNC_LIMIT,
   STUDENT_BULK_IMPORT_SYNC_LIMIT,
+  SMART_TIMETABLE_SYNC_SECTION_LIMIT,
   JOB_LEASE_MS,
   isJobWorkerConfigured,
 } from "@/lib/jobs";
@@ -73,6 +75,32 @@ describe("job payload validation — never trusts a DB Json blob without re-vali
     const result = reportCardBatchPayloadSchema.safeParse({ __proto__: { polluted: true } });
     expect(result.success).toBe(false);
   });
+
+  it("accepts a valid SMART_TIMETABLE_GENERATION payload", () => {
+    const result = smartTimetableGenerationPayloadSchema.safeParse({
+      schoolId: "s1",
+      createdById: "u1",
+      sections: [
+        { classId: "c1", sectionId: "sec-a" },
+        { classId: "c1", sectionId: "sec-b", completionMode: "REOPTIMIZE_UNLOCKED" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a SMART_TIMETABLE_GENERATION payload with an empty sections array", () => {
+    const result = smartTimetableGenerationPayloadSchema.safeParse({ schoolId: "s1", createdById: "u1", sections: [] });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a SMART_TIMETABLE_GENERATION payload with an invalid completionMode", () => {
+    const result = smartTimetableGenerationPayloadSchema.safeParse({
+      schoolId: "s1",
+      createdById: "u1",
+      sections: [{ classId: "c1", sectionId: "sec-a", completionMode: "NOT_A_MODE" }],
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("job type → feature gate mapping", () => {
@@ -83,12 +111,17 @@ describe("job type → feature gate mapping", () => {
   it("does not gate STUDENT_BULK_IMPORT behind any catalog feature", () => {
     expect(JOB_TYPE_FEATURE.STUDENT_BULK_IMPORT).toBeNull();
   });
+
+  it("does not gate SMART_TIMETABLE_GENERATION behind any catalog feature", () => {
+    expect(JOB_TYPE_FEATURE.SMART_TIMETABLE_GENERATION).toBeNull();
+  });
 });
 
 describe("job handler registry", () => {
   it("resolves a handler for every known job type", () => {
     expect(getJobHandler("REPORT_CARD_BATCH_GENERATION")).toBeTypeOf("function");
     expect(getJobHandler("STUDENT_BULK_IMPORT")).toBeTypeOf("function");
+    expect(getJobHandler("SMART_TIMETABLE_GENERATION")).toBeTypeOf("function");
   });
 
   it("safely returns null (never throws) for an unknown job type", () => {
@@ -100,6 +133,10 @@ describe("job handler registry", () => {
 describe("sync thresholds and lease configuration", () => {
   it("uses a bounded synchronous threshold for report-card batches", () => {
     expect(REPORT_CARD_SYNC_LIMIT).toBe(40);
+  });
+
+  it("uses a bounded synchronous threshold for smart timetable generation (single section only)", () => {
+    expect(SMART_TIMETABLE_SYNC_SECTION_LIMIT).toBe(1);
   });
 
   it("uses a bounded synchronous threshold for student bulk import", () => {

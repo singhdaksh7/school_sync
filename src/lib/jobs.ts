@@ -14,6 +14,11 @@ import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
 // Batch thresholds — above these, work MUST go async to a job.
 export const REPORT_CARD_SYNC_LIMIT = 40;
 export const STUDENT_BULK_IMPORT_SYNC_LIMIT = 100;
+// A single section's generation is bounded (one subject/teacher/slot-grid
+// search, well under a second even at pilot scale — see
+// smart-timetable-generator.ts). Two or more sections in one request must go
+// through the durable job instead of one long-running HTTP request (PART 19).
+export const SMART_TIMETABLE_SYNC_SECTION_LIMIT = 1;
 
 // A claimed job's lease. If a worker dies mid-run, another worker may re-claim
 // the job once the lease expires (crash recovery).
@@ -46,15 +51,36 @@ export const studentBulkImportPayloadSchema = z.object({
 });
 export type StudentBulkImportPayload = z.infer<typeof studentBulkImportPayloadSchema>;
 
+// Multi-section Smart Timetable generation batch — see src/lib/smart-timetable-batch.ts.
+// A single-section generation stays synchronous (SMART_TIMETABLE_SYNC_SECTION_LIMIT);
+// this job type exists for the multi-section/whole-school case only.
+export const smartTimetableGenerationPayloadSchema = z.object({
+  schoolId: z.string().min(1),
+  createdById: z.string().min(1),
+  sections: z
+    .array(
+      z.object({
+        classId: z.string().min(1),
+        sectionId: z.string().min(1),
+        completionMode: z.enum(["COMPLETE_REMAINING_ONLY", "REOPTIMIZE_UNLOCKED"]).optional(),
+      })
+    )
+    .min(1),
+  generationSeed: z.string().optional(),
+});
+export type SmartTimetableGenerationPayload = z.infer<typeof smartTimetableGenerationPayloadSchema>;
+
 export const JOB_PAYLOAD_SCHEMAS = {
   REPORT_CARD_BATCH_GENERATION: reportCardBatchPayloadSchema,
   STUDENT_BULK_IMPORT: studentBulkImportPayloadSchema,
+  SMART_TIMETABLE_GENERATION: smartTimetableGenerationPayloadSchema,
 } satisfies Record<JobType, z.ZodTypeAny>;
 
 /** Feature entitlement required to CREATE each job type (null = no catalog gate). */
 export const JOB_TYPE_FEATURE: Record<JobType, FeatureFlagKeyValue | null> = {
   REPORT_CARD_BATCH_GENERATION: "REPORT_CARDS",
   STUDENT_BULK_IMPORT: null, // student management has no catalog feature key
+  SMART_TIMETABLE_GENERATION: null, // timetable module has no catalog feature key (see feature-routes.ts)
 };
 
 // ── Creation ─────────────────────────────────────────────────────────────────

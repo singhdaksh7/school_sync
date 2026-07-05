@@ -160,6 +160,7 @@ enum FileUploaderActorType {
 enum JobType {
   REPORT_CARD_BATCH_GENERATION
   STUDENT_BULK_IMPORT
+  SMART_TIMETABLE_GENERATION
 }
 
 enum JobStatus {
@@ -194,6 +195,7 @@ model User {
   invoicesCreated        Invoice[]                  @relation("InvoiceCreator")
   teachersDeleted        Teacher[]                  @relation("TeacherDeletedBy")
   passwordResetTokens    PasswordResetToken[]
+  timetableDraftsCreated TimetableDraft[]           @relation("TimetableDraftCreatedBy")
   createdAt              DateTime                   @default(now())
   updatedAt              DateTime                   @updatedAt
 }
@@ -230,6 +232,21 @@ model School {
   status                      SchoolStatus               @default(ACTIVE)
   periodsPerDay               Int                        @default(6)
   teacherAttendanceCutoffTime String                     @default("09:30")
+  // Smart Timetable: working days per week (1=Mon..N). Combined with
+  // periodsPerDay this defines the weekly slot capacity (see
+  // src/lib/timetable-capacity.ts). Nullable-free with a safe default so
+  // existing schools (implicitly Mon-Sat, matching TimetableSlot.dayOfWeek
+  // 1-6) behave identically until a school explicitly reconfigures it.
+  timetableWorkingDays               Int                  @default(6)
+  // Teacher workload rule DEFAULTS (school-wide fallback). Nullable: when
+  // unset, the effective default is derived from
+  // timetableWorkingDays * periodsPerDay (see teacher-workload-rules.ts) —
+  // never a hardcoded "30" for every school. A TeacherWorkloadOverride row
+  // can override any of these per-teacher.
+  defaultMaxWeeklyTeachingPeriods     Int?
+  defaultMinFreeTeachingPeriods       Int?
+  defaultMaxDailyTeachingPeriods      Int?
+  defaultMaxConsecutiveTeachingPeriods Int?
   ownerId                     String?                    @unique
   owner                       User?                      @relation("SchoolOwner", fields: [ownerId], references: [id])
   admins                      User[]                     @relation("SchoolAdmins")
@@ -269,6 +286,10 @@ model School {
   storedFiles                 StoredFile[]
   backgroundJobs              BackgroundJob[]
   customDomains               CustomDomain[]
+  teacherWorkloadOverrides     TeacherWorkloadOverride[]
+  teacherSubjectEligibilities  TeacherSubjectEligibility[]
+  timetableSubjectRequirements TimetableSubjectRequirement[]
+  timetableDrafts              TimetableDraft[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 }
@@ -308,6 +329,8 @@ model Class {
   sections      Section[]
   feeStructures FeeStructure[]
   subjects      Subject[]
+  timetableSubjectRequirements TimetableSubjectRequirement[]
+  timetableDrafts              TimetableDraft[]
   createdAt     DateTime       @default(now())
 
   @@unique([name, schoolId])
@@ -328,6 +351,8 @@ model Section {
   subjects       Subject[]
   transfersFrom  SectionTransfer[] @relation("TransferFrom")
   transfersTo    SectionTransfer[] @relation("TransferTo")
+  timetableSubjectRequirements TimetableSubjectRequirement[]
+  timetableDrafts              TimetableDraft[]
   createdAt      DateTime          @default(now())
 
   @@unique([name, classId])
@@ -373,6 +398,10 @@ model Teacher {
   roleAssignments           TeacherRoleAssignment[]
   homeworkCompletionsMarked HomeworkStudentStatus[]    @relation("HomeworkCompletionMarker")
   notebookChecks            NotebookCheck[]
+  workloadOverride          TeacherWorkloadOverride?
+  subjectEligibilities      TeacherSubjectEligibility[]
+  preferredForRequirements  TimetableSubjectRequirement[] @relation("PreferredTeacher")
+  timetableDraftSlots       TimetableDraftSlot[]
   isDeleted                 Boolean                    @default(false)
   deletedAt                 DateTime?
   deletedById               String?
@@ -412,6 +441,129 @@ model TimetableSlot {
   updatedAt DateTime @updatedAt
 
   @@unique([sectionId, dayOfWeek, period])
+}
+
+// ── Smart Timetable ──────────────────────────────────────────────────────────
+// LIVE timetable stays exactly TimetableSlot above (unchanged, still what
+// teacher schedules/attendance/substitutions/arrangements read). Everything
+// below is DRAFT-only generation/planning state — a draft is never read by
+// any operational consumer until explicitly published (see
+// src/lib/smart-timetable-publish.ts), which copies its slots into
+// TimetableSlot atomically. See docs/smart-timetable-architecture.md.
+
+/** Per-teacher override of the school's default workload rule fields (any field left null falls back to the School default, which itself falls back to a working-days*periodsPerDay-derived value — see teacher-workload-rules.ts). */
+model TeacherWorkloadOverride {
+  id                        String   @id @default(cuid())
+  teacherId                 String   @unique
+  teacher                   Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  schoolId                  String
+  school                    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  maxWeeklyTeachingPeriods  Int?
+  minFreeTeachingPeriods    Int?
+  maxDailyTeachingPeriods   Int?
+  maxConsecutiveTeachingPeriods Int?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+/** Explicit teacher-can-teach-subject eligibility (subject identified by name, matching the existing free-text convention already used by Teacher.subject / TimetableSlot.subject — there is no global per-school Subject catalog; see baseline audit in docs/smart-timetable-architecture.md). A teacher with no rows here falls back to eligibility via their single Teacher.subject field (backward compatible with every teacher seeded before this feature existed). */
+model TeacherSubjectEligibility {
+  id          String   @id @default(cuid())
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherId   String
+  teacher     Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subjectName String
+  createdAt   DateTime @default(now())
+
+  @@unique([teacherId, subjectName])
+  @@index([schoolId, subjectName])
+}
+
+/** Weekly period requirement for one subject in one class/section's timetable (used for capacity validation + generation, not the live TimetableSlot rows directly). */
+model TimetableSubjectRequirement {
+  id                    String   @id @default(cuid())
+  schoolId              String
+  school                School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId               String
+  class                 Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId             String
+  section               Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectName           String
+  requiredPeriodsPerWeek Int
+  minPeriodsPerDay      Int?
+  maxPeriodsPerDay      Int?
+  allowConsecutive      Boolean  @default(false)
+  preferredTeacherId    String?
+  preferredTeacher       Teacher? @relation("PreferredTeacher", fields: [preferredTeacherId], references: [id], onDelete: SetNull)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([sectionId, subjectName])
+  @@index([schoolId])
+  @@index([classId])
+}
+
+enum TimetableDraftStatus {
+  DRAFT
+  VALID
+  INVALID
+  PUBLISHED
+}
+
+enum TimetableDraftSource {
+  MANUAL
+  AUTO
+  HYBRID
+}
+
+/** A generated or manually-built timetable NOT yet published — never read by any operational consumer (teacher schedule, attendance, substitutions, arrangements). Publishing copies validated TimetableDraftSlot rows into live TimetableSlot atomically (see PART 21). */
+model TimetableDraft {
+  id               String                @id @default(cuid())
+  schoolId         String
+  school           School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId          String
+  class            Class                 @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId        String
+  section          Section               @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  status           TimetableDraftStatus  @default(DRAFT)
+  source           TimetableDraftSource  @default(MANUAL)
+  qualityScore     Float?
+  // Small generation metadata (weights version, seed, batch id, search stats).
+  // Deliberately NOT where slot data lives — see TimetableDraftSlot below.
+  configSnapshot   Json?
+  diagnostics      Json?
+  generationSeed   String?
+  createdById      String?
+  createdBy        User?                 @relation("TimetableDraftCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  publishedAt      DateTime?
+  slots            TimetableDraftSlot[]
+
+  @@index([schoolId])
+  @@index([sectionId])
+}
+
+model TimetableDraftSlot {
+  id          String         @id @default(cuid())
+  draftId     String
+  draft       TimetableDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int
+  period      Int
+  subjectName String?
+  teacherId   String?
+  teacher     Teacher?       @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  locked      Boolean        @default(false)
+  source      String?
+  reasonCode  String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([draftId, dayOfWeek, period])
+  @@index([teacherId])
 }
 
 model ExamScheme {
