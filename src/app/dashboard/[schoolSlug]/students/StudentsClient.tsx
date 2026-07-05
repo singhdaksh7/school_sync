@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { parseCSV } from "@/lib/csv-parse";
 
 interface Section { id: string; name: string; class: { id: string; name: string } }
 interface ClassWithSections { id: string; name: string; sections: { id: string; name: string }[] }
@@ -25,18 +26,6 @@ const empty = {
   name: "", admissionNo: "", rollNo: "", sectionId: "", email: "", phone: "",
   fatherName: "", fatherPhone: "", motherName: "", motherPhone: "",
 };
-
-function parseCSV(text: string): Record<string, string>[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/\s+/g, ""));
-  return lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => { row[h] = values[i] || ""; });
-    return row;
-  });
-}
 
 interface Props {
   initialStudents: Student[];
@@ -142,7 +131,7 @@ export default function StudentsClient({ initialStudents, initialSections, schoo
     const file = e.target.files?.[0];
     if (!file) return;
     const text = await file.text();
-    const rows = parseCSV(text);
+    const rows = parseCSV(text, { normalizeHeaderWhitespace: true });
     if (rows.length === 0) { alert("No valid rows found. Check CSV has a header row."); return; }
     setCsvLoading(true);
     const res = await fetch(`/api/schools/${schoolId}/students/bulk`, {

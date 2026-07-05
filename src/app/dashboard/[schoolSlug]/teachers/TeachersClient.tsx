@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { parseCSV } from "@/lib/csv-parse";
 
 interface Section { id: string; name: string }
 interface Class { id: string; name: string; sections: Section[] }
@@ -29,18 +30,6 @@ interface DeleteImpact {
 }
 
 const empty = { name: "", email: "", phone: "", subject: "", mentorSectionId: "" };
-
-function parseCSV(text: string): Record<string, string>[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-  return lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => { row[h] = values[i] || ""; });
-    return row;
-  });
-}
 
 interface Props {
   initialTeachers: Teacher[];
