@@ -27,6 +27,41 @@ Session/quota policy is centralized in `src/lib/cost-guard-policy.ts` — treat
 these numbers as product policy, not implementation detail, and expect
 clients to handle `NEW_LOGIN_LIMIT_REACHED` / `429` responses gracefully.
 
+## 1a. Additive mobile bootstrap contracts (Phase 6 — mobile shared foundation)
+
+Two read-only, additive endpoints were added to close mobile integration gaps
+identified while building the unified mobile app. Both derive their tenant
+**exclusively from the authenticated bearer session** (mobile JWT or parent
+JWT, same auth resolvers as `/api/mobile/me`) — never from a client-supplied
+`schoolId` or request hostname.
+
+- `GET /api/mobile/features` — returns `{ features: Record<FeatureFlagKey,
+  boolean> }` for the authenticated actor's own school, using the exact same
+  `getSchoolFeatureFlags` resolver every `requireSchoolFeature()` enforcement
+  check already calls. **This does not alter existing entitlement
+  enforcement** — every protected route still independently checks
+  `requireSchoolFeature()` on the actual request; this endpoint is a
+  read-only bootstrap view, and a `true` value here is not an authorization
+  grant (Teacher permissions and Parent/Student actor rules remain
+  separately authoritative).
+- `GET /api/mobile/branding` — returns the same `BrandingResponse` DTO as the
+  public `GET /api/branding` (`schoolName, logoUrl, primaryColor,
+  secondaryColor, appName, poweredBySchoolSync`), resolved by `schoolId` from
+  the bearer session via `resolveTenantBrandingForSchoolId` instead of by
+  request hostname via `resolveTenantBranding`. **This does not alter
+  branding resolution logic** — both call the same
+  `brandingForSchool`/WHITE_LABEL rule; only the tenant lookup key differs.
+  Exists because a mobile client hitting one shared, non-per-school-subdomain
+  API host cannot be resolved by hostname the way a custom-domain web
+  request can — session restore via `/api/mobile/me` needs this too, not
+  just the initial login response.
+
+Both routes apply `STANDARD_READ` Cost Guard classification and inherit
+lifecycle enforcement for free — `getMobileAuth`/`getAuthenticatedGuardian`
+already return `null` for a revoked session or a suspended/expired school, so
+both routes 401 before reaching any business logic in that case, the same as
+every other mobile-facing route.
+
 ## 2. Tenant/authorization model (frozen)
 
 - Every school-scoped resource is reached under `/api/schools/[schoolId]/...`.

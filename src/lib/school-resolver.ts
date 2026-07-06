@@ -207,3 +207,21 @@ export async function tenantAppNameForSchoolId(schoolId: string): Promise<string
   const whiteLabelEnabled = await isFeatureEnabled(schoolId, "WHITE_LABEL");
   return whiteLabelEnabled ? school.appName || school.name : school.name;
 }
+
+/**
+ * Same as resolveTenantBranding but resolves by schoolId instead of request
+ * hostname — for an authenticated bearer-session caller (mobile) whose tenant
+ * is already known from the JWT, never from a client-supplied schoolId/host.
+ * Reuses brandingForSchool (the same WHITE_LABEL rule, the same field
+ * mapping) so this is a lookup-key change only, never a second branding
+ * resolver.
+ */
+export async function resolveTenantBrandingForSchoolId(schoolId: string): Promise<BrandingResponse> {
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: SCHOOL_BRANDING_SELECT,
+  });
+  if (!school) return DEFAULT_BRANDING;
+  const whiteLabelEnabled = await isFeatureEnabled(schoolId, "WHITE_LABEL");
+  return brandingForSchool(school, { whiteLabelEnabled });
+}
