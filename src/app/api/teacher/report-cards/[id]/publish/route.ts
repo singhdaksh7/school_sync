@@ -1,22 +1,21 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getTeacherAuth } from "@/lib/mobile-auth";
 import { reportCardInclude, serializeReportCard } from "@/lib/report-cards";
-import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { logAudit } from "@/lib/audit";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = teacherAuth.userId;
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
+  const teacher = await prisma.teacher.findUnique({ where: { userId } });
   if (!teacher) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const featureDenied = await requireSchoolFeature(teacher.schoolId, "REPORT_CARDS");
@@ -57,7 +56,7 @@ export async function POST(
     entityType: "ReportCard",
     entityId: card.id,
     metadata: { studentId: card.studentId, sectionId: card.sectionId },
-    userId: session.user.id,
+    userId,
     schoolId: teacher.schoolId,
   });
 

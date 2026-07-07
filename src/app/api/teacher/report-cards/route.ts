@@ -1,17 +1,15 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getTeacherAuth } from "@/lib/mobile-auth";
 import { getTeacherForSession, reportCardInclude, serializeReportCard } from "@/lib/report-cards";
-import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function GET(req: Request) {
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const teacher = await getTeacherForSession(session.user.id);
+  const teacher = await getTeacherForSession(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const featureDenied = await requireSchoolFeature(teacher.schoolId, "REPORT_CARDS");

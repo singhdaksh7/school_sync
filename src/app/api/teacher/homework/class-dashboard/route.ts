@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sessionRole } from "@/lib/tenant";
+import { getTeacherAuth } from "@/lib/mobile-auth";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import {
   addHomeworkStatsRecord,
@@ -20,11 +19,10 @@ function isCompleted(status: AcademicStatus) {
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const teacher = await getTeacherByUserId(session.user.id);
+  const teacher = await getTeacherByUserId(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const featureDenied = await requireSchoolFeature(teacher.schoolId, "HOMEWORK");

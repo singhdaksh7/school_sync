@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { canAccessSchool, studentBelongsToSchool, teacherBelongsToSchool, sessionRole } from "@/lib/tenant";
+import { canAccessSchool, studentBelongsToSchool, teacherBelongsToSchool } from "@/lib/tenant";
 import { requireSchoolAccessOrOperationalCapability } from "@/lib/operational-authorization";
+import { resolveOperationsActor } from "@/lib/operations-bearer-auth";
 import { parsePagination, paginated } from "@/lib/pagination";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const access = await requireSchoolAccessOrOperationalCapability(schoolId, session.user.id, sessionRole(session.user), "LEAVE", "VIEW", "TEACHER_LEAVE_VIEW");
+  const actor = await resolveOperationsActor(req);
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const access = await requireSchoolAccessOrOperationalCapability(schoolId, actor.userId, actor.role, "LEAVE", "VIEW", "TEACHER_LEAVE_VIEW");
   if (!access.ok) return access.response;
 
   const { searchParams } = new URL(req.url);

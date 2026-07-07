@@ -1,23 +1,21 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getTeacherAuth } from "@/lib/mobile-auth";
 import { generateReportCardPdf } from "@/lib/report-card-pdf";
 import { reportCardInclude, reportCardToPdfInput } from "@/lib/report-cards";
-import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature, isFeatureEnabled } from "@/lib/feature-flags";
 import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
+  const teacher = await prisma.teacher.findUnique({ where: { userId: teacherAuth.userId } });
   if (!teacher) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const featureDenied = await requireSchoolFeature(teacher.schoolId, "REPORT_CARDS");

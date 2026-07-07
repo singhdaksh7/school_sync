@@ -1,19 +1,20 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { sessionRole } from "@/lib/tenant";
+import { getTeacherAuth } from "@/lib/mobile-auth";
 
 async function getTeacher(userId: string) {
   return prisma.teacher.findUnique({ where: { userId } });
 }
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+// Personal Teacher leave (self-request/self-view only) — distinct from
+// Teacher Operations leave approval, which is a separate authorization
+// surface this route never touches.
+export async function GET(req: Request) {
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const teacher = await getTeacher(session.user.id);
+  const teacher = await getTeacher(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const leaves = await prisma.leaveRequest.findMany({
@@ -32,11 +33,10 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const teacher = await getTeacher(session.user.id);
+  const teacher = await getTeacher(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   try {

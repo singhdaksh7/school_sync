@@ -62,6 +62,56 @@ already return `null` for a revoked session or a suspended/expired school, so
 both routes 401 before reaching any business logic in that case, the same as
 every other mobile-facing route.
 
+## 1b. Teacher mobile bearer-compatibility closure (Phase 6 — Teacher mobile)
+
+Fifteen existing Teacher routes were authenticated only through a NextAuth
+web session cookie and therefore could not be called by the mobile app's
+bearer `AuthSession`. Each was converted to accept **either** transport via
+the existing canonical resolver `getTeacherAuth()` (`src/lib/mobile-auth.ts`),
+which already supported both paths — this closure widened *which requests
+reach* that resolver, not what the resolver itself does.
+
+**This is authentication-transport equivalence, not authorization
+expansion:**
+- Every feature gate (`requireSchoolFeature`), every RBAC permission check
+  (`requireTeacherPermission`), every class/section scope check, every
+  business rule (due-date logic, score validation, exam-context requirements,
+  job dedup, publish rules, self-only leave semantics) is byte-for-byte
+  unchanged — only the two or three lines resolving `{userId, teacherId,
+  schoolId}` at the top of each handler changed, from `auth()` +
+  `sessionRole()` to `getTeacherAuth(req)`.
+- `teacherId` and `schoolId` are never accepted from client input on any of
+  these routes — both come from the resolved auth context, exactly as
+  before.
+- A bearer Student, Parent, or School Owner/Admin/VP token cannot become a
+  Teacher actor on any of these routes: `getTeacherAuth`'s bearer branch
+  requires `decoded.role === "TEACHER"` and its NextAuth fallback requires
+  `sessionRole(session.user) === "TEACHER"` — neither path is broadened.
+
+Routes converted: class/section student attendance (`/api/teacher/attendance`
+GET+POST), homework edit (`/api/teacher/homework/[id]` PATCH), homework
+submissions (`.../submissions` GET), single-submission scoring
+(`.../submissions/[id]` PATCH), batch scoring (`.../scores` POST), completion
+marking (`.../completion` PATCH), homework class dashboard
+(`/api/teacher/homework/class-dashboard` GET), marks/results
+(`/api/teacher/results` GET+POST), notebook checking (`/api/teacher/notebook`
+GET+PATCH), exam milestones (`/api/teacher/exam-milestones` GET), report
+cards — list/generate/publish/PDF (`/api/teacher/report-cards*`), and
+personal Teacher leave (`/api/teacher/leaves` GET+POST — self-only; this
+route grants no approval capability and is unrelated to Teacher Operations
+leave approval).
+
+**New additive route:** `POST /api/teacher/homework/[homeworkId]/attachment`
+— a managed-upload counterpart to the existing Admin route
+(`/api/schools/[schoolId]/homework/[homeworkId]/attachment`), scoped to the
+authenticated Teacher's own/assigned homework instead of admin
+`canWriteSchool`. Reuses the identical `uploadManagedFile`/`readUploadedFile`/
+`resolveDownloadUrl` file-service calls, the same `HOMEWORK_ATTACHMENT`
+upload category/quota, the same magic-byte validation, and the same
+`Homework.attachmentFileId` field the model already had — no Prisma schema
+change. `attachmentUrl` (legacy) is untouched and still resolves via the same
+managed-file-first precedence (`resolveManagedOrLegacyUrl`).
+
 ## 2. Tenant/authorization model (frozen)
 
 - Every school-scoped resource is reached under `/api/schools/[schoolId]/...`.

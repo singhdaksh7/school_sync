@@ -12,7 +12,7 @@ import { isOperationsHeadUnavailable } from "@/lib/operational-role-resolver";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
-  const guarded = await guardOperationsCapability(schoolId, "STANDARD_READ", "OPERATIONS_TODAY_VIEW", false);
+  const guarded = await guardOperationsCapability(req, schoolId, "STANDARD_READ", "OPERATIONS_TODAY_VIEW", false);
   if (!guarded.ok) return guarded.deny;
 
   const { searchParams } = new URL(req.url);

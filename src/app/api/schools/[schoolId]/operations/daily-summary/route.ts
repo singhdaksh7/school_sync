@@ -4,7 +4,7 @@ import { computeDailyOperationsSummary } from "@/lib/operations-daily-summary";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
-  const guarded = await guardOperationsCapability(schoolId, "EXPENSIVE_READ", "DAILY_OPERATIONS_SUMMARY_VIEW", false);
+  const guarded = await guardOperationsCapability(req, schoolId, "EXPENSIVE_READ", "DAILY_OPERATIONS_SUMMARY_VIEW", false);
   if (!guarded.ok) return guarded.deny;
 
   const { searchParams } = new URL(req.url);

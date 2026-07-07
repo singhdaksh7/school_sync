@@ -25,6 +25,9 @@ vi.mock("@/lib/tenant", () => ({
   canAccessSchool: vi.fn(),
   canWriteSchool: vi.fn(),
   teacherBelongsToSchool: vi.fn(),
+  // getTeacherAuth (src/lib/mobile-auth.ts) falls back to this for a NextAuth
+  // web Teacher session when no bearer token is present on the request.
+  getActiveTeacherByUserId: vi.fn(),
 }));
 vi.mock("@/lib/homework", async () => {
   const actual = await vi.importActual<Record<string, unknown>>("@/lib/homework");
@@ -50,7 +53,7 @@ import { auth } from "@/lib/auth";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { schoolLifecycleGate } from "@/lib/school-access";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
-import { canAccessSchool } from "@/lib/tenant";
+import { canAccessSchool, getActiveTeacherByUserId } from "@/lib/tenant";
 import { getTeacherByUserId } from "@/lib/homework";
 import { getTeacherForSession } from "@/lib/report-cards";
 import { getStudentAuth } from "@/lib/student-mobile-auth";
@@ -60,6 +63,7 @@ const authMock = auth as unknown as ReturnType<typeof vi.fn>;
 const lifecycleMock = schoolLifecycleGate as unknown as ReturnType<typeof vi.fn>;
 const teacherPermMock = requireTeacherPermission as unknown as ReturnType<typeof vi.fn>;
 const canAccessMock = canAccessSchool as unknown as ReturnType<typeof vi.fn>;
+const getActiveTeacherByUserIdMock = getActiveTeacherByUserId as unknown as ReturnType<typeof vi.fn>;
 const getTeacherMock = getTeacherByUserId as unknown as ReturnType<typeof vi.fn>;
 const getTeacherForSessionMock = getTeacherForSession as unknown as ReturnType<typeof vi.fn>;
 const getStudentAuthMock = getStudentAuth as unknown as ReturnType<typeof vi.fn>;
@@ -82,6 +86,9 @@ beforeEach(() => {
   teacherPermMock.mockResolvedValue(null);
   canAccessMock.mockResolvedValue(true);
   featureMock.mockResolvedValue(null); // enabled by default
+  // Default NextAuth-web-Teacher resolution for getTeacherAuth's fallback path
+  // (no bearer Authorization header on any request built by jsonRequest/new Request here).
+  getActiveTeacherByUserIdMock.mockResolvedValue({ id: "t1", schoolId: "s1" });
 });
 
 // ── HOMEWORK: nested teacher scoring route ───────────────────────────────────
@@ -139,7 +146,7 @@ describe("REPORT_CARDS enforcement — teacher route", () => {
     featureMock.mockResolvedValueOnce(denied403());
 
     const { GET } = await import("@/app/api/teacher/report-cards/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/teacher/report-cards"));
 
     expect(res.status).toBe(403);
     expect(featureMock).toHaveBeenCalledWith("s1", "REPORT_CARDS");

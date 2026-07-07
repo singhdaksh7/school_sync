@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { allStudentsBelongToSchool, sessionRole } from "@/lib/tenant";
+import { getTeacherAuth } from "@/lib/mobile-auth";
+import { allStudentsBelongToSchool } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 
@@ -9,12 +9,16 @@ async function getTeacher(userId: string) {
   return prisma.teacher.findUnique({ where: { userId } });
 }
 
+// getTeacherAuth (src/lib/mobile-auth.ts) accepts EITHER a NextAuth web
+// Teacher session OR a bearer mobile Teacher JWT and resolves the same
+// canonical {userId, teacherId, schoolId} either way — this is an
+// authentication-transport change only; every feature gate, permission
+// check, scope check, and business rule below is unchanged.
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const teacher = await getTeacher(session.user.id);
+  const teacher = await getTeacher(teacherAuth.userId);
   if (!teacher?.mentorSectionId) return NextResponse.json({ error: "No mentor section assigned" }, { status: 400 });
 
   const featureDenied = await requireSchoolFeature(teacher.schoolId, "ATTENDANCE");
@@ -36,10 +40,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  const userId = session?.user?.id;
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = teacherAuth.userId;
 
   const teacher = await getTeacher(userId);
   if (!teacher?.mentorSectionId) return NextResponse.json({ error: "No mentor section assigned" }, { status: 400 });

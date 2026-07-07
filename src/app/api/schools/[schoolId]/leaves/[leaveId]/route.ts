@@ -7,6 +7,7 @@ import { logAudit } from "@/lib/audit";
 import { sessionRole } from "@/lib/tenant";
 import { requireSchoolAccess } from "@/lib/teacher-authorization";
 import { requireSchoolAccessOrOperationalCapability } from "@/lib/operational-authorization";
+import { resolveOperationsActor } from "@/lib/operations-bearer-auth";
 import { buildDelegatedAuditMetadata } from "@/lib/operational-audit";
 
 const patchSchema = z.object({
@@ -18,8 +19,8 @@ export async function PATCH(
   { params }: { params: Promise<{ schoolId: string; leaveId: string }> }
 ) {
   const { schoolId, leaveId } = await params;
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const actor = await resolveOperationsActor(req);
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
     const body = await req.json();
@@ -30,7 +31,7 @@ export async function PATCH(
     // (APPROVE vs REJECT) only for audit/API clarity, both resolve via the
     // same effective-head check.
     const capability = status === "APPROVED" ? "TEACHER_LEAVE_APPROVE" : "TEACHER_LEAVE_REJECT";
-    const access = await requireSchoolAccessOrOperationalCapability(schoolId, session.user.id, sessionRole(session.user), "LEAVE", "APPROVE", capability);
+    const access = await requireSchoolAccessOrOperationalCapability(schoolId, actor.userId, actor.role, "LEAVE", "APPROVE", capability);
     if (!access.ok) return access.response;
 
     // Fetch the leave request before updating so we have the details
@@ -49,7 +50,7 @@ export async function PATCH(
     // Update status
     await prisma.leaveRequest.updateMany({
       where: { id: leaveId, schoolId },
-      data: { status, reviewedById: session.user.id },
+      data: { status, reviewedById: actor.userId },
     });
 
     // If a TEACHER leave just got APPROVED, auto-create arrangements
@@ -72,7 +73,7 @@ export async function PATCH(
         teacherId: leaveRequest.teacherId,
         ...(access.teacherId && access.operational ? { operational: buildDelegatedAuditMetadata(access.teacherId, access.operational) } : {}),
       },
-      userId: session.user.id,
+      userId: actor.userId,
       schoolId,
     });
     return NextResponse.json({ success: true });

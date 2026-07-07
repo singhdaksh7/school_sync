@@ -25,6 +25,15 @@
  * teacher operational-role resolver" holds by construction. Cost Guard is
  * keyed by the REAL acting teacher's id (never a "primary" id, never the
  * admin path's ADMIN_STAFF type) when delegation is the path taken (PART 29).
+ *
+ * Phase 6 mobile bearer-compatibility closure: `guardOperationsCapability`
+ * resolves identity via `resolveOperationsActor` (NextAuth session OR bearer
+ * Teacher JWT) instead of `auth()` directly, so a mobile Teacher acting as
+ * the effective Operations Head can reach these routes. `guardOperationsRead`/
+ * `guardOperationsWrite` deliberately keep the NextAuth-only `guard()` path —
+ * they gate the Admin/Owner/VP-only views (Fees, Homework, Exams, Report
+ * Cards) that a Teacher was never authorized to reach regardless of
+ * transport, so no bearer path is added there.
  */
 
 import { NextResponse } from "next/server";
@@ -36,6 +45,7 @@ import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 import type { ApiCostCategory } from "@/lib/cost-guard-policy";
 import { canManageTeacherOperations, type OperationalAuthorizationContext } from "@/lib/operational-authorization";
 import type { TeacherOperationsCapability } from "@/lib/operational-capabilities";
+import { resolveOperationsActor } from "@/lib/operations-bearer-auth";
 
 export interface OperationsRouteContext {
   userId: string;
@@ -79,17 +89,18 @@ export function guardOperationsWrite(schoolId: string, category: ApiCostCategory
  * `write=false` uses the Owner/Admin/VP step 1 (matching `guardOperationsRead`).
  */
 export async function guardOperationsCapability(
+  req: Request,
   schoolId: string,
   category: ApiCostCategory,
   capability: TeacherOperationsCapability,
   write: boolean
 ): Promise<GuardResult> {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const actor = await resolveOperationsActor(req);
+  if (!actor) {
     return { ok: false, deny: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
-  const role = sessionRole(session.user);
-  const userId = session.user.id;
+  const role = actor.role;
+  const userId = actor.userId;
 
   const adminAllowed = write ? await canWriteSchool(schoolId, userId, role) : await canAccessSchool(schoolId, userId);
   if (adminAllowed) {

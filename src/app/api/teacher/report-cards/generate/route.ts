@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getTeacherAuth } from "@/lib/mobile-auth";
 import { buildReportCardBatchContext, generateReportCardForStudent, getTeacherForSession, serializeReportCard } from "@/lib/report-cards";
-import { sessionRole } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { createJob, REPORT_CARD_SYNC_LIMIT, isJobWorkerConfigured } from "@/lib/jobs";
@@ -9,11 +8,10 @@ import { enforceActorRateLimit } from "@/lib/api-cost-guard";
 import { findExistingEquivalentJob } from "@/lib/job-dedup";
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const teacher = await getTeacherForSession(session.user.id);
+  const teacher = await getTeacherForSession(teacherAuth.userId);
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
 
   const featureDenied = await requireSchoolFeature(teacher.schoolId, "REPORT_CARDS");
@@ -75,7 +73,7 @@ export async function POST(req: Request) {
     const created = await createJob({
       type: "REPORT_CARD_BATCH_GENERATION",
       schoolId: teacher.schoolId,
-      createdById: session.user.id,
+      createdById: teacherAuth.userId,
       payload,
       totalItems: requestedStudentIds.length,
       payloadFingerprint: fingerprint,

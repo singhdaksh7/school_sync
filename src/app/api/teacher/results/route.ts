@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { allStudentsBelongToSchool, getExamInSchool, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
+import { getTeacherAuth } from "@/lib/mobile-auth";
+import { allStudentsBelongToSchool, getExamInSchool, sectionBelongsToSchool } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const teacher = await prisma.teacher.findUnique({ where: { userId: session.user.id } });
+  const teacher = await prisma.teacher.findUnique({ where: { userId: teacherAuth.userId } });
   if (!teacher) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
@@ -39,10 +38,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  const userId = session?.user?.id;
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (sessionRole(session.user) !== "TEACHER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const teacherAuth = await getTeacherAuth(req);
+  if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = teacherAuth.userId;
 
   const teacher = await prisma.teacher.findUnique({ where: { userId } });
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });

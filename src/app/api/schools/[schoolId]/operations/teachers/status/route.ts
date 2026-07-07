@@ -15,7 +15,7 @@ const VALID_FILTERS: readonly TeacherStatusFilter[] = ["PRESENT", "ABSENT", "ON_
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
-  const guarded = await guardOperationsCapability(schoolId, "STANDARD_READ", "TEACHER_STATUS_VIEW", false);
+  const guarded = await guardOperationsCapability(req, schoolId, "STANDARD_READ", "TEACHER_STATUS_VIEW", false);
   if (!guarded.ok) return guarded.deny;
 
   const { searchParams } = new URL(req.url);
@@ -34,7 +34,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
-  const guarded = await guardOperationsCapability(schoolId, "MUTATION", "TEACHER_ATTENDANCE_MANAGE", true);
+  const guarded = await guardOperationsCapability(req, schoolId, "MUTATION", "TEACHER_ATTENDANCE_MANAGE", true);
   if (!guarded.ok) return guarded.deny;
 
   const body = await req.json().catch(() => null);
