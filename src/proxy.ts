@@ -3,7 +3,7 @@ import { getToken } from "next-auth/jwt";
 
 const publicRoutes = ["/", "/login", "/founder/login", "/forgot-password", "/reset-password", "/student/login", "/no-school"];
 
-function isPublicRoute(pathname: string) {
+export function isPublicRoute(pathname: string) {
   return (
     publicRoutes.includes(pathname) ||
     pathname.startsWith("/invite/") ||
@@ -14,6 +14,20 @@ function isPublicRoute(pathname: string) {
     pathname.startsWith("/api/teacher-invite/") ||
     pathname.startsWith("/api/parent/") ||
     pathname.startsWith("/api/mobile/") ||
+    // Teacher mobile routes authenticate via getTeacherAuth() (Bearer JWT OR
+    // NextAuth session) — a cookie-only proxy gate has no way to see the
+    // Bearer token and would 307-redirect every mobile Teacher request to
+    // /login before the route handler ever runs, which a JSON API client
+    // reads back as a malformed 200 HTML response. Let these routes through
+    // so getTeacherAuth() can do its own dual-mode check and return a clean
+    // 401 JSON when unauthenticated instead.
+    pathname.startsWith("/api/teacher/") ||
+    // Same reasoning as /api/teacher/ above: every /api/student/* route
+    // authenticates via getStudentAuth() (Bearer STUDENT JWT OR NextAuth
+    // STUDENT session) and returns structured JSON on its own — this is a
+    // transport bypass only, not an authorization bypass. Do not add a path
+    // here unless it performs its own getStudentAuth()-equivalent check.
+    pathname.startsWith("/api/student/") ||
     pathname.startsWith("/api/webhooks/") ||
     pathname === "/api/health"
   );
