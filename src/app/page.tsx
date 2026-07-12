@@ -3,7 +3,7 @@
 import Link from "next/link";
 import {
   GraduationCap, Users, BookOpen, ClipboardCheck,
-  ArrowRight, School, UserCog, Briefcase, ShieldCheck,
+  ArrowRight, School, LogIn,
 } from "lucide-react";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
@@ -76,80 +76,26 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Right: Portal logins */}
+          {/* Right: Sign in */}
           <div className="space-y-4">
             <div className="px-1">
               <h2 className="text-xl font-bold text-gray-900">{t("landing.portalLogin")}</h2>
               <p className="text-sm text-gray-500 mt-0.5">{t("landing.portalLoginSubtitle")}</p>
             </div>
 
-            {/* Admin Login */}
+            {/* Single unified school-user sign in — the backend resolves
+                role (Owner/Admin/VP/Teacher/Student) from the account
+                itself after authentication. There is no role choice here. */}
             <Link href="/login">
-              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer">
+              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-5 flex items-center gap-4 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer">
                 <div className="w-11 h-11 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-blue-600 transition-colors">
-                  <UserCog className="w-5 h-5 text-blue-600 group-hover:text-white transition-colors" />
+                  <LogIn className="w-5 h-5 text-blue-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm">{t("landing.adminLogin")}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.adminLoginDesc")}</p>
+                  <p className="font-semibold text-gray-900 text-sm">{t("landing.signIn")}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.signInDesc")}</p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-blue-500 transition-colors shrink-0" />
-              </div>
-            </Link>
-
-            {/* Principal / Vice Principal Login */}
-            <Link href="/login">
-              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-purple-400 hover:shadow-md transition-all cursor-pointer mt-3">
-                <div className="w-11 h-11 bg-purple-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-purple-600 transition-colors">
-                  <Briefcase className="w-5 h-5 text-purple-600 group-hover:text-white transition-colors" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm">{t("landing.principalLogin")}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.principalLoginDesc")}</p>
-                </div>
-                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-purple-500 transition-colors shrink-0" />
-              </div>
-            </Link>
-
-            {/* Faculty Login */}
-            <Link href="/login">
-              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-green-400 hover:shadow-md transition-all cursor-pointer mt-3">
-                <div className="w-11 h-11 bg-green-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-green-600 transition-colors">
-                  <GraduationCap className="w-5 h-5 text-green-600 group-hover:text-white transition-colors" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm">{t("landing.facultyLogin")}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.facultyLoginDesc")}</p>
-                </div>
-                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-green-500 transition-colors shrink-0" />
-              </div>
-            </Link>
-
-            {/* Founder Login */}
-            <Link href="/founder/login">
-              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer mt-3">
-                <div className="w-11 h-11 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-indigo-600 transition-colors">
-                  <ShieldCheck className="w-5 h-5 text-indigo-600 group-hover:text-white transition-colors" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm">{t("landing.founderLogin")}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.founderLoginDesc")}</p>
-                </div>
-                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-indigo-500 transition-colors shrink-0" />
-              </div>
-            </Link>
-
-            {/* Student Login */}
-            <Link href="/student/login">
-              <div className="group bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-4 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer mt-3">
-                <div className="w-11 h-11 bg-amber-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-amber-600 transition-colors">
-                  <GraduationCap className="w-5 h-5 text-amber-600 group-hover:text-white transition-colors" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 text-sm">{t("landing.studentLogin")}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{t("landing.studentLoginDesc")}</p>
-                </div>
-                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-amber-500 transition-colors shrink-0" />
               </div>
             </Link>
 
@@ -166,7 +112,14 @@ export default function LandingPage() {
             </div>
             <span className="font-semibold text-gray-600">SchoolSync</span>
           </div>
-          <p>{t("landing.footerTagline")}</p>
+          <div className="flex items-center gap-4">
+            <p>{t("landing.footerTagline")}</p>
+            {/* Deliberately small and secondary — not a peer option next to
+                the school sign-in card above. */}
+            <Link href="/founder/login" className="text-gray-300 hover:text-gray-500 transition-colors">
+              {t("landing.founderLogin")}
+            </Link>
+          </div>
         </div>
       </footer>
 

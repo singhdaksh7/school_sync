@@ -61,6 +61,8 @@
     "featureAttendance": "दैनिक उपस्थिति और परीक्षा परिणाम",
     "portalLogin": "पोर्टल लॉगिन",
     "portalLoginSubtitle": "नीचे अपने संबंधित पोर्टल में साइन इन करें",
+    "signIn": "साइन इन करें",
+    "signInDesc": "स्टाफ़ और छात्र पोर्टल एक्सेस",
     "adminLogin": "एडमिन लॉगिन",
     "adminLoginDesc": "स्कूल मालिक और प्रशासक",
     "principalLogin": "प्रिंसिपल लॉगिन",
@@ -76,6 +78,7 @@
   "auth": {
     "welcomeBack": "वापसी पर स्वागत है",
     "signInToAccount": "अपने {{school}} खाते में साइन इन करें",
+    "identifier": "ईमेल या प्रवेश क्रमांक",
     "accountCreated": "खाता बन गया! कृपया साइन इन करें।",
     "noAccountWithEmail": "उस ईमेल से कोई खाता नहीं मिला।",
     "incorrectPassword": "गलत पासवर्ड।",

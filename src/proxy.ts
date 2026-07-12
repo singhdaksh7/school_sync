@@ -33,15 +33,15 @@ export function isPublicRoute(pathname: string) {
   );
 }
 
-function isFounderRoute(pathname: string) {
+export function isFounderRoute(pathname: string) {
   return (pathname === "/founder" || pathname.startsWith("/founder/")) && pathname !== "/founder/login";
 }
 
-function isFounderApiRoute(pathname: string) {
+export function isFounderApiRoute(pathname: string) {
   return pathname.startsWith("/api/founder/");
 }
 
-function isStudentRoute(pathname: string) {
+export function isStudentRoute(pathname: string) {
   return (pathname === "/student" || pathname.startsWith("/student/")) && pathname !== "/student/login";
 }
 

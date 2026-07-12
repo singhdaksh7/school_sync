@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { detectLoginIdentifierKind } from "@/lib/login-identifier";
 
 type Branding = {
   schoolName: string;
@@ -31,7 +32,7 @@ const DEFAULT_BRANDING: Branding = {
 
 function LoginForm() {
   const { t } = useTranslation();
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [form, setForm] = useState({ identifier: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [branding, setBranding] = useState<Branding>(DEFAULT_BRANDING);
@@ -63,17 +64,34 @@ function LoginForm() {
       const existing = await getSession();
       if (existing) await signOut({ redirect: false });
 
+      // The identifier's *format* (not a role the user picked) decides which
+      // provider verifies it server-side. Staff accounts are always email;
+      // Student accounts are always an admission number, which never
+      // contains "@". Both providers independently re-check the password and
+      // resolve the account's real role from the database — nothing here is
+      // trusted as an authorization signal.
+      const kind = detectLoginIdentifierKind(form.identifier);
       const callbackUrl = `/api/auth/redirect?nonce=${Date.now()}`;
-      const result = await signIn("credentials", {
-        email: form.email,
-        password: form.password,
-        redirect: false,
-        callbackUrl,
-      });
+      const result =
+        kind === "staff"
+          ? await signIn("credentials", {
+              email: form.identifier,
+              password: form.password,
+              redirect: false,
+              callbackUrl,
+            })
+          : await signIn("student-credentials", {
+              identifier: form.identifier,
+              password: form.password,
+              redirect: false,
+              callbackUrl,
+            });
+
       if (result?.error) {
-        if (result.code === "no-account") setError(t("auth.noAccountWithEmail"));
-        else if (result.code === "invalid-password") setError(t("auth.incorrectPassword"));
-        else setError(t("auth.invalidCredentials"));
+        // Deliberately the same message for every failure code (no account,
+        // wrong password, role mismatch) — the UI never reveals which one
+        // occurred.
+        setError(t("auth.invalidCredentials"));
         return;
       }
       window.location.href = callbackUrl;
@@ -122,13 +140,14 @@ function LoginForm() {
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label htmlFor="email">{t("common.email")}</Label>
+                <Label htmlFor="identifier">{t("auth.identifier")}</Label>
                 <Input
-                  id="email"
-                  type="email"
+                  id="identifier"
+                  type="text"
+                  autoComplete="username"
                   placeholder="john@school.edu"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  value={form.identifier}
+                  onChange={(e) => setForm({ ...form, identifier: e.target.value })}
                   required
                 />
               </div>
@@ -142,6 +161,7 @@ function LoginForm() {
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="current-password"
                   placeholder="Your password"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}

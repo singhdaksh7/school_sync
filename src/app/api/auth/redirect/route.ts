@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { resolveRedirectPath } from "@/lib/auth-redirect";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -17,13 +18,6 @@ function noStoreRedirect(path: string) {
 
 export async function GET() {
   const session = await auth();
-  if (!session?.user) return noStoreRedirect("/login");
-
-  const user = session.user as { role?: string; schoolSlug?: string };
-  if (user.role === "FOUNDER") return noStoreRedirect("/founder/dashboard");
-  if (user.role === "STUDENT") return noStoreRedirect("/student/dashboard");
-  if (user.role === "TEACHER") return noStoreRedirect("/teacher/attendance");
-
-  if (user.schoolSlug) return noStoreRedirect(`/dashboard/${user.schoolSlug}`);
-  return noStoreRedirect("/no-school");
+  const user = session?.user as { role?: string; schoolSlug?: string } | undefined;
+  return noStoreRedirect(resolveRedirectPath(user));
 }
