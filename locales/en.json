@@ -61,6 +61,8 @@
     "featureAttendance": "Daily attendance & exam results",
     "portalLogin": "Portal Login",
     "portalLoginSubtitle": "Sign in to your respective portal below",
+    "signIn": "Sign In",
+    "signInDesc": "Staff and student portal access",
     "adminLogin": "Admin Login",
     "adminLoginDesc": "School owners & administrators",
     "principalLogin": "Principal Login",
@@ -76,6 +78,7 @@
   "auth": {
     "welcomeBack": "Welcome back",
     "signInToAccount": "Sign in to your {{school}} account",
+    "identifier": "Email or Admission Number",
     "accountCreated": "Account created! Please sign in.",
     "noAccountWithEmail": "No account found with that email.",
     "incorrectPassword": "Incorrect password.",

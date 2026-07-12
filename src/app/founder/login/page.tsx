@@ -50,21 +50,20 @@ function FounderLoginForm() {
       const existing = await getSession();
       if (existing) await signOut({ redirect: false });
 
-      const result = await signIn("credentials", {
+      // The dedicated founder-credentials provider rejects any non-FOUNDER
+      // account server-side (src/lib/auth-web.ts) — a session is never
+      // created for the wrong role, so there's nothing to double-check or
+      // sign back out of here.
+      const result = await signIn("founder-credentials", {
         email: form.email,
         password: form.password,
         redirect: false,
       });
       if (result?.error) {
-        if (result.code === "no-account") setError(t("auth.noAccountWithEmail"));
-        else if (result.code === "invalid-password") setError(t("auth.incorrectPassword"));
-        else setError(t("auth.invalidCredentialsShort"));
-        return;
-      }
-      const session = await getSession();
-      if ((session?.user as { role?: string } | undefined)?.role !== "FOUNDER") {
-        await signOut({ redirect: false });
-        setError(t("auth.notFounderAccount"));
+        // Deliberately the same message for every failure code (no account,
+        // wrong password, not a Founder account) — the UI never reveals
+        // which one occurred.
+        setError(t("auth.invalidCredentialsShort"));
         return;
       }
       window.location.href = "/founder/dashboard";
