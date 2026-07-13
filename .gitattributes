@@ -1,0 +1,5 @@
+# Vendored certificate bundles must never be line-ending-converted — that
+# silently changes their bytes (and therefore their documented SHA-256 and
+# their validity as a faithful copy of what AWS publishes) on any checkout
+# where core.autocrlf/text=auto would otherwise apply. See certs/README.md.
+*.pem binary
