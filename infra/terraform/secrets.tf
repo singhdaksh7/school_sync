@@ -28,13 +28,36 @@ resource "random_password" "job_worker_secret" {
 }
 
 locals {
-  db_url = "postgresql://${var.db_master_username}:${random_password.db_master.result}@${aws_db_instance.main.address}:5432/${var.db_name}?sslmode=require"
+  db_url_base = "postgresql://${var.db_master_username}:${random_password.db_master.result}@${aws_db_instance.main.address}:5432/${var.db_name}"
+
+  # Split intentionally, not duplicated — the two consumers need different
+  # sslmode guarantees (see src/lib/prisma.ts and prisma.config.ts):
+  #
+  #   - DATABASE_URL (app runtime, via @prisma/adapter-pg / node-postgres):
+  #     `verify-full` performs full certificate-chain AND hostname
+  #     verification. node-postgres parses this out of the connection
+  #     string itself — no `ssl` option in application code can override
+  #     it — and trusts the AWS RDS root CA via NODE_EXTRA_CA_CERTS
+  #     (certs/aws-rds-global-bundle.pem, see ecs.tf / Dockerfile).
+  #
+  #   - DIRECT_URL (Prisma CLI / schema-engine, via prisma.config.ts —
+  #     `npx prisma migrate deploy` / `migrate status`): left at `require`
+  #     deliberately. The schema-engine binary already connects
+  #     successfully against this RDS instance with `require` (confirmed
+  #     live) using its own bundled CA trust, which is separate from
+  #     Node/node-postgres's OS-level trust store. Do not assume it
+  #     supports `verify-full` + this vendored bundle the same way the
+  #     Node runtime does — that combination is undocumented for the
+  #     schema-engine and risks breaking migrations to chase a TLS
+  #     guarantee the CLI path doesn't currently need.
+  db_url_runtime = "${local.db_url_base}?sslmode=verify-full"
+  db_url_cli     = "${local.db_url_base}?sslmode=require"
 
   redis_url = "rediss://${aws_elasticache_replication_group.main.primary_endpoint_address}:6379"
 
   app_secret_map = {
-    DATABASE_URL = local.db_url
-    DIRECT_URL   = local.db_url
+    DATABASE_URL = local.db_url_runtime
+    DIRECT_URL   = local.db_url_cli
 
     NEXTAUTH_SECRET = random_password.nextauth_secret.result
     AUTH_SECRET     = random_password.nextauth_secret.result

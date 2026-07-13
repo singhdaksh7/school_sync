@@ -82,7 +82,14 @@ COPY public ./public
 COPY prisma ./prisma
 COPY scripts ./scripts
 
-RUN chown -R nextjs:nodejs /app
+# Vendored AWS RDS root CA bundle (see certs/README.md for source/checksum)
+# — trusted via NODE_EXTRA_CA_CERTS (infra/terraform/ecs.tf) so Node can
+# verify the RDS TLS certificate chain instead of disabling verification.
+# Never fetched at build time: exact bytes committed to the repo.
+COPY certs/aws-rds-global-bundle.pem ./certs/aws-rds-global-bundle.pem
+
+RUN chown -R nextjs:nodejs /app \
+    && chmod 0444 /app/certs/aws-rds-global-bundle.pem
 USER nextjs
 
 EXPOSE 3000
