@@ -10,8 +10,22 @@
 # Build target platform must match the ECS Fargate architecture (linux/amd64
 # by default) so the Prisma engine binary fetched during `prisma generate`
 # matches the runtime OS.
-
-ARG NODE_IMAGE=node:22-slim
+#
+# Base: Alpine (musl), not Debian slim — the Debian `bookworm` base shipped
+# `perl-base` as an Essential OS package (present even though nothing in
+# this app calls perl; confirmed by dependency inspection — no npm script,
+# node_modules/.bin shebang, or Prisma/Next.js/tsx code path ever invokes
+# it) with unpatched critical/high CVEs (`apt-cache policy perl-base` showed
+# the installed version already matched the latest available candidate in
+# both the main and security repos — an `apt upgrade` would not have fixed
+# them). Debian marks `perl-base` Essential, so it can't be removed without
+# a forced, unsupported removal. Alpine's base rootfs never includes perl at
+# all, so this isn't a suppressed finding — the vulnerable package is
+# structurally absent. Prisma's schema has no `binaryTargets` override, so
+# `prisma generate` auto-detects musl and fetches the correct engine; the
+# only other runtime dependency here (`bcryptjs`) is pure JavaScript with no
+# native bindings, so it's unaffected by the libc change.
+ARG NODE_IMAGE=node:22-alpine
 
 # ---- deps: full install (incl. devDependencies) for the build stage ----
 FROM ${NODE_IMAGE} AS deps
@@ -46,12 +60,14 @@ RUN npm ci --omit=dev --no-audit --no-fund
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 
-# Prisma's query engine (Debian target) needs libssl/openssl at runtime.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# Prisma's query engine (musl target on Alpine) needs libssl/openssl at
+# runtime, same reason as the previous Debian base — just apk instead of apt.
+RUN apk add --no-cache openssl ca-certificates
 
-RUN groupadd --system --gid 1001 nodejs \
-    && useradd --system --uid 1001 --gid nodejs nextjs
+# BusyBox's addgroup/adduser (Alpine) only take short flags, unlike GNU
+# groupadd/useradd's long-option form used on the previous Debian base.
+RUN addgroup -S -g 1001 nodejs \
+    && adduser -S -D -H -u 1001 -G nodejs nextjs
 
 ENV NODE_ENV=production
 ENV PORT=3000
