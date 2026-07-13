@@ -1,6 +1,6 @@
 resource "aws_security_group" "alb" {
   name_prefix = "${local.name_prefix}-alb-"
-  description = "Internet-facing ALB — HTTP/HTTPS from anywhere, forwards to ECS."
+  description = "Internet-facing ALB - HTTP/HTTPS from anywhere, forwards to ECS."
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -80,7 +80,7 @@ resource "aws_security_group" "ecs_tasks" {
 
 resource "aws_security_group" "rds" {
   name_prefix = "${local.name_prefix}-rds-"
-  description = "RDS PostgreSQL — inbound only from the ECS tasks security group."
+  description = "RDS PostgreSQL - inbound only from the ECS tasks security group."
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -107,7 +107,7 @@ resource "aws_security_group" "rds" {
 
 resource "aws_security_group" "redis" {
   name_prefix = "${local.name_prefix}-redis-"
-  description = "ElastiCache Valkey — inbound only from the ECS tasks security group."
+  description = "ElastiCache Valkey - inbound only from the ECS tasks security group."
   vpc_id      = aws_vpc.main.id
 
   ingress {
