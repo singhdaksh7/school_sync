@@ -104,9 +104,13 @@ describe("SES IAM permission mapping (infra/terraform)", () => {
 
   it("ecs.tf assigns ecs_task_web to the web service and ecs_task_minimal to worker + migrate", () => {
     const ecs = tf("ecs.tf");
-    const webTaskDef = ecs.match(/resource "aws_ecs_task_definition" "web"[\s\S]*?\n}\n/);
-    const workerTaskDef = ecs.match(/resource "aws_ecs_task_definition" "worker"[\s\S]*?\n}\n/);
-    const migrateTaskDef = ecs.match(/resource "aws_ecs_task_definition" "migrate"[\s\S]*?\n}\n/);
+    // \r?\n (not a bare \n) around the closing brace — this file may be
+    // checked out with CRLF line endings (e.g. Windows git core.autocrlf,
+    // or any fresh checkout of the LF-stored blob), and a bare \n right
+    // after `}` would fail to match the \r that precedes the next \n there.
+    const webTaskDef = ecs.match(/resource "aws_ecs_task_definition" "web"[\s\S]*?\r?\n}\r?\n/);
+    const workerTaskDef = ecs.match(/resource "aws_ecs_task_definition" "worker"[\s\S]*?\r?\n}\r?\n/);
+    const migrateTaskDef = ecs.match(/resource "aws_ecs_task_definition" "migrate"[\s\S]*?\r?\n}\r?\n/);
     expect(webTaskDef![0]).toMatch(/task_role_arn\s*=\s*aws_iam_role\.ecs_task_web\.arn/);
     expect(workerTaskDef![0]).toMatch(/task_role_arn\s*=\s*aws_iam_role\.ecs_task_minimal\.arn/);
     expect(migrateTaskDef![0]).toMatch(/task_role_arn\s*=\s*aws_iam_role\.ecs_task_minimal\.arn/);
@@ -117,9 +121,10 @@ describe("SES IAM permission mapping (infra/terraform)", () => {
     // The web task definition references local.web_environment (defined in
     // the preceding `locals` block) rather than inlining the array, so check
     // that local's definition specifically, not the resource block's text.
-    const webEnvironmentLocal = ecs.match(/web_environment = concat\(([\s\S]*?)\n  \)\n}/)![0];
-    const workerTaskDef = ecs.match(/resource "aws_ecs_task_definition" "worker"[\s\S]*?\n}\n/)![0];
-    const migrateTaskDef = ecs.match(/resource "aws_ecs_task_definition" "migrate"[\s\S]*?\n}\n/)![0];
+    // \r?\n (see comment in the previous test) tolerates a CRLF checkout.
+    const webEnvironmentLocal = ecs.match(/web_environment = concat\(([\s\S]*?)\r?\n  \)\r?\n}/)![0];
+    const workerTaskDef = ecs.match(/resource "aws_ecs_task_definition" "worker"[\s\S]*?\r?\n}\r?\n/)![0];
+    const migrateTaskDef = ecs.match(/resource "aws_ecs_task_definition" "migrate"[\s\S]*?\r?\n}\r?\n/)![0];
 
     expect(webEnvironmentLocal).toMatch(/EMAIL_PROVIDER/);
     expect(workerTaskDef).not.toMatch(/EMAIL_PROVIDER|RESEND_API_KEY|EMAIL_FROM/);
