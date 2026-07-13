@@ -56,7 +56,7 @@ resource "aws_security_group" "ecs_tasks" {
 
   # Worker → web service-discovery traffic (same SG on both sides).
   ingress {
-    description = "Intra-service traffic (worker -> web via Cloud Map)"
+    description = "Intra-service traffic (worker to web via Cloud Map)"
     from_port   = var.container_port
     to_port     = var.container_port
     protocol    = "tcp"
