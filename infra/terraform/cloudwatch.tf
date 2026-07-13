@@ -158,7 +158,7 @@ resource "aws_cloudwatch_metric_alarm" "ecs_worker_running_tasks" {
   statistic           = "Average"
   threshold           = var.worker_desired_count
   treat_missing_data  = "breaching"
-  alarm_description   = "Worker running task count below desired (${var.worker_desired_count}) for 3+ consecutive minutes — likely crash-looping."
+  alarm_description   = "Worker running task count below desired (${var.worker_desired_count}) for 3+ consecutive minutes - likely crash-looping."
   dimensions = {
     ClusterName = aws_ecs_cluster.main.name
     ServiceName = aws_ecs_service.worker.name
