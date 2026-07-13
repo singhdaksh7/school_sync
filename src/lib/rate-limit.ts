@@ -2,24 +2,32 @@
  * Reusable fixed-window rate limiter.
  *
  * Architecture note (read before assuming this is production-grade):
- * SchoolSync currently has NO Redis/KV infrastructure provisioned. The default
- * backend here is process-local (an in-memory Map). That is correct for local
- * development and for a single long-running instance, but on multi-instance /
- * serverless deployments each instance keeps its own counters, so the effective
- * limit is (configured limit × instance count) and counters reset on cold start.
+ * The default backend here is process-local (an in-memory Map). That is
+ * correct for local development and for a single long-running instance, but
+ * on multi-instance / serverless deployments each instance keeps its own
+ * counters, so the effective limit is (configured limit × instance count) and
+ * counters reset on cold start.
  *
  * This module therefore:
  *   - exposes a backend-agnostic `RateLimiter` interface so a distributed
- *     backend (e.g. Upstash Redis) can be slotted in without touching call sites;
+ *     backend can be slotted in without touching call sites;
  *   - ships a `MemoryRateLimiter` as the safe local/dev default;
+ *   - ships two distributed backends selected by `RATE_LIMIT_REDIS_URL`'s
+ *     scheme: `RestRedisRateLimiter` for an Upstash-compatible REST endpoint
+ *     (`http(s)://`), and `RedisProtocolRateLimiter` for a standard
+ *     RESP-protocol store such as AWS ElastiCache Valkey/Redis (`redis://` /
+ *     `rediss://`) — a managed REST-over-Redis proxy is not generally
+ *     available in front of ElastiCache, so the raw protocol client is
+ *     required there;
  *   - warns ONCE at runtime in production when the memory backend is used, so we
  *     never silently pretend a local Map is distributed rate limiting.
  *
- * To make this production-distributed, implement a `RateLimiter` backed by a
- * shared store and set it via {@link setRateLimiter}, wiring these env vars:
- *   RATE_LIMIT_REDIS_URL, RATE_LIMIT_REDIS_TOKEN  (or your provider's equivalents).
+ * To make this production-distributed, wire RATE_LIMIT_REDIS_URL (+
+ * RATE_LIMIT_REDIS_TOKEN as the bearer token for REST providers, or the AUTH
+ * password for protocol-native ones) — see {@link initRateLimiterFromEnv}.
  */
 
+import Redis from "ioredis";
 import { AUTH_IP_POLICY, API_COST_POLICIES, UPLOAD_GLOBAL_POLICY, UPLOAD_CATEGORY_POLICIES } from "@/lib/cost-guard-policy";
 
 export type RateLimitResult = {
@@ -119,6 +127,58 @@ export class RestRedisRateLimiter implements RateLimiter {
   }
 }
 
+/**
+ * Distributed fixed-window limiter backed by a standard RESP-protocol Redis
+ * (or Redis-compatible, e.g. Valkey) server — AWS ElastiCache in particular,
+ * which has no Upstash-style REST front door. `token`, when present, is used
+ * as the AUTH password (ElastiCache `auth_token` on a TLS-enabled
+ * replication group). Same INCR/PEXPIRE-NX/PTTL pipeline as
+ * {@link RestRedisRateLimiter} for identical semantics.
+ */
+export class RedisProtocolRateLimiter implements RateLimiter {
+  private client: Redis;
+
+  constructor(url: string, token?: string) {
+    this.client = new Redis(url, {
+      password: token,
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      tls: url.startsWith("rediss://") ? {} : undefined,
+    });
+    this.client.on("error", () => {
+      // Swallow background connection errors — surfaced to callers via the
+      // rejected command promise in check(), not here.
+    });
+  }
+
+  async check(key: string, policy: RateLimitPolicy): Promise<RateLimitResult> {
+    const namespaced = `ratelimit:${key}`;
+    const pipeline = this.client.pipeline();
+    pipeline.incr(namespaced);
+    pipeline.pexpire(namespaced, policy.windowMs, "NX");
+    pipeline.pttl(namespaced);
+    const results = await pipeline.exec();
+    if (!results) throw new Error("rate-limit backend returned no pipeline result");
+
+    const [incrErr, countRaw] = results[0];
+    const [pttlErr, pttlRaw] = results[2];
+    if (incrErr) throw incrErr;
+    if (pttlErr) throw pttlErr;
+
+    const count = Number(countRaw ?? 0);
+    const pttlMs = Number(pttlRaw ?? policy.windowMs);
+    if (!Number.isFinite(count) || count <= 0) {
+      throw new Error("rate-limit backend returned an unexpected payload");
+    }
+
+    if (count > policy.limit) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((pttlMs > 0 ? pttlMs : policy.windowMs) / 1000));
+      return { allowed: false, remaining: 0, retryAfterSeconds };
+    }
+    return { allowed: true, remaining: Math.max(0, policy.limit - count), retryAfterSeconds: 0 };
+  }
+}
+
 // Common policies, referenced from route handlers so limits stay consistent.
 // Cost Guard (PART 6/9/24) policies live in cost-guard-policy.ts as the single
 // source of truth and are re-exposed here so every route keeps using the one
@@ -150,7 +210,7 @@ export function isDistributedRateLimiterConfigured(): boolean {
 
 /** Backend kind currently in use — surfaced by the readiness probe (never secrets). */
 export function getRateLimiterKind(): "redis" | "memory" {
-  return limiter instanceof RestRedisRateLimiter ? "redis" : "memory";
+  return limiter instanceof RestRedisRateLimiter || limiter instanceof RedisProtocolRateLimiter ? "redis" : "memory";
 }
 
 /**
@@ -158,12 +218,19 @@ export function getRateLimiterKind(): "redis" | "memory" {
  * lazily from {@link rateLimit} so importing this module never forces a backend
  * choice at build time. In production without a shared backend it keeps the
  * memory limiter but warns once (see {@link warnIfNonDistributed}).
+ *
+ * Backend is chosen by `RATE_LIMIT_REDIS_URL`'s scheme: `http(s)://` selects
+ * the Upstash-style REST client, `redis(s)://` selects the RESP-protocol
+ * client (ElastiCache Valkey/Redis).
  */
 export function initRateLimiterFromEnv(): void {
-  if (limiter instanceof RestRedisRateLimiter) return;
+  if (limiter instanceof RestRedisRateLimiter || limiter instanceof RedisProtocolRateLimiter) return;
   const url = process.env.RATE_LIMIT_REDIS_URL;
   const token = process.env.RATE_LIMIT_REDIS_TOKEN;
-  if (url && token) {
+  if (!url) return;
+  if (url.startsWith("redis://") || url.startsWith("rediss://")) {
+    limiter = new RedisProtocolRateLimiter(url, token);
+  } else if (token) {
     limiter = new RestRedisRateLimiter(url, token);
   }
 }
