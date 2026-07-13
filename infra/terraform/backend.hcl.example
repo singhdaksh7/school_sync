@@ -1,0 +1,12 @@
+# Copy to backend.hcl (gitignored — never commit real backend config) and run:
+#   terraform init -backend-config=backend.hcl
+#
+# The S3 bucket + DynamoDB lock table must already exist (create once, by
+# hand or in a separate bootstrap Terraform config — not part of this staging
+# stack to avoid a chicken-and-egg dependency on the state backend itself).
+
+bucket         = "REPLACE-with-your-terraform-state-bucket"
+key            = "schoolsync/staging/terraform.tfstate"
+region         = "ap-south-1"
+dynamodb_table = "REPLACE-with-your-terraform-lock-table"
+encrypt        = true

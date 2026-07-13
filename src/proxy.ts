@@ -1,6 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+/**
+ * Whether Auth.js would have used secure (`__Secure-`-prefixed) session
+ * cookies for this request — mirrors EXACTLY how Auth.js itself decides when
+ * *setting* the cookie (see @auth/core's `init.js`:
+ * `useSecureCookies = url.protocol === "https:"`, where that URL is built
+ * from the `x-forwarded-proto` header when present — see next-auth's
+ * `lib/index.js`, which passes `headers.get("x-forwarded-proto")` through
+ * for exactly this reason).
+ *
+ * NODE_ENV is deliberately NOT used as a substitute for transport protocol:
+ * ECS always sets NODE_ENV=production regardless of whether the ALB
+ * terminates HTTP or HTTPS. Trusting NODE_ENV here (the previous behavior)
+ * meant that behind an HTTP-only ALB, Auth.js would set a plain
+ * `authjs.session-token` cookie (correctly detecting `x-forwarded-proto:
+ * http`), while this function would look for `__Secure-authjs.session-token`
+ * (incorrectly assuming NODE_ENV=production implies HTTPS) — the mismatch
+ * meant login appeared to succeed but every subsequent request was treated
+ * as unauthenticated.
+ */
+export function isForwardedHttps(req: NextRequest): boolean {
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  if (forwardedProto) {
+    // A load balancer may chain multiple comma-separated values (one per
+    // hop) — the first is the client-facing protocol, which is the one
+    // Auth.js's own `x-forwarded-proto` read (next-auth lib/index.js) uses
+    // too (Headers.get() already returns the first value verbatim, but we
+    // still split defensively in case of a multi-value header).
+    const first = forwardedProto.split(",")[0]?.trim().toLowerCase();
+    if (first) return first === "https";
+  }
+  // No proxy in front of this request (e.g. local dev) — fall back to
+  // whatever protocol Next.js itself observed for the request URL.
+  return req.nextUrl.protocol === "https:";
+}
+
 const publicRoutes = ["/", "/login", "/founder/login", "/forgot-password", "/reset-password", "/student/login", "/no-school"];
 
 export function isPublicRoute(pathname: string) {
@@ -33,15 +68,15 @@ export function isPublicRoute(pathname: string) {
   );
 }
 
-function isFounderRoute(pathname: string) {
+export function isFounderRoute(pathname: string) {
   return (pathname === "/founder" || pathname.startsWith("/founder/")) && pathname !== "/founder/login";
 }
 
-function isFounderApiRoute(pathname: string) {
+export function isFounderApiRoute(pathname: string) {
   return pathname.startsWith("/api/founder/");
 }
 
-function isStudentRoute(pathname: string) {
+export function isStudentRoute(pathname: string) {
   return (pathname === "/student" || pathname.startsWith("/student/")) && pathname !== "/student/login";
 }
 
@@ -56,7 +91,7 @@ export async function proxy(req: NextRequest) {
   const token = await getToken({
     req,
     secret,
-    secureCookie: process.env.NODE_ENV === "production",
+    secureCookie: isForwardedHttps(req),
   });
 
   // Founder routes are gated independently of school-scoped auth: only a

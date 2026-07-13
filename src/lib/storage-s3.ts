@@ -4,10 +4,17 @@
  * src/lib/storage.ts using the modular AWS SDK v3 — no SchoolSync route ever
  * imports the SDK directly.
  *
- * Config (all required except ENDPOINT/PUBLIC_BASE_URL):
- *   STORAGE_BUCKET, STORAGE_REGION, STORAGE_ACCESS_KEY_ID,
- *   STORAGE_SECRET_ACCESS_KEY, STORAGE_ENDPOINT (R2/compatible),
- *   STORAGE_PUBLIC_BASE_URL (CDN/base for PUBLIC objects).
+ * Config: STORAGE_BUCKET, STORAGE_REGION are always required.
+ * STORAGE_ACCESS_KEY_ID / STORAGE_SECRET_ACCESS_KEY are OPTIONAL and only for
+ * environments without an ambient AWS identity (e.g. local development
+ * against a real bucket, or an S3-compatible provider like R2 that has no
+ * concept of IAM roles). When unset, no `credentials` object is passed to
+ * the S3Client at all — the AWS SDK's default provider chain resolves
+ * credentials itself, which on ECS Fargate means the task's IAM role via the
+ * container credential provider (temporary, auto-rotating; never a
+ * long-lived access key). See {@link resolveS3Credentials}.
+ * STORAGE_ENDPOINT (R2/compatible), STORAGE_PUBLIC_BASE_URL (CDN/base for
+ * PUBLIC objects) remain optional.
  */
 
 import {
@@ -26,14 +33,46 @@ import type {
   StorageVisibility,
 } from "@/lib/storage";
 
+export type S3Credentials = { accessKeyId: string; secretAccessKey: string };
+
 export type S3StorageConfig = {
   bucket: string;
   region: string;
   endpoint?: string;
-  accessKeyId: string;
-  secretAccessKey: string;
+  /** Explicit static credentials. Undefined = use the AWS SDK default credential provider chain (ECS task role, etc). */
+  credentials?: S3Credentials;
   publicBaseUrl?: string;
 };
+
+/**
+ * Resolves explicit S3 credentials from the two access-key env vars, with a
+ * strict all-or-nothing contract:
+ *   - both set    -> explicit credentials (local dev against real S3, or an
+ *                    S3-compatible provider with no IAM concept).
+ *   - neither set -> `undefined`, so the caller omits `credentials` entirely
+ *                    and the AWS SDK's default provider chain resolves them
+ *                    (the ECS task role in staging).
+ *   - exactly one set -> almost certainly a typo/partial config, not a
+ *                    deliberate choice of either mode. Throws rather than
+ *                    silently either passing a broken partial credentials
+ *                    object to the SDK or silently falling back to the
+ *                    default chain and masking the mistake.
+ */
+export function resolveS3Credentials(accessKeyId?: string, secretAccessKey?: string): S3Credentials | undefined {
+  const hasAccessKeyId = Boolean(accessKeyId);
+  const hasSecretAccessKey = Boolean(secretAccessKey);
+
+  if (hasAccessKeyId && hasSecretAccessKey) {
+    return { accessKeyId: accessKeyId!, secretAccessKey: secretAccessKey! };
+  }
+  if (!hasAccessKeyId && !hasSecretAccessKey) {
+    return undefined;
+  }
+  throw new Error(
+    "STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY must both be set (explicit credentials) or both be unset " +
+      "(use the AWS SDK default credential provider chain, e.g. the ECS task role) — exactly one being set is treated as a misconfiguration."
+  );
+}
 
 async function streamToBuffer(body: unknown): Promise<Buffer> {
   // AWS SDK returns a web/Node stream depending on runtime; support both.
@@ -57,7 +96,11 @@ export class S3StorageProvider implements StorageProvider {
     this.client = new S3Client({
       region: cfg.region,
       ...(cfg.endpoint ? { endpoint: cfg.endpoint, forcePathStyle: true } : {}),
-      credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+      // Omitted entirely (not `credentials: undefined`) when no explicit
+      // pair is configured, so the AWS SDK's default provider chain runs —
+      // on ECS this resolves to the task role via the container credential
+      // provider automatically.
+      ...(cfg.credentials ? { credentials: cfg.credentials } : {}),
     });
   }
 
@@ -128,14 +171,11 @@ export class S3StorageProvider implements StorageProvider {
 export function s3ConfigFromEnv(): S3StorageConfig | null {
   const bucket = process.env.STORAGE_BUCKET;
   const region = process.env.STORAGE_REGION;
-  const accessKeyId = process.env.STORAGE_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.STORAGE_SECRET_ACCESS_KEY;
-  if (!bucket || !region || !accessKeyId || !secretAccessKey) return null;
+  if (!bucket || !region) return null;
   return {
     bucket,
     region,
-    accessKeyId,
-    secretAccessKey,
+    credentials: resolveS3Credentials(process.env.STORAGE_ACCESS_KEY_ID, process.env.STORAGE_SECRET_ACCESS_KEY),
     endpoint: process.env.STORAGE_ENDPOINT,
     publicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL,
   };

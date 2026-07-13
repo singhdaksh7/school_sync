@@ -10,17 +10,23 @@ MinIO, etc.) — no vendor-specific code in any route.
 |---|---|---|
 | `STORAGE_BUCKET` | Yes | Bucket name. |
 | `STORAGE_REGION` | Yes | AWS region (or the region string your S3-compatible provider expects, e.g. `auto` for R2). |
-| `STORAGE_ACCESS_KEY_ID` | Yes | |
-| `STORAGE_SECRET_ACCESS_KEY` | Yes | |
+| `STORAGE_ACCESS_KEY_ID` | Optional | See "Credentials" below — leave unset on AWS to use the ECS task role. |
+| `STORAGE_SECRET_ACCESS_KEY` | Optional | Must be set together with `STORAGE_ACCESS_KEY_ID`, or not at all. |
 | `STORAGE_ENDPOINT` | Only for R2/non-AWS | Set to your provider's S3-compatible endpoint (e.g. `https://<account>.r2.cloudflarestorage.com`). Leave unset for real AWS S3. |
 | `STORAGE_PUBLIC_BASE_URL` | Only if you want PUBLIC objects served via a CDN/custom domain | e.g. `https://cdn.yourschool.app`. Without it, PUBLIC objects fall back to a signed URL like any private object. |
 
-All four required variables must be set together — if any is missing in
-production, `getStorageProvider()` returns `NotConfiguredStorageProvider`,
-which fails every operation loudly rather than silently writing to local
-disk or an in-process Map. **No production file is ever written to local
-filesystem or in-memory storage** — that fallback (`MemoryStorageProvider`)
-is used only in dev/test (`NODE_ENV !== "production"` and unconfigured).
+`STORAGE_BUCKET` + `STORAGE_REGION` must always be set together — if either
+is missing in production, `getStorageProvider()` returns
+`NotConfiguredStorageProvider`, which fails every operation loudly rather
+than silently writing to local disk or an in-process Map. **No production
+file is ever written to local filesystem or in-memory storage** — that
+fallback (`MemoryStorageProvider`) is used only in dev/test
+(`NODE_ENV !== "production"` and unconfigured).
+
+The access-key pair is all-or-nothing too (see `resolveS3Credentials` in
+`storage-s3.ts`): both set, or both unset. Exactly one set is treated as a
+misconfiguration (`isStorageConfigured()` reports `false`, so readiness
+degrades instead of silently using a broken partial credential).
 
 ## Private vs. public objects
 
@@ -52,7 +58,23 @@ directly and CORS applies.
 
 ## Credentials
 
-Use a dedicated IAM user/access key scoped to only this bucket (standard
-least-privilege practice) — this is a deployment-platform/cloud-console
-step, not something this codebase can configure for you. Never commit real
-credentials; `.env.example` documents the variable names only.
+Prefer role-based credentials over a static access key wherever the
+platform supports it:
+
+- **AWS (ECS staging/production)**: leave `STORAGE_ACCESS_KEY_ID` /
+  `STORAGE_SECRET_ACCESS_KEY` unset. The AWS SDK's default credential
+  provider chain resolves credentials automatically from the ECS task's IAM
+  role (temporary, auto-rotating) via the container credential provider —
+  no long-lived access key is ever created or injected into the container.
+  See `infra/terraform/s3.tf` (the `ecs_task_web` role's inline policy,
+  scoped to exactly `s3:GetObject`/`s3:PutObject`/`s3:DeleteObject` on this
+  bucket) and `infra/terraform/iam.tf`.
+- **Local development, or an S3-compatible provider with no IAM concept
+  (e.g. Cloudflare R2)**: set both `STORAGE_ACCESS_KEY_ID` and
+  `STORAGE_SECRET_ACCESS_KEY` to an access key scoped to only this bucket.
+  Never commit real credentials; `.env.example` documents the variable
+  names only.
+
+Setting exactly one of the two access-key variables is treated as a
+misconfiguration, not a partial credential — see `resolveS3Credentials` in
+`storage-s3.ts`.

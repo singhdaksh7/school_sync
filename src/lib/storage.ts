@@ -1,25 +1,27 @@
 /**
  * Centralized object-storage abstraction.
  *
- * Business routes depend on this interface, never on a provider SDK. Today the
- * repository has NO object-storage vendor configured and no vendor SDK installed,
- * so the concrete production adapter (S3 / Cloudflare R2 — both S3-compatible)
- * is a config-guarded slot: an S3-compatible implementation drops in here and is
- * selected via env, without touching any call site.
+ * Business routes depend on this interface, never on a provider SDK — the
+ * concrete production adapter (S3 / Cloudflare R2 — both S3-compatible,
+ * see storage-s3.ts) is a config-guarded slot selected via env, without
+ * touching any call site.
  *
  * Safety principle: in production we must NEVER silently persist real files to an
  * ephemeral serverless filesystem or a process-local Map. If no durable provider
  * is configured, upload/read operations fail with a clear configuration error
  * instead of pretending to store data.
  *
- * Required env for the production adapter (documented; not read here until an
- * S3-compatible adapter is wired):
- *   STORAGE_BUCKET, STORAGE_REGION, STORAGE_ENDPOINT (for R2/S3-compatible),
- *   STORAGE_ACCESS_KEY_ID, STORAGE_SECRET_ACCESS_KEY, STORAGE_PUBLIC_BASE_URL.
+ * Env for the production adapter: STORAGE_BUCKET, STORAGE_REGION are
+ * required; STORAGE_ENDPOINT (R2/S3-compatible only) and
+ * STORAGE_PUBLIC_BASE_URL are optional. STORAGE_ACCESS_KEY_ID /
+ * STORAGE_SECRET_ACCESS_KEY are OPTIONAL — set both for local dev against
+ * real S3/R2, or leave both unset to use the AWS SDK default credential
+ * provider chain (the ECS task role in staging/production). See
+ * {@link resolveS3Credentials} in storage-s3.ts for the exact contract.
  */
 
 import { randomUUID } from "node:crypto";
-import { S3StorageProvider, s3ConfigFromEnv } from "@/lib/storage-s3";
+import { S3StorageProvider, s3ConfigFromEnv, resolveS3Credentials } from "@/lib/storage-s3";
 
 export type StorageVisibility =
   | "PUBLIC" // e.g. school logo / public branding asset
@@ -198,14 +200,21 @@ export class NotConfiguredStorageProvider implements StorageProvider {
   }
 }
 
-/** True when a durable object-storage provider is fully configured via env. */
+/**
+ * True when a durable object-storage provider is fully configured via env.
+ * STORAGE_ACCESS_KEY_ID/STORAGE_SECRET_ACCESS_KEY are optional (unset =
+ * AWS SDK default credential provider chain, e.g. the ECS task role) — but
+ * an incomplete pair (exactly one set) is treated as NOT configured rather
+ * than silently used, matching {@link resolveS3Credentials}'s contract.
+ */
 export function isStorageConfigured(): boolean {
-  return Boolean(
-    process.env.STORAGE_BUCKET &&
-      process.env.STORAGE_REGION &&
-      process.env.STORAGE_ACCESS_KEY_ID &&
-      process.env.STORAGE_SECRET_ACCESS_KEY
-  );
+  if (!process.env.STORAGE_BUCKET || !process.env.STORAGE_REGION) return false;
+  try {
+    resolveS3Credentials(process.env.STORAGE_ACCESS_KEY_ID, process.env.STORAGE_SECRET_ACCESS_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Public URL for a PUBLIC object, or null when no public base is configured. */

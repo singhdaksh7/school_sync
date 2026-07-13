@@ -9,6 +9,7 @@ import { classifyStudentMatches } from "@/lib/student-login";
 import { NoAccountError, InvalidPasswordError, AmbiguousSchoolError } from "@/lib/auth-errors";
 import { validateSession } from "@/lib/auth-sessions";
 import { systemClock } from "@/lib/clock";
+import { STAFF_ROLES } from "@/lib/auth-roles";
 
 export type MobileRole = "SCHOOL_OWNER" | "SCHOOL_ADMIN" | "VICE_PRINCIPAL" | "TEACHER" | "STUDENT";
 
@@ -26,7 +27,11 @@ type MobileTokenPayload = {
   sid?: string;
 };
 
-const STAFF_ROLES = new Set(["SCHOOL_OWNER", "SCHOOL_ADMIN", "VICE_PRINCIPAL", "TEACHER"]);
+// Re-exported for backward compatibility — STAFF_ROLES now lives in the
+// dependency-free src/lib/auth-roles.ts (see that file for why) so
+// src/lib/auth-web.ts can use it without importing this module and
+// recreating the auth.ts -> auth-web.ts -> mobile-auth.ts -> auth.ts cycle.
+export { STAFF_ROLES };
 
 function jwtSecret() {
   const secret = process.env.NEXTAUTH_SECRET;

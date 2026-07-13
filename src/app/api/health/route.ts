@@ -4,6 +4,7 @@ import { isStorageConfigured } from "@/lib/storage";
 import { getRateLimiterKind, isDistributedRateLimiterConfigured } from "@/lib/rate-limit";
 import { isJobWorkerConfigured } from "@/lib/jobs";
 import { requiredConfigReady } from "@/lib/config-validation";
+import { isEmailConfigured, getEmailProviderKind } from "@/lib/email";
 
 /**
  * Health endpoint.
@@ -55,8 +56,11 @@ export async function GET(req: Request) {
   const storageConfigured = isStorageConfigured();
   const jobWorkerConfigured = isJobWorkerConfigured();
   // Email/AI are feature-scoped, never block readiness — reported for
-  // operational visibility only (see config-validation.ts).
-  const emailConfigured = Boolean(process.env.RESEND_API_KEY);
+  // operational visibility only (see config-validation.ts). emailProvider is
+  // a plain kind label ("resend"/"ses"/"console"/"unavailable") — never a
+  // secret, address, or credential.
+  const emailConfigured = isEmailConfigured();
+  const emailProvider = getEmailProviderKind();
   const aiConfigured = Boolean(process.env.ANTHROPIC_API_KEY);
   // Custom-domain verification always works when the DB is up — it's a pure
   // DNS TXT lookup (src/lib/custom-domain.ts), no external provider config.
@@ -84,6 +88,7 @@ export async function GET(req: Request) {
         storageConfigured,
         jobWorkerConfigured,
         emailConfigured,
+        emailProvider,
         aiConfigured,
         customDomainVerificationCapability,
       },
