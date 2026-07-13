@@ -110,8 +110,6 @@ export async function POST(req: Request) {
     });
   });
 
-  console.log(`[HW_DEBUG] homework created id=${created?.id} schoolId=${created?.schoolId} sectionId=${created?.sectionId} statusRows=${created?.studentStatuses?.length}`);
-
   if (created) {
     await logAudit({
       action: "HOMEWORK_CREATED",

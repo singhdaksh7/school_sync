@@ -143,15 +143,12 @@ export async function backfillHomeworkStatusForStudent(studentId: string, school
   const missing = homework.filter((h) => !covered.has(h.id));
   if (missing.length === 0) return;
 
-  // Phase 4 audit (PART 13): report Prisma's actual insert count, not the
-  // pre-computed candidate list length — a concurrent backfill for the same
-  // student (e.g. a duplicate section-transfer event) can cause
-  // `skipDuplicates` to drop some of these silently.
-  const result = await prisma.homeworkStudentStatus.createMany({
+  // skipDuplicates guards against a concurrent backfill for the same student
+  // (e.g. a duplicate section-transfer event) inserting the same row twice.
+  await prisma.homeworkStudentStatus.createMany({
     data: missing.map((h) => ({ homeworkId: h.id, studentId, status: "PENDING" })),
     skipDuplicates: true,
   });
-  console.log(`[HW_DEBUG] backfilled ${result.count} HomeworkStudentStatus row(s) for studentId=${studentId} sectionId=${sectionId}`);
 }
 
 export function parseRequiredDate(value: unknown) {

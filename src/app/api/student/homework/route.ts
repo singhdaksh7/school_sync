@@ -11,7 +11,6 @@ export async function GET(req: NextRequest) {
 
     const featureDenied = await requireSchoolFeature(auth.schoolId, "HOMEWORK");
     if (featureDenied) return featureDenied;
-    console.log(`[HW_DEBUG] fetching homework for studentId=${auth.studentId} schoolId=${auth.schoolId} sectionId=${auth.sectionId}`);
 
     const statuses = await prisma.homeworkStudentStatus.findMany({
       where: {
@@ -35,7 +34,6 @@ export async function GET(req: NextRequest) {
       },
       orderBy: [{ homework: { dueDate: "asc" } }, { createdAt: "desc" }],
     });
-    console.log(`[HW_DEBUG] query returned ${statuses.length} HomeworkStudentStatus row(s) for studentId=${auth.studentId}`);
 
     const homework = await Promise.all(statuses.map(async (item) => {
       const submission = item.homework.submissions.find((s) => s.studentId === item.studentId) || null;
