@@ -45,3 +45,17 @@ next-env.d.ts
 .vercel
 # Added by code-review-graph
 .code-review-graph/
+
+# terraform (note: .terraform.lock.hcl is intentionally NOT ignored — commit it)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+infra/terraform/backend.hcl
+crash.log
+crash.*.log
+
+# graphify knowledge-graph output (generated, regenerable via `graphify update .`)
+graphify-out/
+**/graphify-out/
