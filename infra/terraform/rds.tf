@@ -1,7 +1,7 @@
 data "aws_rds_engine_version" "postgres" {
-  engine             = "postgres"
-  preferred_versions = [var.db_major_engine_version]
-  latest             = true
+  engine  = "postgres"
+  version = var.db_major_engine_version
+  latest  = true
 }
 
 resource "aws_db_subnet_group" "main" {
@@ -16,9 +16,13 @@ resource "random_password" "db_master" {
 }
 
 resource "aws_db_instance" "main" {
-  identifier     = "${local.name_prefix}-pg"
-  engine         = "postgres"
-  engine_version = data.aws_rds_engine_version.postgres.version
+  identifier = "${local.name_prefix}-pg"
+  engine     = "postgres"
+  # `version` on the data source above is an input, not an output — it
+  # echoes back whatever partial version (e.g. "16") was queried, not the
+  # concrete version AWS resolved it to. `version_actual` is the fully
+  # resolved minor AWS selected, which is what engine_version needs.
+  engine_version = data.aws_rds_engine_version.postgres.version_actual
 
   instance_class    = var.db_instance_class
   allocated_storage = var.db_allocated_storage
