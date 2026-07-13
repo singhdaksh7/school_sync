@@ -20,7 +20,7 @@ Write-Host "    app_url:    $appUrl"
 Write-Host "    alb_dns:    $albDns"
 
 Write-Step "ECS service status"
-$services = aws ecs describe-services --cluster $cluster --services $webSvc $workerSvc --output json | ConvertFrom-Json
+$services = aws ecs describe-services --cluster $cluster --services $webSvc $workerSvc --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json | ConvertFrom-Json
 foreach ($svc in $services.services) {
     $deploymentStatus = ($svc.deployments | Where-Object { $_.status -eq "PRIMARY" }).rolloutState
     Write-Host ""
@@ -36,21 +36,21 @@ foreach ($svc in $services.services) {
 
 Write-Step "ALB target group health"
 try {
-    $tgArn = (aws elbv2 describe-target-groups --names "*-web-tg" --output json 2>$null | ConvertFrom-Json).TargetGroups[0].TargetGroupArn
+    $tgArn = (aws elbv2 describe-target-groups --names "*-web-tg" --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json 2>$null | ConvertFrom-Json).TargetGroups[0].TargetGroupArn
 } catch {
     $tgArn = $null
 }
 if (-not $tgArn) {
     # Fallback: derive from the load balancer if the name-glob lookup above
     # isn't supported by the installed AWS CLI version.
-    $lbArn = (aws elbv2 describe-load-balancers --output json | ConvertFrom-Json).LoadBalancers |
+    $lbArn = (aws elbv2 describe-load-balancers --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json | ConvertFrom-Json).LoadBalancers |
         Where-Object { $_.DNSName -eq $albDns } | Select-Object -First 1 -ExpandProperty LoadBalancerArn
     if ($lbArn) {
-        $tgArn = (aws elbv2 describe-target-groups --load-balancer-arn $lbArn --output json | ConvertFrom-Json).TargetGroups[0].TargetGroupArn
+        $tgArn = (aws elbv2 describe-target-groups --load-balancer-arn $lbArn --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json | ConvertFrom-Json).TargetGroups[0].TargetGroupArn
     }
 }
 if ($tgArn) {
-    $health = aws elbv2 describe-target-health --target-group-arn $tgArn --output json | ConvertFrom-Json
+    $health = aws elbv2 describe-target-health --target-group-arn $tgArn --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json | ConvertFrom-Json
     foreach ($t in $health.TargetHealthDescriptions) {
         Write-Host "    target $($t.Target.Id):$($t.Target.Port) -> $($t.TargetHealth.State) $($t.TargetHealth.Reason)"
     }

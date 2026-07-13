@@ -36,8 +36,9 @@ Copy-Item backend.hcl.example backend.hcl        # fill in your state bucket/tab
 Copy-Item terraform.tfvars.example terraform.tfvars   # confirm ecr_repository_name at minimum
 ```
 
-Then run `../scripts/deploy-staging.ps1` from the repo root (see that
-script's header comment, or the deployment report, for the full flow).
+Then run `../scripts/deploy-staging.ps1 -ExpectedAccountId <id> -ImageTag <tag>`
+from the repo root (see that script's header comment, or "Coordinated
+deployment order" below, for the full flow).
 
 ## Why no NAT Gateway by default
 
@@ -88,10 +89,73 @@ leaves the VPC boundary.
 ## Why ECS task definitions have `lifecycle { ignore_changes = [container_definitions] }`
 
 Day-to-day image rollouts go through `update-web-service.ps1` /
-`update-worker-service.ps1`, which register a new task-definition revision
-directly via the AWS CLI and force a new deployment. Without
-`ignore_changes`, the next `terraform apply` would see the live task
-definition's image differs from `var.image_tag` and "helpfully" roll it
-back. Terraform still owns everything else about these task definitions
-(CPU/memory, roles, log config, secrets wiring) — only the container image
-drifts intentionally.
+`update-worker-service.ps1` / `update-migrate-task.ps1`, which register a
+new task-definition revision directly via the AWS CLI (via the shared
+`Register-EcsTaskDefinitionWithImage` helper in `common.ps1`) and force a
+new deployment. Without `ignore_changes`, the next `terraform apply` would
+see the live task definition's image differs from `var.image_tag` and
+"helpfully" roll it back. Terraform still owns everything else about these
+task definitions (CPU/memory, roles, log config, secrets wiring) — only the
+container image drifts intentionally.
+
+**This is also why `NODE_EXTRA_CA_CERTS` is baked into the Dockerfile
+itself (`ENV NODE_EXTRA_CA_CERTS=...` in the runner stage), not left as
+purely an `ecs.tf environment` entry.** `ignore_changes` means `terraform
+apply` can never push a new `environment` entry onto an already-registered
+task definition, and the update-*.ps1 scripts copy the *currently
+registered* container definition forward, patching only `.image` — they
+never re-derive `environment` from `ecs.tf`. A variable that only exists in
+`ecs.tf`'s `environment` block is therefore only ever applied on a stack's
+very first `terraform apply` (before `ignore_changes` has anything to
+ignore) and can never reach an already-deployed stack through any
+documented rollout path. Baking it into the image instead means every
+rollout path inherits it unconditionally, with no dependency on which
+script re-registers the revision.
+
+## Coordinated deployment order (`deploy-staging.ps1`)
+
+`deploy-staging.ps1` deliberately does **not** rotate the Secrets Manager
+`DATABASE_URL` (which this stack sets to `sslmode=verify-full`) before the
+web/worker services are already running a CA-aware image — doing so would
+let already-running or freshly-restarted tasks pick up a connection string
+requiring full certificate verification with no CA trust configured to
+satisfy it. The required order is:
+
+1. Preflight + confirm the image tag exists in ECR and passes the scan gate
+   (COMPLETE, zero CRITICAL/HIGH).
+2. Register + deploy new web/worker task-definition revisions on the new
+   image, **while the OLD secret is still `AWSCURRENT`**.
+3. Wait for both services to stabilize; verify liveness only (not
+   readiness — the database dependency isn't gated yet).
+4. Register a new migrate task-definition revision and keep its exact ARN.
+5. `terraform apply` — this is what actually rotates the secret.
+6. Run `prisma migrate deploy` using the exact ARN from step 4 (never a
+   Terraform output, which is permanently stale — see above).
+7. Only if migration succeeds: force-redeploy web/worker so they reload the
+   now-`AWSCURRENT` secret, wait for stability, then poll readiness.
+
+The script never retries a failed migration, never seeds data, never
+touches DNS, and never points a service at a task-definition ARN it did not
+itself just register.
+
+### Rollback after a coordinated rollout
+
+There is **no one-flag automatic rollback** — a rollout past the secret
+rotation (step 5 above) touches two independent systems that must be
+restored together:
+
+1. **Secrets Manager**: the previous `AWSCURRENT` version id (printed in
+   every `deploy-staging.ps1` run's summary, or its failure report if
+   migration failed after rotation).
+2. **ECS task definitions**: the previous web/worker/migrate
+   task-definition ARNs (also printed in the same report).
+
+Restoring only one of the two reintroduces the exact TLS-trust mismatch
+this rollout exists to fix (verify-full DATABASE_URL against a task with no
+CA trust, or CA-aware tasks pointed back at a require-mode secret that
+migrations/app code weren't validated against). Manual rollback: restore
+the Secrets Manager version with `aws secretsmanager update-secret-version-stage`,
+and restore each service with `aws ecs update-service --task-definition
+<previous ARN> --force-new-deployment` — do both before considering the
+rollback complete. Never print or log the actual secret value while doing
+this — only version ids and ARNs are needed.

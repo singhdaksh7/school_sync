@@ -9,6 +9,18 @@ $ErrorActionPreference = "Stop"
 $script:RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $script:TerraformDir = Join-Path $RepoRoot "infra\terraform"
 
+# Every deployment script in this directory must run under the
+# least-privilege SSO-assumed role, never the AWS account root user or an
+# un-vetted default profile. This is the single source of truth for which
+# profile/region every aws CLI call below uses — Assert-AwsAuthenticated is
+# the one required checkpoint every script calls before any AWS action, and
+# it both verifies AND exports $env:AWS_PROFILE/$env:AWS_REGION so a
+# subsequent `terraform` invocation (which has no --profile flag of its own
+# — it resolves credentials via the AWS provider's default chain, including
+# AWS_PROFILE) inherits the same verified, non-root identity.
+$script:DefaultAwsProfile = "schoolsync-admin"
+$script:DefaultAwsRegion = "ap-south-1"
+
 function Write-Step {
     param([string]$Message)
     Write-Host ""
@@ -40,18 +52,44 @@ function Assert-CommandExists {
 }
 
 function Assert-AwsAuthenticated {
+    <#
+      The one required checkpoint every deployment script calls before any
+      AWS action. Verifies authentication AND refuses to proceed if the
+      resolved identity is the account root user — regardless of which
+      profile produced it (root can be reached via a bare default profile,
+      an `aws login` root session, or a misconfigured profile alias), so
+      this check can never be bypassed by pointing -Profile at something
+      else that still resolves to root. On success, exports
+      $env:AWS_PROFILE/$env:AWS_REGION so every subsequent aws CLI call in
+      this process (and any `terraform` invocation, which has no
+      --profile flag of its own) uses the same verified identity.
+    #>
+    param([string]$Profile = $script:DefaultAwsProfile)
+
     Assert-CommandExists "aws"
+    $identityArgs = @("sts", "get-caller-identity", "--output", "json")
+    if ($Profile) { $identityArgs += @("--profile", $Profile) }
+
     try {
-        $identity = aws sts get-caller-identity --output json | ConvertFrom-Json
+        $identity = aws @identityArgs | ConvertFrom-Json
     } catch {
-        Write-Fail "AWS CLI authentication check failed: $_"
+        Write-Fail "AWS CLI authentication check failed (profile: $Profile): $_"
         exit 1
     }
-    if (-not $identity -or -not $identity.Account) {
-        Write-Fail "AWS CLI is not authenticated. Run 'aws configure' or set credentials, then retry."
+    if ($LASTEXITCODE -ne 0 -or -not $identity -or -not $identity.Account) {
+        Write-Fail "AWS CLI is not authenticated for profile '$Profile'. Run 'aws sso login --profile $Profile', then retry."
         exit 1
     }
-    Write-Success "AWS CLI authenticated as $($identity.Arn) (account $($identity.Account))"
+    if ($identity.Arn -match '^arn:aws:iam::\d+:root$') {
+        Write-Fail "Authenticated identity is the AWS account ROOT user ($($identity.Arn))."
+        Write-Fail "Deployment scripts must never run as root. Run 'aws sso login --profile $Profile' and retry with an assumed-role (SSO) identity."
+        exit 1
+    }
+
+    $env:AWS_PROFILE = $Profile
+    $env:AWS_REGION = $script:DefaultAwsRegion
+
+    Write-Success "AWS CLI authenticated as $($identity.Arn) (account $($identity.Account), profile $Profile)"
     return $identity
 }
 
@@ -109,27 +147,41 @@ function Get-TerraformOutputJson {
     }
 }
 
-function Update-EcsServiceImage {
+function Register-EcsTaskDefinitionWithImage {
     <#
-      Registers a new revision of an ECS task definition family with a
-      patched container image (same tag family, new image URI/tag), then
-      updates the given service to use it and forces a fresh deployment.
-      Shared by update-web-service.ps1 and update-worker-service.ps1 — both
-      do the exact same describe/patch/register/update/wait sequence, only
-      the cluster/service/family/container name differ.
+      The single reusable describe -> patch-image -> register primitive for
+      every ECS task-definition rollout in this repo (web, worker, and
+      migrate). Fetches the CURRENTLY REGISTERED revision of $Family,
+      replaces only the named container's `image`, and registers a new
+      revision that otherwise preserves every field register-task-definition
+      accepts: execution role, task role, cpu/memory, network mode, runtime
+      platform, volumes, and — because containerDefinitions is carried
+      through untouched apart from the one `image` field — every container's
+      own environment variables and secret ARN mappings.
+      Deliberately does NOT touch any ECS service; the caller decides
+      whether/how the new revision gets deployed (a standing service via
+      Update-EcsServiceImage below, or a one-off `aws ecs run-task` for the
+      migrate family, which has no service at all).
+
+      Never prints environment or secret VALUES — describe-task-definition's
+      `secrets` entries are ARN references only (never resolved values), and
+      this function's own output is limited to the previous/new image and
+      the new task-definition ARN.
+
+      Returns the new task-definition ARN, or exits non-zero (never returns)
+      on any describe/register failure — callers must never fall back to a
+      previously-known-good ARN silently.
     #>
     param(
-        [Parameter(Mandatory)][string]$Cluster,
-        [Parameter(Mandatory)][string]$Service,
         [Parameter(Mandatory)][string]$Family,
         [Parameter(Mandatory)][string]$ContainerName,
         [Parameter(Mandatory)][string]$ImageUri
     )
 
     Write-Step "Fetching current task definition ($Family)"
-    $current = aws ecs describe-task-definition --task-definition $Family --output json | ConvertFrom-Json
+    $current = aws ecs describe-task-definition --task-definition $Family --output json --profile $env:AWS_PROFILE --region $env:AWS_REGION | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) {
-        Write-Fail "Could not describe task definition '$Family'. Has 'terraform apply' created it yet?"
+        Write-Fail "Could not describe task definition '$Family' (exit $LASTEXITCODE). Has 'terraform apply' created it yet?"
         exit 1
     }
     $taskDef = $current.taskDefinition
@@ -144,7 +196,11 @@ function Update-EcsServiceImage {
     Write-Success "Image: $previousImage -> $ImageUri"
 
     # register-task-definition only accepts a specific field subset — strip
-    # everything describe-task-definition adds that isn't a valid input field.
+    # everything describe-task-definition adds that isn't a valid input
+    # field (revision, taskDefinitionArn, status, registeredAt/By,
+    # requiresAttributes, compatibilities). Every field kept here is
+    # preserved from the CURRENTLY REGISTERED revision verbatim except
+    # containerDefinitions[].image, which was patched above.
     $registerPayload = [ordered]@{
         family                  = $taskDef.family
         containerDefinitions    = $taskDef.containerDefinitions
@@ -154,6 +210,14 @@ function Update-EcsServiceImage {
         memory                  = $taskDef.memory
         executionRoleArn        = $taskDef.executionRoleArn
         taskRoleArn             = $taskDef.taskRoleArn
+        volumes                 = $taskDef.volumes
+    }
+    # runtimePlatform is only present on task definitions that set it
+    # explicitly (this stack's Fargate task defs currently don't — they take
+    # the default X86_64/LINUX). Omit the key entirely rather than sending a
+    # null, which register-task-definition rejects.
+    if ($taskDef.PSObject.Properties.Name -contains "runtimePlatform" -and $taskDef.runtimePlatform) {
+        $registerPayload["runtimePlatform"] = $taskDef.runtimePlatform
     }
 
     $tmpFile = New-TemporaryFile
@@ -161,16 +225,39 @@ function Update-EcsServiceImage {
         ($registerPayload | ConvertTo-Json -Depth 30) | Set-Content -Path $tmpFile -Encoding utf8
 
         Write-Step "Registering new task definition revision"
-        $registered = aws ecs register-task-definition --cli-input-json "file://$tmpFile" --output json | ConvertFrom-Json
+        $registered = aws ecs register-task-definition --cli-input-json "file://$tmpFile" --output json --profile $env:AWS_PROFILE --region $env:AWS_REGION | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) {
-            Write-Fail "aws ecs register-task-definition failed (exit $LASTEXITCODE)"
+            Write-Fail "aws ecs register-task-definition failed for family '$Family' (exit $LASTEXITCODE)"
             exit 1
         }
         $newArn = $registered.taskDefinition.taskDefinitionArn
         Write-Success "Registered: $newArn"
+        return $newArn
     } finally {
         Remove-Item $tmpFile -ErrorAction SilentlyContinue
     }
+}
+
+function Update-EcsServiceImage {
+    <#
+      Registers a new revision of an ECS task definition family with a
+      patched container image (via Register-EcsTaskDefinitionWithImage),
+      then updates the given STANDING SERVICE to use it and forces a fresh
+      deployment. Shared by update-web-service.ps1 and
+      update-worker-service.ps1 — both do the exact same
+      register/update/wait sequence, only the cluster/service/family/
+      container name differ. Not used for migrate, which has no service
+      (see Register-EcsTaskDefinitionWithImage's own docs).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Cluster,
+        [Parameter(Mandatory)][string]$Service,
+        [Parameter(Mandatory)][string]$Family,
+        [Parameter(Mandatory)][string]$ContainerName,
+        [Parameter(Mandatory)][string]$ImageUri
+    )
+
+    $newArn = Register-EcsTaskDefinitionWithImage -Family $Family -ContainerName $ContainerName -ImageUri $ImageUri
 
     Write-Step "Updating service '$Service' to the new revision (force new deployment)"
     Invoke-Checked -FilePath "aws" -ArgumentList @(
@@ -179,11 +266,13 @@ function Update-EcsServiceImage {
         "--service", $Service,
         "--task-definition", $newArn,
         "--force-new-deployment",
+        "--profile", $env:AWS_PROFILE,
+        "--region", $env:AWS_REGION,
         "--output", "json"
     ) -FailureMessage "aws ecs update-service failed"
 
     Write-Step "Waiting for service to stabilize (AWS CLI default waiter: ~10 min max)"
-    aws ecs wait services-stable --cluster $Cluster --services $Service
+    aws ecs wait services-stable --cluster $Cluster --services $Service --profile $env:AWS_PROFILE --region $env:AWS_REGION
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Service '$Service' did not stabilize. Check: aws ecs describe-services --cluster $Cluster --services $Service"
         exit 1
@@ -304,4 +393,123 @@ function Read-HclKeyValueFile {
         }
     }
     return $result
+}
+
+function Assert-EcrImageApproved {
+    <#
+      Confirms an image tag exists in ECR and passes the scan gate: scan
+      status COMPLETE with zero CRITICAL/HIGH findings (MEDIUM/LOW are
+      reported but not gated). Exits non-zero (never returns) on any
+      failure — a caller must never proceed to deploy an image this
+      function didn't explicitly approve.
+
+      Resolves the underlying PLATFORM-SPECIFIC manifest digest first: a
+      `docker buildx` multi-arch push (with the default provenance/SBOM
+      attestation) registers an OCI image INDEX, and ECR's scanner attaches
+      findings to the platform manifest digest INSIDE that index, never to
+      the index's own top-level digest — querying
+      describe-image-scan-findings against the tag/index digest directly
+      returns ScanNotFoundException forever, which looks identical to "scan
+      still pending" if not handled explicitly.
+
+      Never prints finding details beyond the CRITICAL/HIGH/MEDIUM/LOW
+      counts.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$RepositoryName,
+        [Parameter(Mandatory)][string]$ImageTag,
+        [string]$Platform = "amd64",
+        [int]$TimeoutSeconds = 300
+    )
+
+    Write-Step "Resolving platform-specific digest for ${RepositoryName}:${ImageTag}"
+    $batchGet = aws ecr batch-get-image --repository-name $RepositoryName --image-ids imageTag=$ImageTag --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "aws ecr batch-get-image failed for ${RepositoryName}:${ImageTag} (exit $LASTEXITCODE)"
+        exit 1
+    }
+    if (-not $batchGet.images -or $batchGet.images.Count -eq 0) {
+        Write-Fail "Image tag '$ImageTag' not found in repository '$RepositoryName'. Has it been pushed?"
+        exit 1
+    }
+    $manifest = $batchGet.images[0].imageManifest | ConvertFrom-Json
+
+    if ($manifest.manifests) {
+        # OCI image index / Docker manifest list (buildx multi-arch + attestation).
+        $platformManifest = $manifest.manifests | Where-Object {
+            $_.platform -and $_.platform.architecture -eq $Platform -and $_.platform.os -eq "linux"
+        } | Select-Object -First 1
+        if (-not $platformManifest) {
+            Write-Fail "No linux/$Platform manifest found inside the image index for ${RepositoryName}:${ImageTag}."
+            exit 1
+        }
+        $digest = $platformManifest.digest
+    } else {
+        # Single-manifest image — the tag's own digest is what's scanned.
+        $digest = $batchGet.images[0].imageId.imageDigest
+    }
+    Write-Success "Resolved digest: $digest"
+
+    Write-Step "Waiting for ECR scan to complete (timeout ${TimeoutSeconds}s)"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $status = $null
+    $findings = $null
+    while ((Get-Date) -lt $deadline) {
+        $result = aws ecr describe-image-scan-findings --repository-name $RepositoryName --image-id imageDigest=$digest --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json 2>$null | ConvertFrom-Json
+        if ($LASTEXITCODE -eq 0 -and $result -and $result.imageScanStatus) {
+            $status = $result.imageScanStatus.status
+            $findings = $result.imageScanFindings
+            if ($status -eq "COMPLETE" -or $status -eq "FAILED") { break }
+        }
+        Start-Sleep -Seconds 10
+    }
+
+    if ($status -ne "COMPLETE") {
+        Write-Fail "ECR scan for digest $digest did not reach COMPLETE within ${TimeoutSeconds}s (last status: $status)."
+        exit 1
+    }
+
+    $counts = if ($findings -and $findings.findingSeverityCounts) { $findings.findingSeverityCounts } else { $null }
+    $critical = if ($counts -and $counts.CRITICAL) { [int]$counts.CRITICAL } else { 0 }
+    $high = if ($counts -and $counts.HIGH) { [int]$counts.HIGH } else { 0 }
+    $medium = if ($counts -and $counts.MEDIUM) { [int]$counts.MEDIUM } else { 0 }
+    $low = if ($counts -and $counts.LOW) { [int]$counts.LOW } else { 0 }
+
+    Write-Success "Scan COMPLETE — CRITICAL=$critical HIGH=$high MEDIUM=$medium LOW=$low"
+    if ($critical -gt 0 -or $high -gt 0) {
+        Write-Fail "Image ${RepositoryName}:${ImageTag} (digest $digest) has $critical CRITICAL and $high HIGH finding(s) — scan gate failed."
+        exit 1
+    }
+
+    return [pscustomobject]@{
+        Digest   = $digest
+        Critical = $critical
+        High     = $high
+        Medium   = $medium
+        Low      = $low
+    }
+}
+
+function Get-SecretCurrentVersionId {
+    <#
+      Returns the Secrets Manager version id currently staged AWSCURRENT
+      for the given secret, using describe-secret (metadata only — this
+      NEVER calls get-secret-value and therefore never fetches, holds, or
+      risks printing the actual secret content). Used purely for
+      before/after rollback bookkeeping in deployment reports.
+    #>
+    param([Parameter(Mandatory)][string]$SecretId)
+
+    $desc = aws secretsmanager describe-secret --secret-id $SecretId --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Could not describe secret '$SecretId' (exit $LASTEXITCODE)"
+        exit 1
+    }
+    foreach ($prop in $desc.VersionIdsToStages.PSObject.Properties) {
+        if ($prop.Value -contains "AWSCURRENT") {
+            return $prop.Name
+        }
+    }
+    Write-Fail "No AWSCURRENT version found for secret '$SecretId'"
+    exit 1
 }

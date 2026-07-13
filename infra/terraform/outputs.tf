@@ -37,6 +37,11 @@ output "ecs_migrate_task_definition_arn" {
   value       = aws_ecs_task_definition.migrate.arn
 }
 
+output "ecs_migrate_task_family" {
+  description = "Family name only (no revision) — infra/scripts/update-migrate-task.ps1 uses this to describe+patch the currently registered revision, mirroring ecs_web_task_family/ecs_worker_task_family."
+  value       = aws_ecs_task_definition.migrate.family
+}
+
 output "rds_endpoint" {
   description = "Hostname only — never the credentialed connection string (that lives in Secrets Manager)."
   value       = aws_db_instance.main.address

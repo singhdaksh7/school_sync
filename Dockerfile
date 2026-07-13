@@ -83,14 +83,26 @@ COPY prisma ./prisma
 COPY scripts ./scripts
 
 # Vendored AWS RDS root CA bundle (see certs/README.md for source/checksum)
-# — trusted via NODE_EXTRA_CA_CERTS (infra/terraform/ecs.tf) so Node can
-# verify the RDS TLS certificate chain instead of disabling verification.
-# Never fetched at build time: exact bytes committed to the repo.
+# — trusted via NODE_EXTRA_CA_CERTS so Node can verify the RDS TLS
+# certificate chain instead of disabling verification. Never fetched at
+# build time: exact bytes committed to the repo.
 COPY certs/aws-rds-global-bundle.pem ./certs/aws-rds-global-bundle.pem
 
 RUN chown -R nextjs:nodejs /app \
     && chmod 0444 /app/certs/aws-rds-global-bundle.pem
 USER nextjs
+
+# Baked into the image itself (not left to ECS-only injection): the bundle
+# path is image-internal and fixed by the COPY above, and it is not a
+# secret (the AWS RDS root CA is public — see certs/README.md), so there is
+# no reason it should ever require an operator-supplied `-e` flag or depend
+# on which deployment path re-registers a task definition's `environment`
+# block. infra/terraform/ecs.tf also sets this same variable on each ECS
+# task definition's `environment` — that's for first-time `terraform apply`
+# clarity/parity, not the source of truth; ECS `environment` entries simply
+# override an image ENV of the same name when both are present, so setting
+# it in both places is safe and never conflicts.
+ENV NODE_EXTRA_CA_CERTS=/app/certs/aws-rds-global-bundle.pem
 
 EXPOSE 3000
 
