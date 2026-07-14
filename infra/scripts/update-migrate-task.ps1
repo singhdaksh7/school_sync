@@ -17,6 +17,25 @@
   Tag on the existing ECR repository to deploy (e.g. a commit SHA or
   candidate build tag). Must already have been pushed and scanned.
 
+.PARAMETER Family
+  Optional. The migrate task-definition family name (e.g.
+  "schoolsync-staging-migrate"). deploy-staging.ps1 always supplies this
+  explicitly — derived from the `ecs_migrate_task_definition_arn` Terraform
+  output it already reads in STEP B, via Get-EcsTaskFamilyFromArn — so the
+  coordinated rollout's family resolution never depends on the newer
+  `ecs_migrate_task_family` output and can never race the STEP G `terraform
+  apply` that first creates it.
+
+  When omitted (standalone/ad-hoc use — see .EXAMPLE), this script resolves
+  the family itself: it tries the `ecs_migrate_task_family` Terraform
+  output first, and if that output isn't present yet (e.g. it was just
+  added to outputs.tf but the apply that creates it hasn't run), it falls
+  back to parsing the family out of the existing
+  `ecs_migrate_task_definition_arn` output instead — the migrate task
+  definition resource itself, and therefore this ARN, already exists from
+  whichever `terraform apply` first created it. If neither output is
+  available, this script fails closed rather than guessing.
+
 .OUTPUTS
   Prints progress to the host, then writes the new task-definition ARN as
   the final line of stdout (nothing else on that line) so a caller can
@@ -25,22 +44,45 @@
 
 .EXAMPLE
   ./infra/scripts/update-migrate-task.ps1 -ImageTag "candidate-abc123..."
+.EXAMPLE
+  ./infra/scripts/update-migrate-task.ps1 -ImageTag "candidate-abc123..." -Family "schoolsync-staging-migrate"
 #>
 param(
-    [Parameter(Mandatory)][string]$ImageTag
+    [Parameter(Mandatory)][string]$ImageTag,
+    [string]$Family
 )
 
 . (Join-Path $PSScriptRoot "common.ps1")
 
 Assert-AwsAuthenticated | Out-Null
 
+if ($Family) {
+    Write-Step "Using explicitly supplied migrate task family"
+    Write-Success "Family: $Family"
+} else {
+    Write-Step "Resolving migrate task family (no -Family supplied — standalone usage)"
+    $Family = Get-TerraformOutputRawOptional "ecs_migrate_task_family"
+    if ($Family) {
+        Write-Success "Resolved from Terraform output 'ecs_migrate_task_family': $Family"
+    } else {
+        Write-Warn "'ecs_migrate_task_family' output not present (likely not yet applied) — falling back to the existing migrate task-definition ARN."
+        $existingArn = Get-TerraformOutputRawOptional "ecs_migrate_task_definition_arn"
+        if (-not $existingArn) {
+            Write-Fail "Cannot determine the migrate task family: neither 'ecs_migrate_task_family' nor 'ecs_migrate_task_definition_arn' is available in Terraform state."
+            Write-Fail "Has the migrate task definition ever been created by a prior 'terraform apply'? Refusing to guess a family name."
+            exit 1
+        }
+        $Family = Get-EcsTaskFamilyFromArn -TaskDefinitionArn $existingArn
+        Write-Success "Resolved '$Family' from existing ARN: $existingArn"
+    }
+}
+
 Write-Step "Reading Terraform outputs"
-$family = Get-TerraformOutputRaw "ecs_migrate_task_family"
 $ecrUrl = Get-TerraformOutputRaw "ecr_repository_url"
 $image  = "${ecrUrl}:${ImageTag}"
 
 $newArn = Register-EcsTaskDefinitionWithImage `
-    -Family $family `
+    -Family $Family `
     -ContainerName "migrate" `
     -ImageUri $image
 

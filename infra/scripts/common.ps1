@@ -132,6 +132,48 @@ function Get-TerraformOutputRaw {
     }
 }
 
+function Get-TerraformOutputRawOptional {
+    <#
+      Same as Get-TerraformOutputRaw, but returns $null instead of exiting
+      the process when the named output isn't present in state yet (e.g. it
+      was just added to outputs.tf but the `apply` that would create it
+      hasn't run). Callers with a safe fallback for that case — see
+      update-migrate-task.ps1's family resolution — use this instead of the
+      hard-exit Get-TerraformOutputRaw, which is still correct for outputs
+      every caller genuinely requires unconditionally.
+    #>
+    param([Parameter(Mandatory)][string]$Name)
+    Push-Location $TerraformDir
+    try {
+        $value = terraform output -raw $Name 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return $null
+        }
+        return $value
+    } finally {
+        Pop-Location
+    }
+}
+
+function Get-EcsTaskFamilyFromArn {
+    <#
+      Safely parses the task-definition family (no revision) out of an ECS
+      task-definition ARN, e.g.
+      "arn:aws:ecs:ap-south-1:928805968612:task-definition/schoolsync-staging-migrate:7"
+      -> "schoolsync-staging-migrate". Every part (region, account, family,
+      revision) is read from the ARN string itself — never hardcoded — and
+      this fails closed (throws a terminating error) rather than silently
+      returning a guessed or partial family name when the ARN doesn't match
+      the expected shape.
+    #>
+    param([Parameter(Mandatory)][string]$TaskDefinitionArn)
+
+    if ($TaskDefinitionArn -notmatch '^arn:aws:ecs:[^:]+:\d+:task-definition/([^:/]+):\d+$') {
+        throw "Cannot safely determine the task-definition family from ARN '$TaskDefinitionArn' — unexpected format."
+    }
+    return $Matches[1]
+}
+
 function Get-TerraformOutputJson {
     param([Parameter(Mandatory)][string]$Name)
     Push-Location $TerraformDir

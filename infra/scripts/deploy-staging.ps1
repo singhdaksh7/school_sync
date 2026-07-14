@@ -194,7 +194,14 @@ try {
 $newMigrateArn = $null
 if (-not $SkipMigration) {
     Write-Step "STEP F: Registering CA-aware migrate task revision"
-    $newMigrateArn = & (Join-Path $PSScriptRoot "update-migrate-task.ps1") -ImageTag $ImageTag | Select-Object -Last 1
+    # Derived from $previousMigrateArn (STEP B, "ecs_migrate_task_definition_arn"
+    # — an output that already exists from whichever apply first created the
+    # migrate task definition) rather than the newer "ecs_migrate_task_family"
+    # output, which STEP G's apply is what actually creates. Resolving family
+    # here and passing it explicitly means this step never depends on an
+    # output that doesn't exist until after the step that follows it.
+    $migrateFamily = Get-EcsTaskFamilyFromArn -TaskDefinitionArn $previousMigrateArn
+    $newMigrateArn = & (Join-Path $PSScriptRoot "update-migrate-task.ps1") -ImageTag $ImageTag -Family $migrateFamily | Select-Object -Last 1
     if ($LASTEXITCODE -ne 0 -or -not $newMigrateArn) {
         Write-Fail "Failed to register the migrate task revision (exit $LASTEXITCODE) — aborting BEFORE any secret rotation."
         Write-Fail "No changes beyond the already-deployed web/worker revisions (step C) were made."
