@@ -3,6 +3,11 @@ import { requireFounderSession } from "@/lib/founder";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { isSchoolPaymentOverdue } from "@/lib/payment-overdue";
+import { createSchoolWithAdminSchema, createSchoolWithAdmin } from "@/lib/school-onboarding";
+import { sendStaffInviteEmail } from "@/lib/email";
+import { createNotification } from "@/lib/founder-notifications";
+import { logAudit } from "@/lib/audit";
+import { getClientIp } from "@/lib/request-ip";
 
 const PAGE_SIZE = 10;
 const VALID_STATUSES = ["ACTIVE", "TRIAL", "EXPIRED", "SUSPENDED"] as const;
@@ -115,4 +120,92 @@ export async function GET(req: Request) {
     pageSize: PAGE_SIZE,
     totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
   });
+}
+
+function inviteBaseUrl(req: Request) {
+  const configuredBaseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL;
+  const requestBaseUrl = new URL(req.url).origin;
+  return configuredBaseUrl || requestBaseUrl;
+}
+
+/**
+ * The integrated Founder "Add School" transaction: school + subscription +
+ * initial admin invite, created atomically and idempotently by
+ * src/lib/school-onboarding.ts. The email send/notification/audit calls
+ * happen HERE (not in the lib helper) — sendStaffInviteEmail call sites must
+ * live under src/app only (see tests/email-iam-mapping.test.ts): only the
+ * web ECS task role has SES permission.
+ */
+export async function POST(req: Request) {
+  const session = await requireFounderSession();
+  if (!session?.user?.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = await req.json().catch(() => null);
+  const parsed = createSchoolWithAdminSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
+  }
+
+  const result = await createSchoolWithAdmin(parsed.data, session.user.id);
+  if (!result.ok) {
+    const status = result.code === "VALIDATION" ? 400 : 404;
+    return NextResponse.json({ error: result.error, code: result.code }, { status });
+  }
+
+  const { school, invite, plan, deduplicated, rawInviteToken } = result;
+  let inviteLink: string | null = null;
+  let emailError: string | null = null;
+
+  if (rawInviteToken) {
+    inviteLink = `${inviteBaseUrl(req)}/invite/${rawInviteToken}`;
+    try {
+      await sendStaffInviteEmail(invite.email, {
+        name: invite.name ?? invite.email,
+        role: "SCHOOL_ADMIN",
+        schoolName: school.name,
+        inviteLink,
+      });
+    } catch (err) {
+      console.error("Failed to send Add-School admin invite email:", err);
+      emailError = "School created, but the invite email could not be sent. Share the link manually or resend it from the school's page.";
+    }
+
+    await createNotification({
+      type: "SCHOOL_REGISTERED",
+      title: "New school registered",
+      message: `${school.name} was created by the Founder.`,
+      schoolId: school.id,
+    });
+
+    const ipAddress = getClientIp(req);
+    await logAudit({
+      action: "SCHOOL_CREATED",
+      entityType: "School",
+      entityId: school.id,
+      metadata: { name: school.name, planId: plan.id },
+      userId: session.user.id,
+      schoolId: school.id,
+      ipAddress,
+    });
+    await logAudit({
+      action: "FOUNDER_INVITE_CREATED",
+      entityType: "SchoolInvite",
+      entityId: invite.id,
+      metadata: { name: invite.name, email: invite.email, planId: plan.id },
+      userId: session.user.id,
+      schoolId: school.id,
+      ipAddress,
+    });
+  }
+
+  return NextResponse.json(
+    {
+      school,
+      invite: { id: invite?.id, email: invite?.email },
+      inviteLink,
+      emailError,
+      deduplicated,
+    },
+    { status: deduplicated ? 200 : 201 }
+  );
 }

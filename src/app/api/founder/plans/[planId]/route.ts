@@ -2,49 +2,60 @@ import { NextResponse } from "next/server";
 import { requireFounderSession } from "@/lib/founder";
 import { prisma } from "@/lib/prisma";
 import { hasPrismaErrorCode } from "@/lib/tenant";
+import { logAudit } from "@/lib/audit";
+import { getClientIp } from "@/lib/request-ip";
+import { updatePlanSchema, toMinorUnits } from "@/lib/plan-catalogue";
+import type { Prisma } from "@/generated/prisma/client";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ planId: string }> }) {
   const session = await requireFounderSession();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session?.user?.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { planId } = await params;
   const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } });
   if (!plan) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json().catch(() => null);
-  const data: { name?: string; priceMonthly?: number; priceAnnual?: number; maxStudents?: number | null; isActive?: boolean } = {};
+  const parsed = updatePlanSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid plan payload" }, { status: 400 });
+  }
+  const input = parsed.data;
 
-  if (body?.name !== undefined) {
-    const name = typeof body.name === "string" ? body.name.trim() : "";
-    if (!name) return NextResponse.json({ error: "Name cannot be empty" }, { status: 400 });
-    data.name = name;
-  }
-  if (body?.priceMonthly !== undefined) {
-    const priceMonthly = Number(body.priceMonthly);
-    if (!Number.isFinite(priceMonthly) || priceMonthly < 0) {
-      return NextResponse.json({ error: "Monthly price must be a non-negative number" }, { status: 400 });
+  const data: Prisma.SubscriptionPlanUpdateInput = {};
+  if (input.name !== undefined) data.name = input.name;
+  if (input.description !== undefined) data.description = input.description ?? null;
+  if (input.currency !== undefined) data.currency = input.currency;
+  if (input.maxStudents !== undefined) data.maxStudents = input.maxStudents ?? null;
+  if (input.staffLimit !== undefined) data.staffLimit = input.staffLimit ?? null;
+  if (input.enabledFeatures !== undefined) data.enabledFeatures = input.enabledFeatures;
+  if (input.isActive !== undefined) data.isActive = input.isActive;
+
+  try {
+    if (input.priceMonthly !== undefined) {
+      data.priceMonthly = input.priceMonthly;
+      data.priceMonthlyMinor = toMinorUnits(input.priceMonthly);
     }
-    data.priceMonthly = priceMonthly;
-  }
-  if (body?.priceAnnual !== undefined) {
-    const priceAnnual = Number(body.priceAnnual);
-    if (!Number.isFinite(priceAnnual) || priceAnnual < 0) {
-      return NextResponse.json({ error: "Annual price must be a non-negative number" }, { status: 400 });
+    if (input.priceAnnual !== undefined) {
+      data.priceAnnual = input.priceAnnual;
+      data.priceAnnualMinor = toMinorUnits(input.priceAnnual);
     }
-    data.priceAnnual = priceAnnual;
-  }
-  if (body?.maxStudents !== undefined) {
-    data.maxStudents = body.maxStudents === null || body.maxStudents === "" ? null : Number(body.maxStudents);
-    if (data.maxStudents !== null && (!Number.isFinite(data.maxStudents) || data.maxStudents < 0)) {
-      return NextResponse.json({ error: "Max students must be a non-negative number" }, { status: 400 });
-    }
-  }
-  if (body?.isActive !== undefined) {
-    data.isActive = Boolean(body.isActive);
+  } catch {
+    return NextResponse.json({ error: "Prices must be non-negative numbers" }, { status: 400 });
   }
 
   try {
     const updated = await prisma.subscriptionPlan.update({ where: { id: planId }, data });
+
+    await logAudit({
+      action: "PLAN_UPDATED",
+      entityType: "SubscriptionPlan",
+      entityId: updated.id,
+      metadata: { changedFields: Object.keys(data) },
+      userId: session.user.id,
+      ipAddress: getClientIp(req),
+    });
+
     return NextResponse.json({ plan: updated });
   } catch (error) {
     if (hasPrismaErrorCode(error, "P2002")) {
@@ -52,4 +63,52 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ planId
     }
     throw error;
   }
+}
+
+/**
+ * Hard delete is only permitted for a plan that has never been assigned to a
+ * school (zero SchoolSubscription rows) — otherwise callers must deactivate
+ * it instead (PATCH isActive:false). This is the ticket's "prevent
+ * destructive deletion of any plan assigned to a school" guarantee, enforced
+ * server-side rather than merely hidden in the UI.
+ */
+export async function DELETE(req: Request, { params }: { params: Promise<{ planId: string }> }) {
+  const session = await requireFounderSession();
+  if (!session?.user?.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const { planId } = await params;
+  const plan = await prisma.subscriptionPlan.findUnique({
+    where: { id: planId },
+    include: { _count: { select: { subscriptions: true } } },
+  });
+  if (!plan) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (plan._count.subscriptions > 0) {
+    return NextResponse.json(
+      { error: `This plan is assigned to ${plan._count.subscriptions} school(s). Deactivate it instead of deleting.` },
+      { status: 409 }
+    );
+  }
+
+  try {
+    await prisma.subscriptionPlan.delete({ where: { id: planId } });
+  } catch (error) {
+    // A concurrent assignment landed between our count check and the delete —
+    // surface the same 409 rather than a raw FK-violation 500.
+    if (hasPrismaErrorCode(error, "P2003")) {
+      return NextResponse.json({ error: "This plan was just assigned to a school. Deactivate it instead of deleting." }, { status: 409 });
+    }
+    throw error;
+  }
+
+  await logAudit({
+    action: "PLAN_UPDATED",
+    entityType: "SubscriptionPlan",
+    entityId: planId,
+    metadata: { deleted: true, name: plan.name, slug: plan.slug },
+    userId: session.user.id,
+    ipAddress: getClientIp(req),
+  });
+
+  return NextResponse.json({ ok: true });
 }
