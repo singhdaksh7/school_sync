@@ -170,9 +170,17 @@ $backendConfig = Assert-BackendConfigExists
 
 if (-not $SkipPreflight) {
     Write-Step "STEP A: Running AWS prerequisite preflight"
-    $preflightArgs = @("-ExpectedAccountId", $ExpectedAccountId, "-ImageTag", $ImageTag)
-    if ($UseOidcCredentials) { $preflightArgs += "-UseOidcCredentials" }
-    & (Join-Path $PSScriptRoot "preflight.ps1") @preflightArgs
+    # Hashtable splatting (@hashtable), NOT array splatting (@array): an
+    # array of alternating "-ParamName"/value strings binds POSITIONALLY —
+    # PowerShell never re-parses splatted array elements as named-parameter
+    # tokens, so "-ExpectedAccountId" itself would bind as preflight.ps1's
+    # first positional value and everything after it would shift by one.
+    $preflightParams = @{
+        ExpectedAccountId = $ExpectedAccountId
+        ImageTag          = $ImageTag
+    }
+    if ($UseOidcCredentials) { $preflightParams["UseOidcCredentials"] = $true }
+    & (Join-Path $PSScriptRoot "preflight.ps1") @preflightParams
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Preflight failed — see above. Re-run with -SkipPreflight to bypass (not recommended)."
         exit 1
