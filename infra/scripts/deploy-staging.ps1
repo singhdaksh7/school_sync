@@ -28,7 +28,14 @@
        stale (infra/terraform/ecs.tf's migrate task definition has
        `lifecycle { ignore_changes = [container_definitions] }`, so
        Terraform's own output permanently points at whatever revision was
-       first ever registered).
+       first ever registered). The migrate task FAMILY name (needed to look
+       up the currently-registered revision to patch) is derived from
+       $previousMigrateArn (STEP B's already-applied
+       `ecs_migrate_task_definition_arn` output) rather than the newer
+       `ecs_migrate_task_family` output, which STEP G's own `terraform
+       apply` is what first creates — this step must never depend on an
+       output that doesn't exist in state until after the step that
+       follows it.
     G. Run the reviewed `terraform apply` that rotates the Secrets Manager
        secret to a new AWSCURRENT version with DATABASE_URL
        sslmode=verify-full. Does not touch RDS/Redis/VPC/ALB/network — see
@@ -194,7 +201,8 @@ try {
 $newMigrateArn = $null
 if (-not $SkipMigration) {
     Write-Step "STEP F: Registering CA-aware migrate task revision"
-    $newMigrateArn = & (Join-Path $PSScriptRoot "update-migrate-task.ps1") -ImageTag $ImageTag | Select-Object -Last 1
+    $migrateFamily = Get-EcsTaskFamilyFromArn -TaskDefinitionArn $previousMigrateArn
+    $newMigrateArn = & (Join-Path $PSScriptRoot "update-migrate-task.ps1") -ImageTag $ImageTag -Family $migrateFamily | Select-Object -Last 1
     if ($LASTEXITCODE -ne 0 -or -not $newMigrateArn) {
         Write-Fail "Failed to register the migrate task revision (exit $LASTEXITCODE) — aborting BEFORE any secret rotation."
         Write-Fail "No changes beyond the already-deployed web/worker revisions (step C) were made."

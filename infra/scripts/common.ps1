@@ -132,6 +132,48 @@ function Get-TerraformOutputRaw {
     }
 }
 
+function Get-TerraformOutputRawOptional {
+    <#
+      Same as Get-TerraformOutputRaw, but returns $null instead of exiting
+      the process when the named output isn't present in state yet — e.g.
+      it was just added to outputs.tf by the same commit as a not-yet-run
+      `terraform apply`. Adding an output block to a .tf file does not
+      retroactively populate it into the state file; that only happens on
+      the next apply, even if the resource attribute it reads already
+      exists in state. Callers that have a safe fallback for that case use
+      this instead of the hard-exit Get-TerraformOutputRaw.
+    #>
+    param([Parameter(Mandatory)][string]$Name)
+    Push-Location $TerraformDir
+    try {
+        $value = terraform output -raw $Name 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return $null
+        }
+        return $value
+    } finally {
+        Pop-Location
+    }
+}
+
+function Get-EcsTaskFamilyFromArn {
+    <#
+      Parses the task-definition family (no revision) out of a full
+      task-definition ARN, e.g.
+      "arn:aws:ecs:ap-south-1:928805968612:task-definition/schoolsync-staging-migrate:7"
+      -> "schoolsync-staging-migrate". Every part is read from the ARN
+      itself, never hardcoded. Fails closed (throws) rather than returning
+      a guessed/partial family if the ARN doesn't match the expected shape
+      — callers must never silently fall back to a wrong family name.
+    #>
+    param([Parameter(Mandatory)][string]$TaskDefinitionArn)
+
+    if ($TaskDefinitionArn -notmatch '^arn:aws:ecs:[^:]+:\d+:task-definition/([^:/]+):\d+$') {
+        throw "Cannot safely determine the task-definition family from ARN '$TaskDefinitionArn' — unexpected format."
+    }
+    return $Matches[1]
+}
+
 function Get-TerraformOutputJson {
     param([Parameter(Mandatory)][string]$Name)
     Push-Location $TerraformDir

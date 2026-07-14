@@ -143,6 +143,15 @@ resource "aws_ecs_service" "web" {
   }
 
   depends_on = [aws_lb_listener.http]
+
+  # Task-definition revisions are registered and rolled out by
+  # infra/scripts/update-web-service.ps1 / deploy-staging.ps1 (AWS CLI
+  # register-task-definition + update-service), not `terraform apply` —
+  # without this, Step G's apply would silently roll the live service back
+  # to whatever revision Terraform itself last created.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }
 
 # ── Worker service (long-running poller, npm run worker) ─────────────────
@@ -215,6 +224,14 @@ resource "aws_ecs_service" "worker" {
   }
 
   depends_on = [aws_ecs_service.web]
+
+  # Task-definition revisions are registered and rolled out by
+  # infra/scripts/update-worker-service.ps1 / deploy-staging.ps1 (AWS CLI
+  # register-task-definition + update-service), not `terraform apply` — see
+  # aws_ecs_service.web for the full rationale.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }
 
 # ── Migration task definition (run on-demand via `aws ecs run-task`, not a
