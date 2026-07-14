@@ -81,6 +81,20 @@ locals {
   app_s3_bucket_arn_pattern = "arn:aws:s3:::schoolsync-staging-*"
 
   secrets_manager_secret_arn_pattern = "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:schoolsync-staging/app-*"
+
+  # Exact ARNs for every CloudWatch alarm the app stack's terraform plan
+  # refreshes (confirmed against the deployed alarms) — enumerated, not a
+  # wildcard, per this role's exact-scoping requirement.
+  cloudwatch_alarm_arns = [
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-alb-unhealthy-targets",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-alb-5xx",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-rds-cpu",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-rds-low-storage",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-rds-connections",
+  ]
+
+  # Exact ElastiCache subnet group ARN for this stack.
+  elasticache_subnet_group_arn = "arn:aws:elasticache:${var.aws_region}:${var.aws_account_id}:subnetgroup:schoolsync-staging-redis"
 }
 
 data "aws_iam_policy_document" "deploy_permissions" {
@@ -159,6 +173,9 @@ data "aws_iam_policy_document" "deploy_permissions" {
       "ecr:DescribeImageScanFindings",
       "ecr:GetDownloadUrlForLayer",
       "ecr:BatchCheckLayerAvailability",
+      # Required for the app stack's terraform plan to refresh this
+      # repository's tags (same resource this statement already scopes).
+      "ecr:ListTagsForResource",
     ]
     resources = ["arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.ecr_repository_name}"]
   }
@@ -178,6 +195,9 @@ data "aws_iam_policy_document" "deploy_permissions" {
       "logs:FilterLogEvents",
       "logs:DescribeLogStreams",
       "logs:DescribeLogGroups",
+      # Required for the app stack's terraform plan to refresh these log
+      # groups' tags (same resource pattern this statement already scopes).
+      "logs:ListTagsForResource",
     ]
     resources = [local.log_group_arn_pattern]
   }
@@ -284,10 +304,11 @@ data "aws_iam_policy_document" "deploy_permissions" {
   statement {
     sid    = "TerraformPlanSecretsMetadataOnly"
     effect = "Allow"
-    # DescribeSecret returns metadata only (ARN, rotation config, version
-    # stage labels) — never the secret value. GetSecretValue is
-    # intentionally never granted to this role anywhere in this file.
-    actions   = ["secretsmanager:DescribeSecret"]
+    # DescribeSecret/GetResourcePolicy both return metadata only (ARN,
+    # rotation config, version stage labels / the resource policy document
+    # itself) — never the secret VALUE. GetSecretValue is intentionally
+    # never granted to this role anywhere in this file.
+    actions   = ["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"]
     resources = [local.secrets_manager_secret_arn_pattern]
   }
 
@@ -307,6 +328,10 @@ data "aws_iam_policy_document" "deploy_permissions" {
       "s3:GetBucketPublicAccessBlock",
       "s3:GetBucketOwnershipControls",
       "s3:ListBucket",
+      # Required for the app stack's terraform plan to refresh this
+      # bucket's transfer-acceleration setting (same resource pattern this
+      # statement already scopes).
+      "s3:GetAccelerateConfiguration",
     ]
     resources = [local.app_s3_bucket_arn_pattern]
   }
@@ -331,6 +356,43 @@ data "aws_iam_policy_document" "deploy_permissions" {
     effect    = "Allow"
     actions   = ["s3:ListBucket"]
     resources = ["arn:aws:s3:::${var.terraform_state_bucket}"]
+  }
+
+  statement {
+    # Required for the app stack's terraform plan to refresh each alarm's
+    # tags. Appended last (not inserted between existing statements) so
+    # this addition doesn't shift the position of any other statement in
+    # the generated JSON list.
+    sid       = "TerraformPlanCloudWatchAlarmTagsReadOnly"
+    effect    = "Allow"
+    actions   = ["cloudwatch:ListTagsForResource"]
+    resources = local.cloudwatch_alarm_arns
+  }
+
+  statement {
+    # Required for the app stack's terraform plan to refresh the ElastiCache
+    # subnet group's tags.
+    sid       = "TerraformPlanElastiCacheTagsReadOnly"
+    effect    = "Allow"
+    actions   = ["elasticache:ListTagsForResource"]
+    resources = [local.elasticache_subnet_group_arn]
+  }
+
+  statement {
+    # Required for the app stack's terraform plan to refresh the Cloud Map
+    # private DNS namespace's tags. servicediscovery:ListTagsForResource has
+    # no resource type in AWS Cloud Map's IAM service authorization
+    # reference — it does not support resource-level (namespace-ARN)
+    # scoping at all, so Resource: "*" is required here, not a gap in this
+    # statement's scoping. (An earlier version of this statement scoped it
+    # to the exact namespace ARN; that grant was silently ineffective for
+    # this reason and has been replaced by this dedicated, single-action
+    # wildcard statement — see the PR history for how this was confirmed.)
+    # No other action is combined into this statement.
+    sid       = "TerraformPlanServiceDiscoveryTagsReadOnly"
+    effect    = "Allow"
+    actions   = ["servicediscovery:ListTagsForResource"]
+    resources = ["*"]
   }
 
   # No ecs:CreateService / DeleteService / DeleteCluster, no rds:Create*
