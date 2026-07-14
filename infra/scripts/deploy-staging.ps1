@@ -175,9 +175,15 @@ Write-Success "Previous web=$previousWebArn worker=$previousWorkerArn migrate=$p
 #      old sslmode=require secret is still AWSCURRENT ─────────────────────
 Write-Step "STEP C: Registering + deploying CA-aware web task revision"
 $newWebArn = Update-EcsServiceImage -Cluster $cluster -Service $webSvc -Family $webFamily -ContainerName "web" -ImageUri $image
+# Re-validated here (Update-EcsServiceImage already validates internally)
+# because THIS is the exact variable STEP I later splats into a mutating
+# `--task-definition` argument — catching any pollution as early as
+# possible, before steps D-H run at all, not just before STEP I's own call.
+$newWebArn = Assert-SingleEcsTaskDefinitionArn -Value $newWebArn -ExpectedFamily $webFamily
 
 Write-Step "STEP C: Registering + deploying CA-aware worker task revision"
 $newWorkerArn = Update-EcsServiceImage -Cluster $cluster -Service $workerSvc -Family $workerFamily -ContainerName "worker" -ImageUri $image
+$newWorkerArn = Assert-SingleEcsTaskDefinitionArn -Value $newWorkerArn -ExpectedFamily $workerFamily
 
 # ── D. Both services are already confirmed stable — Update-EcsServiceImage
 #      waits internally (aws ecs wait services-stable) before returning. ──
@@ -208,6 +214,7 @@ if (-not $SkipMigration) {
         Write-Fail "No changes beyond the already-deployed web/worker revisions (step C) were made."
         exit 1
     }
+    $newMigrateArn = Assert-SingleEcsTaskDefinitionArn -Value $newMigrateArn -ExpectedFamily $migrateFamily
     Write-Success "Migrate task revision registered: $newMigrateArn"
 } else {
     Write-Warn "STEP F: -SkipMigration set — not registering a migrate task revision."

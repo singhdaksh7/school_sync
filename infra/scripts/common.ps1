@@ -174,6 +174,51 @@ function Get-EcsTaskFamilyFromArn {
     return $Matches[1]
 }
 
+function Assert-SingleEcsTaskDefinitionArn {
+    <#
+      Validates that a captured "ARN" is actually a single scalar ECS
+      task-definition ARN belonging to the expected family, before it is
+      ever used in a mutating AWS CLI call (--task-definition ...).
+
+      Exists because PowerShell collects EVERY object emitted to a
+      function's success stream into the capturing variable — including
+      any uncaptured/unsuppressed AWS CLI JSON output a callee happened to
+      print along the way. A caller like `$newArn = SomeFunction ...` can
+      silently end up with $newArn as a multi-element array (JSON text
+      lines followed by the real ARN) instead of a single string; spreading
+      that array into `@("--task-definition", $newArn, ...)` then supplies
+      every element as a SEPARATE CLI argument, so AWS CLI reads only the
+      first of them — never the real ARN — as --task-definition's value.
+      That is exactly the STEP I "Invalid revision number" rollout failure
+      this guards against.
+
+      $Value is deliberately untyped (not [string]) so a genuinely polluted
+      multi-item array is preserved for inspection rather than silently
+      $OFS-joined into one garbled (and separately still-invalid) string by
+      PowerShell's own parameter-binding coercion.
+
+      Throws (terminating error, never returns a fallback) if $Value is not
+      a single non-empty string matching the expected ECS task-definition
+      ARN shape and family.
+    #>
+    param(
+        [Parameter(Mandatory)]$Value,
+        [Parameter(Mandatory)][string]$ExpectedFamily
+    )
+
+    if ($Value -is [array]) {
+        throw "Expected a single task-definition ARN but captured $($Value.Count) values instead (likely uncaptured AWS CLI output leaking into a success stream): $($Value -join ' | ')"
+    }
+    if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) {
+        throw "Expected a single non-empty task-definition ARN string, got: '$Value'"
+    }
+    $actualFamily = Get-EcsTaskFamilyFromArn -TaskDefinitionArn $Value
+    if ($actualFamily -ne $ExpectedFamily) {
+        throw "Task-definition ARN '$Value' belongs to family '$actualFamily', expected '$ExpectedFamily'."
+    }
+    return $Value
+}
+
 function Get-TerraformOutputJson {
     param([Parameter(Mandatory)][string]$Name)
     Push-Location $TerraformDir
@@ -273,6 +318,7 @@ function Register-EcsTaskDefinitionWithImage {
             exit 1
         }
         $newArn = $registered.taskDefinition.taskDefinitionArn
+        $newArn = Assert-SingleEcsTaskDefinitionArn -Value $newArn -ExpectedFamily $Family
         Write-Success "Registered: $newArn"
         return $newArn
     } finally {
@@ -300,8 +346,15 @@ function Update-EcsServiceImage {
     )
 
     $newArn = Register-EcsTaskDefinitionWithImage -Family $Family -ContainerName $ContainerName -ImageUri $ImageUri
+    $newArn = Assert-SingleEcsTaskDefinitionArn -Value $newArn -ExpectedFamily $Family
 
     Write-Step "Updating service '$Service' to the new revision (force new deployment)"
+    # `--output json` writes the full updated-service description to stdout;
+    # piped to Out-Null so it can never leak into this function's own success
+    # stream (Invoke-Checked itself returns whatever its wrapped command
+    # emits) and get silently appended to $newArn by the caller's capture —
+    # see Assert-SingleEcsTaskDefinitionArn's docs for the failure this
+    # caused.
     Invoke-Checked -FilePath "aws" -ArgumentList @(
         "ecs", "update-service",
         "--cluster", $Cluster,
@@ -311,10 +364,10 @@ function Update-EcsServiceImage {
         "--profile", $env:AWS_PROFILE,
         "--region", $env:AWS_REGION,
         "--output", "json"
-    ) -FailureMessage "aws ecs update-service failed"
+    ) -FailureMessage "aws ecs update-service failed" | Out-Null
 
     Write-Step "Waiting for service to stabilize (AWS CLI default waiter: ~10 min max)"
-    aws ecs wait services-stable --cluster $Cluster --services $Service --profile $env:AWS_PROFILE --region $env:AWS_REGION
+    aws ecs wait services-stable --cluster $Cluster --services $Service --profile $env:AWS_PROFILE --region $env:AWS_REGION | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Service '$Service' did not stabilize. Check: aws ecs describe-services --cluster $Cluster --services $Service"
         exit 1
