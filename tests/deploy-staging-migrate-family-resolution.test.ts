@@ -181,14 +181,27 @@ describe("Requirement 7: existing rollback reporting remains intact", () => {
 });
 
 describe("Requirement 8: this suite's own line-spanning regexes tolerate both CRLF and LF checkouts", () => {
-  it("the checked-out scripts are actually CRLF (sanity check for what this suite must tolerate)", () => {
-    const raw = readFileSync(join(scriptsDir, "common.ps1"));
-    expect(raw.includes(Buffer.from("\r\n"))).toBe(true);
-  });
+  // Both variants are derived explicitly from the file's own content
+  // (normalized to LF, then re-expanded to CRLF) rather than assumed from
+  // the ambient git checkout. A prior version of this suite asserted the
+  // checkout itself was CRLF as a sanity check — true under a Windows
+  // checkout (core.autocrlf=true converts the LF-stored blob on checkout)
+  // but false on a Linux CI runner, which checks out the same blob
+  // unmodified (its stored bytes contain zero \r; see infra/scripts'
+  // .gitattributes — nothing there requests eol=crlf either). That made the
+  // sanity check itself checkout-environment-dependent, and — silently
+  // worse — meant the two "tolerance" tests below degraded to a trivial
+  // LF-vs-LF comparison on any checkout that wasn't CRLF, never actually
+  // exercising real CRLF content there. Deriving both variants here instead
+  // makes the CRLF-tolerance guarantee unconditional, regardless of which
+  // line ending the current checkout happens to produce.
+  function bothLineEndings(content: string): { crlf: string; lf: string } {
+    const lf = content.replace(/\r\n/g, "\n");
+    return { crlf: lf.replace(/\n/g, "\r\n"), lf };
+  }
 
   it("the function-block regexes used above match identically against CRLF and LF-normalized content", () => {
-    const crlfContent = common();
-    const lfContent = crlfContent.replace(/\r\n/g, "\n");
+    const { crlf: crlfContent, lf: lfContent } = bothLineEndings(common());
     const pattern = /function Get-EcsTaskFamilyFromArn \{[\s\S]*?\r?\n\}\r?\n/;
     const crlfMatch = crlfContent.match(pattern);
     const lfMatch = lfContent.match(pattern);
@@ -199,8 +212,7 @@ describe("Requirement 8: this suite's own line-spanning regexes tolerate both CR
   });
 
   it("the STEP F...STEP G block extraction used throughout this suite also tolerates either line ending", () => {
-    const crlfContent = deployStaging();
-    const lfContent = crlfContent.replace(/\r\n/g, "\n");
+    const { crlf: crlfContent, lf: lfContent } = bothLineEndings(deployStaging());
     const crlfBlock = stepFBlock(crlfContent);
     const lfBlock = lfContent.match(/STEP F:[\s\S]*?STEP G:/)![0];
     expect(crlfBlock.replace(/\r\n/g, "\n")).toBe(lfBlock);
