@@ -181,20 +181,100 @@ describe("No root or unverified default AWS profile can be used by deployment sc
     }
   });
 
-  it("aws CLI invocations in the registration/rollout helpers pass --profile explicitly", () => {
+  it("aws CLI invocations in the registration/rollout helpers resolve the profile via Get-AwsCliProfileArgs, never a bare hardcoded --profile", () => {
     // Sample the mutating calls specifically (register-task-definition,
     // update-service, run-task) rather than every aws invocation in the
-    // file, since env:AWS_PROFILE is also relied on and some read-only
-    // calls elsewhere are out of scope for this check.
+    // file. These must use the shared @profileArgs splat (built from
+    // Get-AwsCliProfileArgs) rather than a literal "--profile", $env:AWS_PROFILE
+    // pair, so OIDC/CI mode (no profile) can omit the flag entirely instead
+    // of passing an empty value — see the "OIDC/CI credential mode" tests
+    // below.
     const mutatingCallBlocks = [
       ...(common().match(/\$registered = aws ecs register-task-definition[^\n]*/g) ?? []),
-      ...(common().match(/"ecs", "update-service",[\s\S]*?\)/g) ?? []),
+      ...(common().match(/\$updateServiceArgs = @\([\s\S]*?\) \+ \$profileArgs \+ @\([^\n]*\)/g) ?? []),
       ...(runMigrations().match(/\$runResult = aws ecs run-task[\s\S]*?ConvertFrom-Json/g) ?? []),
     ];
     expect(mutatingCallBlocks.length).toBeGreaterThan(0);
     for (const block of mutatingCallBlocks) {
-      expect(block).toMatch(/--profile/);
+      expect(block).toMatch(/profileArgs/);
+      expect(block).not.toMatch(/"--profile",\s*\$env:AWS_PROFILE/);
     }
+  });
+});
+
+describe("OIDC/CI credential mode (infra/scripts/common.ps1, deploy-staging.ps1)", () => {
+  it("Get-AwsCliProfileArgs omits --profile entirely when AWS_PROFILE is unset, never passing an empty profile value", () => {
+    const fn = common().match(/function Get-AwsCliProfileArgs \{[\s\S]*?\r?\n\}\r?\n/)![0];
+    expect(fn).toMatch(/if \(\$env:AWS_PROFILE\) \{ return @\("--profile", \$env:AWS_PROFILE\) \}/);
+    expect(fn).toMatch(/return @\(\)/);
+  });
+
+  it("Assert-AwsAuthenticated defaults to the schoolsync-admin profile unless SCHOOLSYNC_CI_OIDC=1 is set — local interactive behavior is unchanged", () => {
+    const fn = common().match(/function Assert-AwsAuthenticated \{[\s\S]*?\r?\n\}\r?\n/)![0];
+    expect(fn).toMatch(/param\(\[string\]\$Profile = \$\(if \(\$env:SCHOOLSYNC_CI_OIDC -eq "1"\) \{ "" \} else \{ \$script:DefaultAwsProfile \}\)\)/);
+  });
+
+  it("Assert-AwsAuthenticated clears $env:AWS_PROFILE (not an empty string) in OIDC mode", () => {
+    const fn = common().match(/function Assert-AwsAuthenticated \{[\s\S]*?\r?\n\}\r?\n/)![0];
+    expect(fn).toMatch(/Remove-Item Env:\\AWS_PROFILE -ErrorAction SilentlyContinue/);
+  });
+
+  it("deploy-staging.ps1 -UseOidcCredentials sets SCHOOLSYNC_CI_OIDC before dot-sourcing common.ps1", () => {
+    const content = deployStaging();
+    const oidcBlockIndex = content.indexOf('$env:SCHOOLSYNC_CI_OIDC = "1"');
+    const dotSourceIndex = content.indexOf('. (Join-Path $PSScriptRoot "common.ps1")');
+    expect(oidcBlockIndex).toBeGreaterThan(-1);
+    expect(dotSourceIndex).toBeGreaterThan(-1);
+    expect(oidcBlockIndex).toBeLessThan(dotSourceIndex);
+  });
+
+  it("every infra/scripts/*.ps1 entry point exposes -UseOidcCredentials", () => {
+    for (const name of ["preflight.ps1", "run-migrations.ps1", "update-migrate-task.ps1", "update-web-service.ps1", "update-worker-service.ps1", "show-deployment-status.ps1", "deploy-staging.ps1"]) {
+      expect(script(name), name).toMatch(/\[switch\]\$UseOidcCredentials/);
+    }
+  });
+});
+
+describe("RequireTerraformNoChanges CI safety mode (deploy-staging.ps1, common.ps1)", () => {
+  it("Assert-TerraformNoChanges never runs terraform apply", () => {
+    const fn = common().match(/function Assert-TerraformNoChanges \{[\s\S]*?\r?\n\}\r?\n/)![0];
+    expect(fn).not.toMatch(/terraform"?\s*@?\(?"apply"/);
+    expect(fn).toMatch(/-detailed-exitcode/);
+  });
+
+  it("Assert-TerraformNoChanges continues on exit code 0 and exits on 1 or 2", () => {
+    const fn = common().match(/function Assert-TerraformNoChanges \{[\s\S]*?\r?\n\}\r?\n/)![0];
+    expect(fn).toMatch(/\$code -eq 0/);
+    expect(fn).toMatch(/\$code -eq 2/);
+    expect(fn).toMatch(/exit 2/);
+    expect(fn).toMatch(/exit 1/);
+  });
+
+  it("the no-change gate runs before STEP C (the first ECS mutation) when -RequireTerraformNoChanges is set", () => {
+    const content = deployStaging();
+    const gateIndex = content.indexOf("Assert-TerraformNoChanges -BackendConfig $backendConfig");
+    const stepCIndex = content.indexOf("STEP C:");
+    expect(gateIndex).toBeGreaterThan(-1);
+    expect(gateIndex).toBeLessThan(stepCIndex);
+  });
+
+  it("STEP G skips terraform apply entirely when -RequireTerraformNoChanges is set", () => {
+    const content = deployStaging();
+    const stepGBlock = content.match(/# ── G\. Terraform plan\/apply[\s\S]*?\$newSecretVersionId = Get-SecretCurrentVersionId/)![0];
+    expect(stepGBlock).toMatch(/if \(\$RequireTerraformNoChanges\) \{/);
+    expect(stepGBlock).toMatch(/skipping terraform apply/);
+  });
+
+  it("infrastructure changes cannot be auto-applied by this workflow: RequireTerraformNoChanges mode never calls the interactive/AutoApprove apply path", () => {
+    const content = deployStaging();
+    // The literal `"apply", "-input=false", "tfplan"` invocation must only
+    // ever appear AFTER the CI-safety-mode branch of STEP G (i.e. inside the
+    // `else` — non-CI, local operator — branch), never before/inside it.
+    const applyIndex = content.indexOf('"apply", "-input=false", "tfplan"');
+    const ciSafetyBranchIndex = content.indexOf("STEP G: CI safety mode");
+    expect(applyIndex).toBeGreaterThan(-1);
+    expect(ciSafetyBranchIndex).toBeGreaterThan(-1);
+    expect(applyIndex).toBeGreaterThan(ciSafetyBranchIndex);
   });
 });
 

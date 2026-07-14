@@ -57,6 +57,8 @@ next-env.d.ts
 *.tfvars
 !*.tfvars.example
 infra/terraform/backend.hcl
+infra/bootstrap/github-oidc/backend.hcl
+infra/bootstrap/github-oidc/tfplan
 crash.log
 crash.*.log
 

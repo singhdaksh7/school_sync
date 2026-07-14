@@ -1,0 +1,29 @@
+# Dependabot opens PRs only — nothing in this repo auto-merges them. Every
+# PR Dependabot opens still goes through .github/workflows/ci.yml (no AWS
+# access, no secrets) and normal branch-protection review before merge.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Keeps this file's own commit-SHA pins current — Dependabot resolves
+    # each update to a new pinned SHA with a version-comment update, it does
+    # not switch these back to floating tags.
+    commit-message:
+      prefix: "chore(actions)"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(npm)"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(docker)"

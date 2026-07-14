@@ -12,8 +12,11 @@
   ./infra/scripts/update-worker-service.ps1 -ImageTag "2026-07-07-abc1234"
 #>
 param(
-    [Parameter(Mandatory)][string]$ImageTag
+    [Parameter(Mandatory)][string]$ImageTag,
+    [switch]$UseOidcCredentials
 )
+
+if ($UseOidcCredentials) { $env:SCHOOLSYNC_CI_OIDC = "1" }
 
 . (Join-Path $PSScriptRoot "common.ps1")
 

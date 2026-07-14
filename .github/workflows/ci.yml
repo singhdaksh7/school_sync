@@ -1,14 +1,37 @@
 name: CI
 
+# Pull requests / pushes only — this workflow NEVER uses pull_request_target
+# (which would run with base-branch permissions/secrets against untrusted
+# fork code) and NEVER requests `id-token: write` or authenticates to AWS.
+# A fork or Dependabot PR gets zero AWS access here by construction: there
+# is no OIDC permission and no aws-actions/configure-aws-credentials step
+# anywhere in this file. See .github/workflows/deploy-staging.yml for the
+# only workflow that ever assumes an AWS role, which never runs for PRs.
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+    branches: [staging, main]
+  push:
+    branches: [staging, main]
+
+# Superseded runs (a new push to the same PR/branch) cancel the previous,
+# still-running one instead of queuing behind it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default (workflow-level) permissions — every job below either inherits
+# this or repeats it explicitly; none ever requests `id-token: write` or any
+# write scope.
+permissions:
+  contents: read
 
 jobs:
-  verify:
+  test:
+    name: Test / typecheck / lint / build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
 
     services:
       postgres:
@@ -26,7 +49,8 @@ jobs:
           --health-retries 5
 
     env:
-      # Disposable CI-only Postgres service above — never live/staging Neon.
+      # Disposable CI-only Postgres service above — never live/staging Neon,
+      # never any real credential.
       DATABASE_URL: postgresql://schoolsync_ci:schoolsync_ci_disposable_pw@localhost:5432/schoolsync_ci
       DIRECT_URL: postgresql://schoolsync_ci:schoolsync_ci_disposable_pw@localhost:5432/schoolsync_ci
       # Dummy, non-production values — just enough for build-time module
@@ -35,14 +59,19 @@ jobs:
       NEXTAUTH_URL: http://localhost:3000
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          # Matches Dockerfile's `ARG NODE_IMAGE=node:22-alpine` — the actual
+          # production runtime — not an arbitrary/newer CI-only version.
+          node-version: "22"
           cache: npm
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
       - name: Prisma generate
         run: npx prisma generate
@@ -53,17 +82,126 @@ jobs:
       - name: Migration drift check (schema.prisma vs. applied migrations)
         run: npm run prisma:check-drift
 
+      - name: TypeScript (app)
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: TypeScript (worker)
+        run: npm run worker:typecheck
+
+      - name: TypeScript (scripts)
+        run: npm run scripts:typecheck
+
       - name: Lint
         run: npm run lint
 
       - name: Test
-        run: npm test
+        run: npx vitest run
 
       - name: Build
         run: npm run build
 
-      - name: Worker typecheck
-        run: npm run worker:typecheck
+  terraform:
+    name: Terraform fmt/init/validate (${{ matrix.root }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - infra/terraform
+          - infra/bootstrap/github-oidc
 
-      - name: Scripts typecheck
-        run: npm run scripts:typecheck
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      - name: terraform fmt -check
+        working-directory: ${{ matrix.root }}
+        run: terraform fmt -check -recursive
+
+      # -backend=false: no AWS credentials exist in this workflow (no
+      # id-token permission, no configure-aws-credentials step) — this only
+      # validates syntax/provider schemas, never touches a real backend or
+      # AWS account.
+      - name: terraform init (no backend)
+        working-directory: ${{ matrix.root }}
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        working-directory: ${{ matrix.root }}
+        run: terraform validate
+
+  powershell:
+    name: PowerShell 7 AST parse
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # GitHub-hosted ubuntu-latest ships PowerShell 7 (pwsh) already —
+      # no extra setup action needed. This only parses the AST (syntax
+      # check); it never executes any of these deployment scripts or
+      # touches AWS.
+      - name: Parse every infra/scripts/*.ps1 with the PowerShell 7 AST parser
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $files = Get-ChildItem -Path infra/scripts -Filter *.ps1 -Recurse
+          if ($files.Count -eq 0) {
+              Write-Error "No .ps1 files found under infra/scripts — check the path."
+          }
+          $failed = $false
+          foreach ($file in $files) {
+              $parseErrors = $null
+              [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$parseErrors) | Out-Null
+              if ($parseErrors.Count -gt 0) {
+                  $failed = $true
+                  Write-Host "::error file=$($file.FullName)::Parse errors in $($file.Name)"
+                  foreach ($e in $parseErrors) {
+                      Write-Host "  line $($e.Extent.StartLineNumber): $($e.Message)"
+                  }
+              } else {
+                  Write-Host "OK: $($file.Name)"
+              }
+          }
+          if ($failed) { exit 1 }
+
+  docker:
+    name: Docker build (no push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Same single linux/amd64 build, provenance/SBOM-disabled shape as the
+      # production build in deploy-staging.yml — this only builds, never
+      # pushes (no `push: true`, no registry login, no id-token permission
+      # anywhere in this workflow).
+      - name: Build image (validation only)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          sbom: false
+          tags: schoolsync:ci-build-validation
