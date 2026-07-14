@@ -44,8 +44,11 @@
 #>
 param(
     [Parameter(Mandatory)][string]$ImageTag,
-    [string]$Family
+    [string]$Family,
+    [switch]$UseOidcCredentials
 )
+
+if ($UseOidcCredentials) { $env:SCHOOLSYNC_CI_OIDC = "1" }
 
 . (Join-Path $PSScriptRoot "common.ps1")
 

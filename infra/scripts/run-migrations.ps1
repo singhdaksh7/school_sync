@@ -32,8 +32,11 @@
 #>
 param(
     [Parameter(Mandatory)][string]$TaskDefinitionArn,
-    [int]$TimeoutSeconds = 600
+    [int]$TimeoutSeconds = 600,
+    [switch]$UseOidcCredentials
 )
+
+if ($UseOidcCredentials) { $env:SCHOOLSYNC_CI_OIDC = "1" }
 
 . (Join-Path $PSScriptRoot "common.ps1")
 
@@ -49,13 +52,14 @@ Write-Success "taskDefinition=$taskDefinition (caller-supplied, not resolved fro
 
 Write-Step "Starting migration task (npx prisma migrate deploy)"
 $networkConfig = "awsvpcConfiguration={subnets=[$subnets],securityGroups=[$securityGroup],assignPublicIp=ENABLED}"
+$profileArgs = Get-AwsCliProfileArgs
 
 $runResult = aws ecs run-task `
     --cluster $cluster `
     --task-definition $taskDefinition `
     --launch-type FARGATE `
     --network-configuration $networkConfig `
-    --profile $env:AWS_PROFILE `
+    @profileArgs `
     --region $env:AWS_REGION `
     --output json | ConvertFrom-Json
 
@@ -77,7 +81,7 @@ Write-Step "Waiting for migration task to stop (timeout ${TimeoutSeconds}s)"
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 $lastStatus = ""
 while ((Get-Date) -lt $deadline) {
-    $desc = aws ecs describe-tasks --cluster $cluster --tasks $taskArn --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json | ConvertFrom-Json
+    $desc = aws ecs describe-tasks --cluster $cluster --tasks $taskArn @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json
     $lastStatus = $desc.tasks[0].lastStatus
     if ($lastStatus -eq "STOPPED") { break }
     Write-Host "    ... status=$lastStatus" -ForegroundColor DarkGray

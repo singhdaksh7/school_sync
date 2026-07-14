@@ -95,10 +95,38 @@
 .PARAMETER ScanTimeoutSeconds
   Max time to wait for the ECR scan gate (step B) to reach COMPLETE.
 
+.PARAMETER UseOidcCredentials
+  CI/OIDC credential mode. Skips --profile entirely (Assert-AwsAuthenticated
+  is called with -Profile "") so the AWS CLI resolves credentials from the
+  environment instead — the shape GitHub Actions' OIDC-assumed role
+  (aws-actions/configure-aws-credentials) exports. Sets
+  $env:SCHOOLSYNC_CI_OIDC = "1" for the lifetime of this process, so every
+  script this one invokes in-process (update-migrate-task.ps1,
+  run-migrations.ps1) and every common.ps1 helper inherits the same mode
+  automatically. Never creates an AWS credentials file on disk. Off by
+  default — local interactive usage (schoolsync-admin profile) is
+  completely unchanged unless this switch is passed.
+
+.PARAMETER RequireTerraformNoChanges
+  CI safety mode. Runs a Terraform `plan -detailed-exitcode` gate against
+  the real configured backend BEFORE any ECS mutation (i.e. before STEP C),
+  and again in place of STEP G's plan+apply. Continues only on exit code 0
+  ("No changes. Your infrastructure matches the configuration."); exits on
+  1 (plan error) or 2 (pending add/change/destroy actions). In this mode,
+  `terraform apply` is never run — routine CI/CD deployments carry zero
+  infrastructure changes by construction, and any real infrastructure
+  change must go through the existing manual, reviewed `terraform apply`
+  process instead (see infra/terraform/README.md). Off by default — local
+  interactive usage (full plan/confirm/apply at STEP G) is unchanged unless
+  this switch is passed.
+
 .EXAMPLE
   ./infra/scripts/deploy-staging.ps1 -ExpectedAccountId 928805968612 -ImageTag candidate-<sha>
 .EXAMPLE
   ./infra/scripts/deploy-staging.ps1 -ExpectedAccountId 928805968612 -ImageTag candidate-<sha> -AutoApprove
+.EXAMPLE
+  # GitHub Actions, protected `staging` Environment, OIDC-assumed deploy role:
+  ./infra/scripts/deploy-staging.ps1 -ExpectedAccountId 928805968612 -ImageTag $env:GITHUB_SHA -AutoApprove -UseOidcCredentials -RequireTerraformNoChanges
 #>
 param(
     [Parameter(Mandatory)][string]$ExpectedAccountId,
@@ -106,8 +134,17 @@ param(
     [switch]$AutoApprove,
     [switch]$SkipMigration,
     [switch]$SkipPreflight,
-    [int]$ScanTimeoutSeconds = 300
+    [int]$ScanTimeoutSeconds = 300,
+    [switch]$UseOidcCredentials,
+    [switch]$RequireTerraformNoChanges
 )
+
+if ($UseOidcCredentials) {
+    # Must be set BEFORE dot-sourcing common.ps1 so Assert-AwsAuthenticated's
+    # default -Profile parameter (evaluated at call time, not at dot-source
+    # time) resolves to "" for this process and every script invoked from it.
+    $env:SCHOOLSYNC_CI_OIDC = "1"
+}
 
 . (Join-Path $PSScriptRoot "common.ps1")
 
@@ -115,8 +152,9 @@ Write-Host "SchoolSync staging deployment" -ForegroundColor Magenta
 Write-Host "==============================" -ForegroundColor Magenta
 
 # ── A. Verify account/region and preflight ────────────────────────────────
-Write-Step "STEP A: Validating AWS CLI authentication (non-root, SSO-assumed role required)"
+Write-Step "STEP A: Validating AWS CLI authentication ($(if ($UseOidcCredentials) { 'OIDC/environment credentials' } else { 'non-root, SSO-assumed role required' }))"
 $identity = Assert-AwsAuthenticated
+$profileArgs = Get-AwsCliProfileArgs
 
 Write-Step "STEP A: Confirming AWS account matches -ExpectedAccountId"
 if ($identity.Account -ne $ExpectedAccountId) {
@@ -132,11 +170,18 @@ $backendConfig = Assert-BackendConfigExists
 
 if (-not $SkipPreflight) {
     Write-Step "STEP A: Running AWS prerequisite preflight"
-    & (Join-Path $PSScriptRoot "preflight.ps1") -ExpectedAccountId $ExpectedAccountId -ImageTag $ImageTag
+    $preflightArgs = @("-ExpectedAccountId", $ExpectedAccountId, "-ImageTag", $ImageTag)
+    if ($UseOidcCredentials) { $preflightArgs += "-UseOidcCredentials" }
+    & (Join-Path $PSScriptRoot "preflight.ps1") @preflightArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Preflight failed — see above. Re-run with -SkipPreflight to bypass (not recommended)."
         exit 1
     }
+}
+
+if ($RequireTerraformNoChanges) {
+    Write-Step "STEP A: CI safety mode — verifying Terraform reports no infrastructure changes before any ECS mutation"
+    Assert-TerraformNoChanges -BackendConfig $backendConfig
 }
 
 Write-Step "STEP A: Reading Terraform outputs needed before any registration"
@@ -159,11 +204,11 @@ Write-Success "Image approved: digest=$($scanResult.Digest) CRITICAL=$($scanResu
 # Capture BEFORE state for the rollback/audit report — every aws call here
 # is read-only and its exit code is checked explicitly.
 Write-Step "STEP B: Recording pre-rollout state (previous task definitions, previous secret version)"
-$webSvcDesc = aws ecs describe-services --cluster $cluster --services $webSvc --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json | ConvertFrom-Json
+$webSvcDesc = aws ecs describe-services --cluster $cluster --services $webSvc @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { Write-Fail "Could not describe web service (exit $LASTEXITCODE)"; exit 1 }
 $previousWebArn = $webSvcDesc.services[0].taskDefinition
 
-$workerSvcDesc = aws ecs describe-services --cluster $cluster --services $workerSvc --profile $env:AWS_PROFILE --region $env:AWS_REGION --output json | ConvertFrom-Json
+$workerSvcDesc = aws ecs describe-services --cluster $cluster --services $workerSvc @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { Write-Fail "Could not describe worker service (exit $LASTEXITCODE)"; exit 1 }
 $previousWorkerArn = $workerSvcDesc.services[0].taskDefinition
 
@@ -223,48 +268,61 @@ if (-not $SkipMigration) {
 # ── G. Terraform plan/apply — rotates the Secrets Manager AWSCURRENT
 #      version to DATABASE_URL sslmode=verify-full. Every ECS task
 #      definition resource has `ignore_changes = [container_definitions]`,
-#      so this cannot affect the revisions registered in steps C/F. ───────
-Push-Location $TerraformDir
-try {
-    Write-Step "STEP G: Running terraform fmt"
-    terraform fmt -recursive | Out-Null
-    Write-Success "Formatted"
+#      so this cannot affect the revisions registered in steps C/F. In
+#      -RequireTerraformNoChanges mode (CI), this step never applies —
+#      routine CI/CD deployments carry zero infrastructure changes by
+#      construction, so it only re-verifies that with a no-change plan. ───
+if ($RequireTerraformNoChanges) {
+    Write-Step "STEP G: CI safety mode — re-verifying no infrastructure changes (terraform apply will NOT run)"
+    Assert-TerraformNoChanges -BackendConfig $backendConfig
+    Write-Warn "STEP G: -RequireTerraformNoChanges is set — skipping terraform apply. No secret rotation occurs in this mode."
+} else {
+    Push-Location $TerraformDir
+    try {
+        Write-Step "STEP G: Running terraform fmt"
+        terraform fmt -recursive | Out-Null
+        Write-Success "Formatted"
 
-    Write-Step "STEP G: Running terraform init"
-    Invoke-Checked -FilePath "terraform" -ArgumentList @("init", "-backend-config=$backendConfig", "-input=false") `
-        -FailureMessage "terraform init failed"
+        Write-Step "STEP G: Running terraform init"
+        Invoke-Checked -FilePath "terraform" -ArgumentList @("init", "-backend-config=$backendConfig", "-input=false") `
+            -FailureMessage "terraform init failed"
 
-    Write-Step "STEP G: Running terraform validate"
-    Invoke-Checked -FilePath "terraform" -ArgumentList @("validate") -FailureMessage "terraform validate failed"
+        Write-Step "STEP G: Running terraform validate"
+        Invoke-Checked -FilePath "terraform" -ArgumentList @("validate") -FailureMessage "terraform validate failed"
 
-    Write-Step "STEP G: Running terraform plan"
-    $planArgs = @("plan", "-out=tfplan", "-input=false")
-    if (Test-Path "terraform.tfvars") { $planArgs += "-var-file=terraform.tfvars" }
-    Invoke-Checked -FilePath "terraform" -ArgumentList $planArgs -FailureMessage "terraform plan failed"
+        Write-Step "STEP G: Running terraform plan"
+        $planArgs = @("plan", "-out=tfplan", "-input=false")
+        if (Test-Path "terraform.tfvars") { $planArgs += "-var-file=terraform.tfvars" }
+        Invoke-Checked -FilePath "terraform" -ArgumentList $planArgs -FailureMessage "terraform plan failed"
 
-    if (-not $AutoApprove) {
-        Write-Host ""
-        Write-Host "Review the plan above. This applies the DATABASE_URL sslmode=verify-full secret rotation." -ForegroundColor Yellow
-        Write-Host "CA-aware web/worker task revisions are already live (steps C/D) and can already trust the new connection string." -ForegroundColor Yellow
-        $confirmation = Read-Host "Type 'yes' to apply this plan against AWS account $($identity.Account) in ap-south-1"
-        if ($confirmation -ne "yes") {
-            Write-Fail "Not confirmed — aborting before apply. No secret rotation occurred."
-            Write-Fail "CA-aware web/worker revisions remain deployed (step C/D) but the OLD secret is still AWSCURRENT — this is a safe stopping point."
-            exit 1
+        if (-not $AutoApprove) {
+            Write-Host ""
+            Write-Host "Review the plan above. This applies the DATABASE_URL sslmode=verify-full secret rotation." -ForegroundColor Yellow
+            Write-Host "CA-aware web/worker task revisions are already live (steps C/D) and can already trust the new connection string." -ForegroundColor Yellow
+            $confirmation = Read-Host "Type 'yes' to apply this plan against AWS account $($identity.Account) in ap-south-1"
+            if ($confirmation -ne "yes") {
+                Write-Fail "Not confirmed — aborting before apply. No secret rotation occurred."
+                Write-Fail "CA-aware web/worker revisions remain deployed (step C/D) but the OLD secret is still AWSCURRENT — this is a safe stopping point."
+                exit 1
+            }
+        } else {
+            Write-Warn "-AutoApprove supplied — skipping interactive confirmation."
         }
-    } else {
-        Write-Warn "-AutoApprove supplied — skipping interactive confirmation."
-    }
 
-    Write-Step "STEP G: Applying infrastructure (secret rotation)"
-    Invoke-Checked -FilePath "terraform" -ArgumentList @("apply", "-input=false", "tfplan") `
-        -FailureMessage "terraform apply failed"
-} finally {
-    Pop-Location
+        Write-Step "STEP G: Applying infrastructure (secret rotation)"
+        Invoke-Checked -FilePath "terraform" -ArgumentList @("apply", "-input=false", "tfplan") `
+            -FailureMessage "terraform apply failed"
+    } finally {
+        Pop-Location
+    }
 }
 
 $newSecretVersionId = Get-SecretCurrentVersionId -SecretId $secretArn
-Write-Success "STEP G: Secret rotated. Previous version: $previousSecretVersionId -> New version: $newSecretVersionId"
+if ($RequireTerraformNoChanges) {
+    Write-Success "STEP G: No infrastructure changes (CI safety mode) — secret version unchanged: $newSecretVersionId"
+} else {
+    Write-Success "STEP G: Secret rotated. Previous version: $previousSecretVersionId -> New version: $newSecretVersionId"
+}
 
 # ── H. Run the migration using the EXACT registered ARN from step F ───────
 if (-not $SkipMigration) {
@@ -304,22 +362,22 @@ if (-not $SkipMigration) {
 # ── I. Force new deployments of the already-registered web/worker
 #      revisions so they reload the new AWSCURRENT secret ────────────────
 Write-Step "STEP I: Forcing web service to reload the new secret version"
-Invoke-Checked -FilePath "aws" -ArgumentList @(
+$webReloadArgs = @(
     "ecs", "update-service", "--cluster", $cluster, "--service", $webSvc,
-    "--task-definition", $newWebArn,
-    "--force-new-deployment", "--profile", $env:AWS_PROFILE, "--region", $env:AWS_REGION, "--output", "json"
-) -FailureMessage "Forcing web service deployment failed"
+    "--task-definition", $newWebArn, "--force-new-deployment"
+) + $profileArgs + @("--region", $env:AWS_REGION, "--output", "json")
+Invoke-Checked -FilePath "aws" -ArgumentList $webReloadArgs -FailureMessage "Forcing web service deployment failed"
 
 Write-Step "STEP I: Forcing worker service to reload the new secret version"
-Invoke-Checked -FilePath "aws" -ArgumentList @(
+$workerReloadArgs = @(
     "ecs", "update-service", "--cluster", $cluster, "--service", $workerSvc,
-    "--task-definition", $newWorkerArn,
-    "--force-new-deployment", "--profile", $env:AWS_PROFILE, "--region", $env:AWS_REGION, "--output", "json"
-) -FailureMessage "Forcing worker service deployment failed"
+    "--task-definition", $newWorkerArn, "--force-new-deployment"
+) + $profileArgs + @("--region", $env:AWS_REGION, "--output", "json")
+Invoke-Checked -FilePath "aws" -ArgumentList $workerReloadArgs -FailureMessage "Forcing worker service deployment failed"
 
 # ── J. Wait for both services to stabilize ─────────────────────────────────
 Write-Step "STEP J: Waiting for web service to stabilize"
-aws ecs wait services-stable --cluster $cluster --services $webSvc --profile $env:AWS_PROFILE --region $env:AWS_REGION
+aws ecs wait services-stable --cluster $cluster --services $webSvc @profileArgs --region $env:AWS_REGION
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Web service did not stabilize after the secret-reload deployment. Check: aws ecs describe-services --cluster $cluster --services $webSvc"
     exit 1
@@ -327,7 +385,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Success "Web service stable"
 
 Write-Step "STEP J: Waiting for worker service to stabilize"
-aws ecs wait services-stable --cluster $cluster --services $workerSvc --profile $env:AWS_PROFILE --region $env:AWS_REGION
+aws ecs wait services-stable --cluster $cluster --services $workerSvc @profileArgs --region $env:AWS_REGION
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Worker service did not stabilize after the secret-reload deployment. Check: aws ecs describe-services --cluster $cluster --services $workerSvc"
     exit 1
@@ -365,8 +423,9 @@ Write-Host "                           new=$(if ($newMigrateArn) { $newMigrateAr
 Write-Host "  Secrets Manager version: previous=$previousSecretVersionId"
 Write-Host "                           new=$newSecretVersionId"
 Write-Host ""
+$logsProfileHint = if ($env:AWS_PROFILE) { "--profile $env:AWS_PROFILE " } else { "" }
 Write-Host "  Status check:   ./infra/scripts/show-deployment-status.ps1"
-Write-Host "  Logs:           aws logs tail /ecs/schoolsync-staging/web --follow --profile $env:AWS_PROFILE --region $env:AWS_REGION"
+Write-Host "  Logs:           aws logs tail /ecs/schoolsync-staging/web --follow $logsProfileHint--region $env:AWS_REGION"
 Write-Host ""
 Write-Host "  COORDINATED ROLLBACK (manual, not automatic — see runbook above):" -ForegroundColor Yellow
 Write-Host "    Rolling back after this point requires BOTH:" -ForegroundColor Yellow
