@@ -23,6 +23,10 @@
 # misc
 .DS_Store
 *.pem
+# Exception: the vendored AWS RDS CA bundle is public (no private key, see
+# certs/README.md) and must be committed — the runtime image trusts it via
+# NODE_EXTRA_CA_CERTS instead of disabling certificate verification.
+!certs/aws-rds-global-bundle.pem
 
 # debug
 npm-debug.log*

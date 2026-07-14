@@ -64,7 +64,20 @@ export function isPublicRoute(pathname: string) {
     // here unless it performs its own getStudentAuth()-equivalent check.
     pathname.startsWith("/api/student/") ||
     pathname.startsWith("/api/webhooks/") ||
-    pathname === "/api/health"
+    pathname === "/api/health" ||
+    // Audited (2026-07-13): every route under /api/internal/ —
+    // /api/internal/worker and /api/internal/maintenance/file-retention,
+    // confirmed to be the complete set via `find`/`glob` over
+    // src/app/api/internal/**/route.ts — independently authenticates via a
+    // timing-safe comparison against JOB_WORKER_SECRET (see each route's
+    // own `authorized()`), never a NextAuth session cookie. Same reasoning
+    // as /api/teacher/ and /api/student/ above: without this, the
+    // cookie-only proxy gate 307-redirects every internal caller (the
+    // standalone worker poller, a scheduler) to /login, which a JSON
+    // client reads back as an unparseable 200 HTML page instead of the
+    // clean 401 the route itself would return. Do not add a path here
+    // unless it performs its own non-cookie auth check first.
+    pathname.startsWith("/api/internal/")
   );
 }
 
