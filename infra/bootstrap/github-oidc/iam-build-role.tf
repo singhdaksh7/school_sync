@@ -36,7 +36,7 @@ data "aws_iam_policy_document" "build_trust" {
 
 resource "aws_iam_role" "github_staging_build" {
   name                 = "schoolsync-github-staging-build"
-  description          = "Assumed via GitHub OIDC by CI on refs/heads/${var.github_branch} only. ECR push/scan-read on the schoolsync repository only — no ECS/Terraform/Secrets/PassRole/RDS/S3-app-data access."
+  description          = "Assumed via GitHub OIDC by CI on refs/heads/${var.github_branch} only. ECR push/scan-read on the schoolsync repository only - no ECS/Terraform/Secrets/PassRole/RDS/S3-app-data access."
   assume_role_policy   = data.aws_iam_policy_document.build_trust.json
   max_session_duration = 3600
 

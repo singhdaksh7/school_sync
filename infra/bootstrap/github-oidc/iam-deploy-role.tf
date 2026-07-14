@@ -45,7 +45,7 @@ data "aws_iam_policy_document" "deploy_trust" {
 
 resource "aws_iam_role" "github_staging_deploy" {
   name                 = "schoolsync-github-staging-deploy"
-  description          = "Assumed via GitHub OIDC only from the '${var.github_environment}' GitHub Environment. ECS deploy + Terraform no-change read/lock only — no infrastructure mutation, no secret-value reads."
+  description          = "Assumed via GitHub OIDC only from the '${var.github_environment}' GitHub Environment. ECS deploy + Terraform no-change read/lock only - no infrastructure mutation, no secret-value reads."
   assume_role_policy   = data.aws_iam_policy_document.deploy_trust.json
   max_session_duration = 3600
 
