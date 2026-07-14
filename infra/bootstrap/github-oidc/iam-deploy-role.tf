@@ -208,8 +208,10 @@ data "aws_iam_policy_document" "deploy_permissions" {
     # access", not a state WRITE: the lock table holds only a lease record
     # (who/when), never the state itself. No s3:PutObject is granted
     # anywhere in this policy — this role can never persist a state change,
-    # i.e. it can never run `terraform apply`.
-    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+    # i.e. it can never run `terraform apply`. DescribeTable (read-only
+    # table metadata, not item data) is required for the pre-mutation
+    # preflight's own `aws dynamodb describe-table` existence probe.
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:DescribeTable"]
     resources = ["arn:aws:dynamodb:${var.aws_region}:${var.aws_account_id}:table/${var.terraform_lock_table}"]
   }
 
@@ -307,6 +309,28 @@ data "aws_iam_policy_document" "deploy_permissions" {
       "s3:ListBucket",
     ]
     resources = [local.app_s3_bucket_arn_pattern]
+  }
+
+  statement {
+    # HeadBucket's own IAM check (used by the pre-mutation preflight's
+    # `aws s3api head-bucket` existence probe) requires s3:ListBucket on the
+    # bucket with no s3:prefix in the request context at all — HeadBucket
+    # has no prefix parameter to send. The StringLike condition on
+    # TerraformStateBucketListForRefresh above therefore never matches a
+    # HeadBucket call (a missing condition key evaluates the condition as
+    # false), so that statement alone always denies it. This is a separate,
+    # unconditional grant of the same action for that reason alone — it
+    # does not additionally grant any object-level access (no plain
+    # s3:GetObject here), so the practical exposure is bucket-existence +
+    # object-key enumeration of this one state bucket, not state content.
+    # Appended last (not inserted between existing statements) so this
+    # addition doesn't shift the position of any other statement in the
+    # generated JSON list — keeps the Terraform plan diff to exactly this
+    # one addition plus the TerraformStateLock action-list change above.
+    sid       = "TerraformStateBucketHeadBucketPreflight"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.terraform_state_bucket}"]
   }
 
   # No ecs:CreateService / DeleteService / DeleteCluster, no rds:Create*
