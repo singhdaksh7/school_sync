@@ -80,6 +80,7 @@ $newArn = Register-EcsTaskDefinitionWithImage `
     -Family $Family `
     -ContainerName "migrate" `
     -ImageUri $image
+$newArn = Assert-SingleEcsTaskDefinitionArn -Value $newArn -ExpectedFamily $Family
 
 Write-Step "Done"
 Write-Success "Registered migrate task definition: $newArn"
