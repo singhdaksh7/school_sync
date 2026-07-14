@@ -95,14 +95,6 @@ locals {
 
   # Exact ElastiCache subnet group ARN for this stack.
   elasticache_subnet_group_arn = "arn:aws:elasticache:${var.aws_region}:${var.aws_account_id}:subnetgroup:schoolsync-staging-redis"
-
-  # Exact Cloud Map private DNS namespace ARN for this stack (created by the
-  # app stack's aws_service_discovery_private_dns_namespace.main). The
-  # namespace ID (ns-ijpd75qks3nhw276) is a server-assigned identifier, not
-  # a name this project controls — if the namespace is ever destroyed and
-  # recreated, this ARN (and this statement) will need updating to match
-  # the new ID.
-  servicediscovery_namespace_arn = "arn:aws:servicediscovery:${var.aws_region}:${var.aws_account_id}:namespace/ns-ijpd75qks3nhw276"
 }
 
 data "aws_iam_policy_document" "deploy_permissions" {
@@ -388,11 +380,19 @@ data "aws_iam_policy_document" "deploy_permissions" {
 
   statement {
     # Required for the app stack's terraform plan to refresh the Cloud Map
-    # private DNS namespace's tags.
+    # private DNS namespace's tags. servicediscovery:ListTagsForResource has
+    # no resource type in AWS Cloud Map's IAM service authorization
+    # reference — it does not support resource-level (namespace-ARN)
+    # scoping at all, so Resource: "*" is required here, not a gap in this
+    # statement's scoping. (An earlier version of this statement scoped it
+    # to the exact namespace ARN; that grant was silently ineffective for
+    # this reason and has been replaced by this dedicated, single-action
+    # wildcard statement — see the PR history for how this was confirmed.)
+    # No other action is combined into this statement.
     sid       = "TerraformPlanServiceDiscoveryTagsReadOnly"
     effect    = "Allow"
     actions   = ["servicediscovery:ListTagsForResource"]
-    resources = [local.servicediscovery_namespace_arn]
+    resources = ["*"]
   }
 
   # No ecs:CreateService / DeleteService / DeleteCluster, no rds:Create*

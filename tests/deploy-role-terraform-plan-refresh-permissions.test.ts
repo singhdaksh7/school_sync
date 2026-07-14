@@ -28,9 +28,23 @@ import { join } from "node:path";
  * Fix: the four actions whose resource is already scoped by an existing
  * statement (ecr, logs, secretsmanager, s3) were added to that statement's
  * action list. The three with no existing statement (cloudwatch,
- * elasticache, servicediscovery) got new statements, each scoped to an
- * exact ARN (or, for the 5 alarms, an exact enumerated list) — never a
- * wildcard resource, per this role's exact-scoping requirement.
+ * elasticache, servicediscovery) got new statements. cloudwatch and
+ * elasticache are scoped to an exact ARN (or, for the 5 alarms, an exact
+ * enumerated list) — never a wildcard resource, per this role's
+ * exact-scoping requirement.
+ *
+ * servicediscovery:ListTagsForResource is the one documented exception: an
+ * earlier version of this fix scoped it to the exact namespace ARN, which
+ * turned out to be silently ineffective — confirmed via
+ * `simulate-principal-policy` returning implicitDeny even under a
+ * supplemental candidate policy granting the same action on Resource: "*"
+ * (isolated against a control test on elasticache:ListTagsForResource using
+ * the identical method, which correctly returned allowed). AWS's IAM
+ * service authorization reference for AWS Cloud Map lists no resource type
+ * for ListTagsForResource, meaning it does not support resource-level
+ * scoping at all and requires Resource: "*". This is the only wildcard
+ * resource permitted anywhere in this file's new/modified statements, and
+ * it is isolated to a dedicated statement granting only this one action.
  *
  * Text/regex-based, matching the convention in
  * tests/deploy-role-terraform-backend-permissions.test.ts and
@@ -146,16 +160,23 @@ describe("Deploy role: application-stack terraform-plan refresh permissions", ()
     expect(content).toMatch(/elasticache_subnet_group_arn\s*=\s*"arn:aws:elasticache:\$\{var\.aws_region\}:\$\{var\.aws_account_id\}:subnetgroup:schoolsync-staging-redis"/);
   });
 
-  it("servicediscovery:ListTagsForResource is scoped to exactly one namespace ARN, never a wildcard namespace ID", () => {
+  it("servicediscovery:ListTagsForResource is a dedicated Resource: \"*\" statement — the one documented exception, no resource type existing for this action per AWS Cloud Map's IAM reference", () => {
     const stmt = findSid("TerraformPlanServiceDiscoveryTagsReadOnly");
     expect(stmt).toMatch(/actions\s*=\s*\["servicediscovery:ListTagsForResource"\]/);
-    expect(stmt).toMatch(/resources\s*=\s*\[local\.servicediscovery_namespace_arn\]/);
-    expect(content).toMatch(/servicediscovery_namespace_arn\s*=\s*"arn:aws:servicediscovery:\$\{var\.aws_region\}:\$\{var\.aws_account_id\}:namespace\/ns-[a-z0-9]+"/);
-    // Exact ID, not a "namespace/*" pattern anywhere in this file.
-    expect(cleanContent).not.toMatch(/:namespace\/\*/);
+    expect(stmt).toMatch(/resources\s*=\s*\["\*"\]/);
+    // Documents WHY this is the one wildcard exception, not just that it is one.
+    expect(stmt).toMatch(/no resource type/i);
+    expect(stmt).toMatch(/does not support resource-level/i);
+    // No other action is folded into this wildcard statement.
+    const actionsMatch = stmt.match(/actions\s*=\s*\[([\s\S]*?)\]/);
+    expect(actionsMatch).not.toBeNull();
+    const actionCount = actionsMatch![1].split(",").map((s) => s.trim()).filter((s) => s.length > 0).length;
+    expect(actionCount).toBe(1);
+    // The old namespace-ARN local this statement used to reference is gone.
+    expect(content).not.toMatch(/servicediscovery_namespace_arn/);
   });
 
-  it("none of the seven new/modified statements uses Resource: \"*\"", () => {
+  it("none of the other six new/modified statements uses Resource: \"*\" — the ServiceDiscovery statement is the sole, documented wildcard exception", () => {
     for (const sid of [
       "EcrReadForDeployVerification",
       "CloudWatchLogsReadForPostDeployVerification",
@@ -163,11 +184,22 @@ describe("Deploy role: application-stack terraform-plan refresh permissions", ()
       "TerraformPlanS3BucketReadOnly",
       "TerraformPlanCloudWatchAlarmTagsReadOnly",
       "TerraformPlanElastiCacheTagsReadOnly",
-      "TerraformPlanServiceDiscoveryTagsReadOnly",
     ]) {
       const stmt = findSid(sid);
       expect(stmt, sid).not.toMatch(/resources\s*=\s*\["\*"\]/);
     }
+    // Exactly one Resource: "*" statement exists among all seven
+    // new/modified statements from this fix.
+    const wildcardCount = [
+      "EcrReadForDeployVerification",
+      "CloudWatchLogsReadForPostDeployVerification",
+      "TerraformPlanSecretsMetadataOnly",
+      "TerraformPlanS3BucketReadOnly",
+      "TerraformPlanCloudWatchAlarmTagsReadOnly",
+      "TerraformPlanElastiCacheTagsReadOnly",
+      "TerraformPlanServiceDiscoveryTagsReadOnly",
+    ].filter((sid) => /resources\s*=\s*\["\*"\]/.test(findSid(sid))).length;
+    expect(wildcardCount).toBe(1);
   });
 
   it("no write, delete, mutation, IAM-administration, or state-write action was introduced anywhere in this file", () => {
@@ -176,7 +208,7 @@ describe("Deploy role: application-stack terraform-plan refresh permissions", ()
       /elasticache:(Create|Modify|Delete)/,
       /ecr:(PutImage|DeleteRepository|PutLifecyclePolicy)/,
       /logs:(Put|Delete|Create)/,
-      /servicediscovery:(Create|Delete|Update|Register|Deregister)/,
+      /servicediscovery:(Create|Delete|Update|Register|Deregister|TagResource|UntagResource)/,
       /secretsmanager:(PutSecretValue|RotateSecret|DeleteSecret|GetSecretValue)/,
       /s3:(PutObject|PutBucket|DeleteBucket)/,
       /iam:(CreateRole|DeleteRole|PutRolePolicy|AttachRolePolicy|CreatePolicy)/,
