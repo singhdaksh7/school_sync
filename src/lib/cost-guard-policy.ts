@@ -122,3 +122,15 @@ export const STUDENT_IMPORT_FAILURE_RETENTION_DAYS = 7; // terminal failure + 7 
 
 // ── File retention cleanup job (PART 20) ──────────────────────────────────────
 export const FILE_RETENTION_CLEANUP_BATCH_SIZE = 100;
+
+// ── School deletion lifecycle (Founder School Danger Zone) ────────────────────
+// Default days a school stays in PENDING_DELETION (restorable) before it
+// becomes eligible for purge — overridable via SCHOOL_DELETION_RETENTION_DAYS
+// (see src/lib/school-deletion-config.ts).
+export const SCHOOL_DELETION_RETENTION_DAYS_DEFAULT = 30;
+export const SCHOOL_DELETION_RETENTION_DAYS_MIN = 1;
+export const SCHOOL_DELETION_RETENTION_DAYS_MAX = 365;
+// Per-relation row batch size for the purge job — bounds memory/lock time
+// per step; large schools (2,000+ students) are processed over many batches
+// across possibly many job runs, never one unbounded delete.
+export const SCHOOL_PURGE_BATCH_SIZE = 200;

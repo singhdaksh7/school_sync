@@ -78,11 +78,21 @@ export const fileRetentionCleanupPayloadSchema = z.object({
 });
 export type FileRetentionCleanupPayload = z.infer<typeof fileRetentionCleanupPayloadSchema>;
 
+// Founder School Danger Zone: asynchronous, idempotent tenant-data purge —
+// see src/lib/school-purge.ts (the destructive body) and
+// src/lib/school-deletion.ts (schedule/cancel + the maintenance trigger that
+// creates this job once a school's retention window elapses).
+export const schoolDataPurgePayloadSchema = z.object({
+  schoolId: z.string().min(1),
+});
+export type SchoolDataPurgePayload = z.infer<typeof schoolDataPurgePayloadSchema>;
+
 export const JOB_PAYLOAD_SCHEMAS = {
   REPORT_CARD_BATCH_GENERATION: reportCardBatchPayloadSchema,
   STUDENT_BULK_IMPORT: studentBulkImportPayloadSchema,
   SMART_TIMETABLE_GENERATION: smartTimetableGenerationPayloadSchema,
   FILE_RETENTION_CLEANUP: fileRetentionCleanupPayloadSchema,
+  SCHOOL_DATA_PURGE: schoolDataPurgePayloadSchema,
 } satisfies Record<JobType, z.ZodTypeAny>;
 
 /** Feature entitlement required to CREATE each job type (null = no catalog gate). */
@@ -91,6 +101,7 @@ export const JOB_TYPE_FEATURE: Record<JobType, FeatureFlagKeyValue | null> = {
   STUDENT_BULK_IMPORT: null, // student management has no catalog feature key
   SMART_TIMETABLE_GENERATION: null, // timetable module has no catalog feature key (see feature-routes.ts)
   FILE_RETENTION_CLEANUP: null, // internal maintenance job, no catalog feature key
+  SCHOOL_DATA_PURGE: null, // Founder platform-admin job, no catalog feature key
 };
 
 // ── Creation ─────────────────────────────────────────────────────────────────

@@ -21,6 +21,22 @@ enum SchoolStatus {
   TRIAL
   EXPIRED
   SUSPENDED
+  /**
+   * Founder has scheduled tenant-data purge; restorable until deletionScheduledFor.
+   */
+  PENDING_DELETION
+  /**
+   * Purge job has started removing tenant data; no longer restorable.
+   */
+  DELETING
+  /**
+   * Purge job failed and needs retry (see School.deletionRetryCount/deletionLastError).
+   */
+  DELETION_FAILED
+  /**
+   * Purge completed — tenant data removed; row kept as a tombstone.
+   */
+  DELETED
 }
 
 enum BillingCycle {
@@ -162,6 +178,7 @@ enum JobType {
   STUDENT_BULK_IMPORT
   SMART_TIMETABLE_GENERATION
   FILE_RETENTION_CLEANUP
+  SCHOOL_DATA_PURGE
 }
 
 enum JobStatus {
@@ -261,6 +278,20 @@ model School {
   // retried/double submit reuse the same result instead of creating a
   // duplicate school. Null for schools created through any other path.
   creationIdempotencyKey               String?                       @unique
+  // ── School lifecycle: archive / scheduled deletion / purge (smallest schema
+  // change compatible with the existing SchoolStatus model — see
+  // src/lib/school-deletion.ts). preDeletionStatus captures the status to
+  // restore to if the Founder cancels/restores before the retention window
+  // elapses; the rest track the request, the purge job, and failure/retry.
+  preDeletionStatus                    SchoolStatus?
+  deletionRequestedAt                  DateTime?
+  deletionRequestedById                String?
+  deletionScheduledFor                 DateTime?
+  deletionCancelledAt                  DateTime?
+  deletionJobId                        String?
+  deletionRetryCount                   Int                           @default(0)
+  // Sanitized, bounded operator-facing message only — never raw error/stack/PII.
+  deletionLastError                    String?
   ownerId                              String?                       @unique
   owner                                User?                         @relation("SchoolOwner", fields: [ownerId], references: [id])
   admins                               User[]                        @relation("SchoolAdmins")
@@ -311,6 +342,8 @@ model School {
   operationalRoleAssignments           OperationalRoleAssignment[]
   createdAt                            DateTime                      @default(now())
   updatedAt                            DateTime                      @updatedAt
+
+  @@index([status, deletionScheduledFor])
 }
 
 model SchoolInvite {
@@ -1318,6 +1351,37 @@ model SchoolSubscription {
   updatedAt        DateTime         @updatedAt
 
   @@index([planId])
+}
+
+// Minimal, non-PII deletion audit trail (ticket requirement: "actor ID,
+// school ID/hash, timestamps, status and aggregate deletion counts" only —
+// never student names/emails/tokens/filenames). Deliberately has NO Prisma
+// relation to School or User (plain scalar id columns, same pattern already
+// used for AuthSession/AuthLoginEvent actor fields) so this row survives
+// both the eventual School row purge AND any future User deletion — it must
+// outlive the very entities it's auditing the deletion of.
+model SchoolDeletionAudit {
+  id        String                    @id @default(cuid())
+  schoolId  String
+  actorId   String
+  action    SchoolDeletionAuditAction
+  status    String
+  // Aggregate counts only, e.g. {"students":812,"teachers":40} — never row
+  // contents, names, or identifiers.
+  counts    Json?
+  createdAt DateTime                  @default(now())
+
+  @@index([schoolId, createdAt])
+}
+
+enum SchoolDeletionAuditAction {
+  SCHEDULED
+  CANCELLED
+  RESTORED
+  PURGE_STARTED
+  PURGE_PROGRESS
+  PURGE_COMPLETED
+  PURGE_FAILED
 }
 
 // ─── Phase 3: feature flags, manual billing operations, notifications ───────

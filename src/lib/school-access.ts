@@ -31,8 +31,23 @@ export function isSchoolAdminWriteRole(role: string | null | undefined): boolean
 // ─── Lifecycle status ────────────────────────────────────────────────────────
 // SUSPENDED (deliberate block) and EXPIRED (lapsed subscription) both cut off
 // all school users server-side. ACTIVE and TRIAL are normal-access states.
+// PENDING_DELETION/DELETING/DELETION_FAILED/DELETED (school archive/deletion
+// lifecycle, see src/lib/school-deletion.ts) block the exact same way —
+// normal school users lose access the instant deletion is scheduled, not
+// only once the purge actually starts. Only Founder lifecycle
+// endpoints (schedule/cancel/status) and the purge job itself operate on a
+// school in these states.
 
-const BLOCKING_STATUSES = new Set(["SUSPENDED", "EXPIRED"]);
+const BLOCKING_STATUSES = new Set([
+  "SUSPENDED",
+  "EXPIRED",
+  "PENDING_DELETION",
+  "DELETING",
+  "DELETION_FAILED",
+  "DELETED",
+]);
+
+const DELETION_LIFECYCLE_STATUSES = new Set(["PENDING_DELETION", "DELETING", "DELETION_FAILED", "DELETED"]);
 
 export function statusIsBlocked(status: string | null | undefined): boolean {
   return BLOCKING_STATUSES.has(status ?? "");
@@ -40,6 +55,7 @@ export function statusIsBlocked(status: string | null | undefined): boolean {
 
 /** Generic, billing-detail-free message shown to blocked school users. */
 export function schoolBlockedMessage(status: string | null | undefined): string {
+  if (DELETION_LIFECYCLE_STATUSES.has(status ?? "")) return "This school is no longer available";
   return status === "EXPIRED" ? "School access has expired" : "School access is suspended";
 }
 
