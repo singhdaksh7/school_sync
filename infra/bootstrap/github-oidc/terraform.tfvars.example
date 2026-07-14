@@ -1,0 +1,35 @@
+# Copy to terraform.tfvars (gitignored) and fill in / confirm every value
+# before the one-time `terraform plan` / `terraform apply` described in
+# README.md. Every value here is a non-secret identifier (account id,
+# repository name, role/resource names) — never put a credential in this
+# file.
+
+aws_account_id = "928805968612"
+aws_region     = "ap-south-1"
+
+github_repository_owner = "singhdaksh7"
+github_repository_name  = "school_sync"
+github_branch           = "staging"
+github_environment      = "staging"
+
+# Leave empty (default) to let this stack create the OIDC provider. Set to
+# the existing ARN instead if `aws iam list-open-id-connect-providers`
+# already shows one for token.actions.githubusercontent.com — see README.md,
+# "OIDC provider: create or reuse".
+github_oidc_provider_arn = ""
+
+ecr_repository_name       = "schoolsync"
+ecs_cluster_name          = "schoolsync-staging-cluster"
+ecs_web_service_name      = "schoolsync-staging-web"
+ecs_worker_service_name   = "schoolsync-staging-worker"
+ecs_execution_role_name   = "schoolsync-staging-ecs-execution"
+ecs_task_web_role_name    = "schoolsync-staging-ecs-task-web"
+ecs_task_minimal_role_name = "schoolsync-staging-ecs-task-minimal"
+
+# Must match infra/terraform/backend.hcl's bucket/table (the STAGING
+# APPLICATION stack's own backend) — NOT this bootstrap stack's own backend
+# key (see backend.hcl.example above). The deploy role needs read/lock
+# access to that state to run the pre-mutation Terraform no-change gate.
+terraform_state_bucket = "REPLACE-with-your-terraform-state-bucket"
+terraform_state_key    = "schoolsync/staging/terraform.tfstate"
+terraform_lock_table   = "REPLACE-with-your-terraform-lock-table"

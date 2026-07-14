@@ -10,6 +10,14 @@ resource "aws_ecs_cluster" "main" {
 locals {
   ecr_image = "${data.aws_ecr_repository.app.repository_url}:${var.image_tag}"
 
+  # Vendored AWS RDS root CA bundle (certs/aws-rds-global-bundle.pem, baked
+  # into the image by Dockerfile) — Node trusts it via NODE_EXTRA_CA_CERTS
+  # instead of disabling certificate verification (see src/lib/prisma.ts).
+  # Applied to all three task environments for consistency: the worker
+  # doesn't query Postgres today, but keeping every task's TLS trust
+  # identical avoids a silent gap if that ever changes.
+  node_extra_ca_certs = "/app/certs/aws-rds-global-bundle.pem"
+
   # Every JSON key in the shared app secret becomes a `secrets` entry for the
   # web container (it's the only one that needs the full set: DB, storage,
   # rate-limit, email, AI). Worker/migrate pull only the specific keys they
@@ -31,6 +39,7 @@ locals {
       # presence to pick a provider. Only the web task gets this: worker and
       # migrate never send email (see iam.tf / ses.tf).
       { name = "EMAIL_PROVIDER", value = lower(var.email_provider) },
+      { name = "NODE_EXTRA_CA_CERTS", value = local.node_extra_ca_certs },
     ],
     var.app_base_url != "" ? [
       { name = "NEXTAUTH_URL", value = var.app_base_url },
@@ -134,6 +143,15 @@ resource "aws_ecs_service" "web" {
   }
 
   depends_on = [aws_lb_listener.http]
+
+  # Task-definition revisions are registered and rolled out by
+  # infra/scripts/update-web-service.ps1 / deploy-staging.ps1 (AWS CLI
+  # register-task-definition + update-service), not `terraform apply` —
+  # without this, Step G's apply would silently roll the live service back
+  # to whatever revision Terraform itself last created.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }
 
 # ── Worker service (long-running poller, npm run worker) ─────────────────
@@ -158,6 +176,7 @@ resource "aws_ecs_task_definition" "worker" {
       environment = [
         { name = "NODE_ENV", value = "production" },
         { name = "WORKER_INTERNAL_URL", value = local.worker_internal_url },
+        { name = "NODE_EXTRA_CA_CERTS", value = local.node_extra_ca_certs },
       ]
       secrets = [
         { name = "JOB_WORKER_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:JOB_WORKER_SECRET::" },
@@ -205,6 +224,14 @@ resource "aws_ecs_service" "worker" {
   }
 
   depends_on = [aws_ecs_service.web]
+
+  # Task-definition revisions are registered and rolled out by
+  # infra/scripts/update-worker-service.ps1 / deploy-staging.ps1 (AWS CLI
+  # register-task-definition + update-service), not `terraform apply` — see
+  # aws_ecs_service.web for the full rationale.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }
 
 # ── Migration task definition (run on-demand via `aws ecs run-task`, not a
@@ -229,6 +256,7 @@ resource "aws_ecs_task_definition" "migrate" {
       command   = ["npx", "prisma", "migrate", "deploy"]
       environment = [
         { name = "NODE_ENV", value = "production" },
+        { name = "NODE_EXTRA_CA_CERTS", value = local.node_extra_ca_certs },
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.app.arn}:DATABASE_URL::" },

@@ -29,8 +29,11 @@
 #>
 param(
     [string]$ExpectedAccountId = "",
-    [string]$ImageTag = ""
+    [string]$ImageTag = "",
+    [switch]$UseOidcCredentials
 )
+
+if ($UseOidcCredentials) { $env:SCHOOLSYNC_CI_OIDC = "1" }
 
 . (Join-Path $PSScriptRoot "common.ps1")
 
@@ -50,23 +53,12 @@ function Record-Check {
     }
 }
 
-# ── 1. AWS CLI authentication ────────────────────────────────────────────
+# ── 1. AWS CLI authentication (non-root, verified via the same checkpoint
+#      every other deployment script uses) ───────────────────────────────
 Write-Step "AWS CLI authentication"
-Assert-CommandExists "aws"
-try {
-    $identity = aws sts get-caller-identity --output json | ConvertFrom-Json
-} catch {
-    $identity = $null
-}
-if ($identity -and $identity.Account) {
-    Record-Check "AWS caller identity" $true "account=$($identity.Account) arn=$($identity.Arn)"
-} else {
-    Record-Check "AWS caller identity" $false "AWS CLI is not authenticated — run 'aws configure' or set credentials, then retry."
-    # Nothing else in this script can run meaningfully without an identity.
-    Write-Host ""
-    Write-Fail "Preflight aborted — no AWS identity available."
-    exit 1
-}
+$identity = Assert-AwsAuthenticated
+$profileArgs = Get-AwsCliProfileArgs
+Record-Check "AWS caller identity" $true "account=$($identity.Account) arn=$($identity.Arn)"
 
 # ── 2. Expected account / region ─────────────────────────────────────────
 Write-Step "Expected account / region"
@@ -76,7 +68,11 @@ if (-not (Test-Path $tfvarsPath)) {
     Write-Warn "infra/terraform/terraform.tfvars not found (copy from terraform.tfvars.example) — skipping region cross-check."
 }
 $configuredRegion = $tfvars["aws_region"]
-$currentRegion = aws configure get region 2>$null
+# `aws configure get region` reads a named PROFILE's config — meaningless in
+# OIDC/CI mode, where there is no profile at all and the region instead
+# comes directly from $env:AWS_REGION (already set by Assert-AwsAuthenticated
+# / the OIDC action). Use that directly when no profile is in use.
+$currentRegion = if ($env:AWS_PROFILE) { aws configure get region @profileArgs 2>$null } else { $env:AWS_REGION }
 if ($configuredRegion) {
     Record-Check "Region matches terraform.tfvars" ($currentRegion -eq $configuredRegion) "AWS CLI region='$currentRegion', terraform.tfvars aws_region='$configuredRegion'"
 }
@@ -90,7 +86,7 @@ if ($ExpectedAccountId) {
 Write-Step "ECR repository"
 $ecrName = $tfvars["ecr_repository_name"]
 if ($ecrName) {
-    $ecrDescribe = aws ecr describe-repositories --repository-names $ecrName --output json 2>$null
+    $ecrDescribe = aws ecr describe-repositories --repository-names $ecrName @profileArgs --region $env:AWS_REGION --output json 2>$null
     if ($LASTEXITCODE -eq 0) {
         Record-Check "ECR repository '$ecrName' exists" $true "confirmed via aws ecr describe-repositories"
     } else {
@@ -110,11 +106,11 @@ if (-not (Test-Path $backendPath)) {
     $stateBucket = $backend["bucket"]
     $lockTable = $backend["dynamodb_table"]
     if ($stateBucket) {
-        aws s3api head-bucket --bucket $stateBucket 2>$null
+        aws s3api head-bucket --bucket $stateBucket @profileArgs --region $env:AWS_REGION 2>$null
         Record-Check "State bucket '$stateBucket' exists" ($LASTEXITCODE -eq 0) "aws s3api head-bucket"
     }
     if ($lockTable) {
-        aws dynamodb describe-table --table-name $lockTable --output json 2>$null | Out-Null
+        aws dynamodb describe-table --table-name $lockTable @profileArgs --region $env:AWS_REGION --output json 2>$null | Out-Null
         Record-Check "Lock table '$lockTable' exists" ($LASTEXITCODE -eq 0) "aws dynamodb describe-table"
     }
 }
@@ -122,7 +118,7 @@ if (-not (Test-Path $backendPath)) {
 # ── 5. Image tag already pushed to ECR (only relevant right before a rollout) ─
 Write-Step "Docker image tag in ECR"
 if ($ImageTag -and $ecrName) {
-    aws ecr describe-images --repository-name $ecrName --image-ids imageTag=$ImageTag --output json 2>$null | Out-Null
+    aws ecr describe-images --repository-name $ecrName --image-ids imageTag=$ImageTag @profileArgs --region $env:AWS_REGION --output json 2>$null | Out-Null
     Record-Check "Image tag '$ImageTag' exists in ECR" ($LASTEXITCODE -eq 0) "aws ecr describe-images"
 } else {
     Record-Check "Image tag exists in ECR" $true "-ImageTag not supplied — skipped (pass -ImageTag right before an ECS rollout to check this)" -Applicable $false
@@ -140,7 +136,7 @@ if ($wantsHttps) {
     $hasCertPath = [bool]$zoneId -or [bool]$certArn
     Record-Check "HTTPS: route53_zone_id or alb_certificate_arn set" $hasCertPath "domain_name='$domainName' requires one of the two so a certificate can be validated"
     if ($zoneId) {
-        aws route53 get-hosted-zone --id $zoneId --output json 2>$null | Out-Null
+        aws route53 get-hosted-zone --id $zoneId @profileArgs --region $env:AWS_REGION --output json 2>$null | Out-Null
         Record-Check "Route53 zone '$zoneId' exists and is reachable" ($LASTEXITCODE -eq 0) "aws route53 get-hosted-zone"
     }
 } else {

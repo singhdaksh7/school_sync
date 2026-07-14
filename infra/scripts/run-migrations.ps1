@@ -1,35 +1,66 @@
 <#
 .SYNOPSIS
   Runs the SchoolSync Prisma migration ECS task (`npx prisma migrate deploy`)
-  once, waits for it to finish, and exits non-zero if it failed. Reads all
-  cluster/network/task-definition info from `terraform output` — run
-  `terraform apply` first.
+  once, waits for it to finish, and exits non-zero if it failed. Cluster and
+  network info come from `terraform output`, but the task-definition ARN
+  MUST be supplied explicitly by the caller (-TaskDefinitionArn) — this
+  script never resolves it from `terraform output
+  ecs_migrate_task_definition_arn` itself.
+
+  Why: infra/terraform/ecs.tf's migrate task definition carries `lifecycle
+  { ignore_changes = [container_definitions] }`, so that Terraform output
+  permanently points at whatever revision was first ever registered — it
+  never reflects a newer image or a CA-trust/environment fix landed after
+  that. Silently resolving it here would let migrations run against a
+  stale image without the caller ever noticing. Register a current revision
+  first with update-migrate-task.ps1 (or point at a specific known-good
+  revision deliberately), then pass that exact ARN in.
+
+.PARAMETER TaskDefinitionArn
+  REQUIRED. The exact task-definition ARN (family:revision) to run. Get
+  this from `./infra/scripts/update-migrate-task.ps1 -ImageTag <tag>`
+  (its final stdout line), or from `aws ecs describe-task-definition` /
+  `aws ecs list-task-definitions` if intentionally re-running a specific
+  known revision.
 
 .PARAMETER TimeoutSeconds
   Max time to wait for the task to reach STOPPED before giving up.
+
+.EXAMPLE
+  $migrateArn = ./infra/scripts/update-migrate-task.ps1 -ImageTag $tag | Select-Object -Last 1
+  ./infra/scripts/run-migrations.ps1 -TaskDefinitionArn $migrateArn
 #>
 param(
-    [int]$TimeoutSeconds = 600
+    [Parameter(Mandatory)][string]$TaskDefinitionArn,
+    [int]$TimeoutSeconds = 600,
+    [switch]$UseOidcCredentials
 )
+
+if ($UseOidcCredentials) { $env:SCHOOLSYNC_CI_OIDC = "1" }
 
 . (Join-Path $PSScriptRoot "common.ps1")
 
+Assert-AwsAuthenticated | Out-Null
+
 Write-Step "Reading Terraform outputs"
 $cluster        = Get-TerraformOutputRaw "ecs_cluster_name"
-$taskDefinition = Get-TerraformOutputRaw "ecs_migrate_task_definition_arn"
 $subnets        = (Get-TerraformOutputJson "public_subnet_ids") -join ","
 $securityGroup  = Get-TerraformOutputRaw "ecs_tasks_security_group_id"
+$taskDefinition = $TaskDefinitionArn
 Write-Success "cluster=$cluster"
-Write-Success "taskDefinition=$taskDefinition"
+Write-Success "taskDefinition=$taskDefinition (caller-supplied, not resolved from Terraform)"
 
 Write-Step "Starting migration task (npx prisma migrate deploy)"
 $networkConfig = "awsvpcConfiguration={subnets=[$subnets],securityGroups=[$securityGroup],assignPublicIp=ENABLED}"
+$profileArgs = Get-AwsCliProfileArgs
 
 $runResult = aws ecs run-task `
     --cluster $cluster `
     --task-definition $taskDefinition `
     --launch-type FARGATE `
     --network-configuration $networkConfig `
+    @profileArgs `
+    --region $env:AWS_REGION `
     --output json | ConvertFrom-Json
 
 if ($LASTEXITCODE -ne 0) {
@@ -50,7 +81,7 @@ Write-Step "Waiting for migration task to stop (timeout ${TimeoutSeconds}s)"
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 $lastStatus = ""
 while ((Get-Date) -lt $deadline) {
-    $desc = aws ecs describe-tasks --cluster $cluster --tasks $taskArn --output json | ConvertFrom-Json
+    $desc = aws ecs describe-tasks --cluster $cluster --tasks $taskArn @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json
     $lastStatus = $desc.tasks[0].lastStatus
     if ($lastStatus -eq "STOPPED") { break }
     Write-Host "    ... status=$lastStatus" -ForegroundColor DarkGray

@@ -9,6 +9,53 @@ $ErrorActionPreference = "Stop"
 $script:RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $script:TerraformDir = Join-Path $RepoRoot "infra\terraform"
 
+# Every deployment script in this directory must run under the
+# least-privilege SSO-assumed role, never the AWS account root user or an
+# un-vetted default profile. This is the single source of truth for which
+# profile/region every aws CLI call below uses — Assert-AwsAuthenticated is
+# the one required checkpoint every script calls before any AWS action, and
+# it both verifies AND exports $env:AWS_PROFILE/$env:AWS_REGION so a
+# subsequent `terraform` invocation (which has no --profile flag of its own
+# — it resolves credentials via the AWS provider's default chain, including
+# AWS_PROFILE) inherits the same verified, non-root identity.
+$script:DefaultAwsProfile = "schoolsync-admin"
+$script:DefaultAwsRegion = "ap-south-1"
+
+# ── CI / OIDC credential mode ────────────────────────────────────────────
+#
+# On a local operator's machine, every script here must keep defaulting to
+# the named "schoolsync-admin" SSO profile exactly as before — that behavior
+# is unchanged. On a GitHub-hosted runner authenticated via OIDC
+# (aws-actions/configure-aws-credentials in .github/workflows/deploy-staging.yml),
+# there is no ~/.aws/config and no "schoolsync-admin" profile to name — the
+# assumed role's temporary credentials are already exported as
+# AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_SESSION_TOKEN environment
+# variables, and passing --profile schoolsync-admin (or any --profile at
+# all) to the AWS CLI in that mode fails outright ("could not be found").
+#
+# Setting $env:SCHOOLSYNC_CI_OIDC = "1" before dot-sourcing this file (done
+# once, at the top of deploy-staging.ps1 when -UseOidcCredentials is passed)
+# switches Assert-AwsAuthenticated's default -Profile to "" (no profile),
+# and every aws CLI call in this file and every other infra/scripts/*.ps1
+# script picks that up via Get-AwsCliProfileArgs below instead of a
+# hardcoded --profile flag. Never creates an AWS credentials file on disk in
+# either mode.
+function Get-AwsCliProfileArgs {
+    <#
+      Returns the `--profile <name>` argument pair for every aws CLI
+      invocation in this repo's deployment scripts, or an empty array when
+      $env:AWS_PROFILE is unset/empty (OIDC/CI mode) — splat this at the aws
+      CLI call site, e.g.:
+        $profileArgs = Get-AwsCliProfileArgs
+        aws ecs describe-services ... @profileArgs --region $env:AWS_REGION
+      Never returns a stale/guessed profile: it always reads the CURRENT
+      $env:AWS_PROFILE, which Assert-AwsAuthenticated is responsible for
+      setting (schoolsync-admin locally) or clearing (OIDC/CI mode).
+    #>
+    if ($env:AWS_PROFILE) { return @("--profile", $env:AWS_PROFILE) }
+    return @()
+}
+
 function Write-Step {
     param([string]$Message)
     Write-Host ""
@@ -40,18 +87,67 @@ function Assert-CommandExists {
 }
 
 function Assert-AwsAuthenticated {
+    <#
+      The one required checkpoint every deployment script calls before any
+      AWS action. Verifies authentication AND refuses to proceed if the
+      resolved identity is the account root user — regardless of which
+      profile produced it (root can be reached via a bare default profile,
+      an `aws login` root session, or a misconfigured profile alias), so
+      this check can never be bypassed by pointing -Profile at something
+      else that still resolves to root. On success, exports
+      $env:AWS_PROFILE/$env:AWS_REGION so every subsequent aws CLI call in
+      this process (and any `terraform` invocation, which has no
+      --profile flag of its own) uses the same verified identity.
+
+      -Profile defaults to "" (no named profile — OIDC/environment
+      credentials only) when $env:SCHOOLSYNC_CI_OIDC = "1", and to
+      "schoolsync-admin" otherwise — i.e. local interactive usage is
+      completely unchanged unless that CI/OIDC env var is explicitly set
+      (see the "CI / OIDC credential mode" comment above
+      Get-AwsCliProfileArgs). Passing -Profile "" explicitly has the same
+      effect regardless of that env var.
+    #>
+    param([string]$Profile = $(if ($env:SCHOOLSYNC_CI_OIDC -eq "1") { "" } else { $script:DefaultAwsProfile }))
+
     Assert-CommandExists "aws"
+    $identityArgs = @("sts", "get-caller-identity", "--output", "json")
+    if ($Profile) { $identityArgs += @("--profile", $Profile) }
+
     try {
-        $identity = aws sts get-caller-identity --output json | ConvertFrom-Json
+        $identity = aws @identityArgs | ConvertFrom-Json
     } catch {
-        Write-Fail "AWS CLI authentication check failed: $_"
+        Write-Fail "AWS CLI authentication check failed (profile: $Profile): $_"
         exit 1
     }
-    if (-not $identity -or -not $identity.Account) {
-        Write-Fail "AWS CLI is not authenticated. Run 'aws configure' or set credentials, then retry."
+    if ($LASTEXITCODE -ne 0 -or -not $identity -or -not $identity.Account) {
+        if ($Profile) {
+            Write-Fail "AWS CLI is not authenticated for profile '$Profile'. Run 'aws sso login --profile $Profile', then retry."
+        } else {
+            Write-Fail "AWS CLI is not authenticated via environment/OIDC credentials (no --profile in use). Confirm aws-actions/configure-aws-credentials (or an equivalent env-credential export) ran before this script."
+        }
         exit 1
     }
-    Write-Success "AWS CLI authenticated as $($identity.Arn) (account $($identity.Account))"
+    if ($identity.Arn -match '^arn:aws:iam::\d+:root$') {
+        Write-Fail "Authenticated identity is the AWS account ROOT user ($($identity.Arn))."
+        Write-Fail "Deployment scripts must never run as root. Run 'aws sso login --profile $Profile' and retry with an assumed-role (SSO) identity."
+        exit 1
+    }
+
+    # OIDC/CI mode (-Profile ""): never write an empty-string AWS_PROFILE —
+    # some tools treat a set-but-empty env var differently from truly unset.
+    # Clearing it outright guarantees the AWS SDK/CLI credential chain falls
+    # through to the environment-variable credentials
+    # configure-aws-credentials already exported, never a stale/leftover
+    # profile name from a previous step in the same runner.
+    if ($Profile) {
+        $env:AWS_PROFILE = $Profile
+    } else {
+        Remove-Item Env:\AWS_PROFILE -ErrorAction SilentlyContinue
+    }
+    $env:AWS_REGION = $script:DefaultAwsRegion
+
+    $profileDescription = if ($Profile) { "profile $Profile" } else { "environment/OIDC credentials (no profile)" }
+    Write-Success "AWS CLI authenticated as $($identity.Arn) (account $($identity.Account), $profileDescription)"
     return $identity
 }
 
@@ -94,6 +190,93 @@ function Get-TerraformOutputRaw {
     }
 }
 
+function Get-TerraformOutputRawOptional {
+    <#
+      Same as Get-TerraformOutputRaw, but returns $null instead of exiting
+      the process when the named output isn't present in state yet — e.g.
+      it was just added to outputs.tf by the same commit as a not-yet-run
+      `terraform apply`. Adding an output block to a .tf file does not
+      retroactively populate it into the state file; that only happens on
+      the next apply, even if the resource attribute it reads already
+      exists in state. Callers that have a safe fallback for that case use
+      this instead of the hard-exit Get-TerraformOutputRaw.
+    #>
+    param([Parameter(Mandatory)][string]$Name)
+    Push-Location $TerraformDir
+    try {
+        $value = terraform output -raw $Name 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return $null
+        }
+        return $value
+    } finally {
+        Pop-Location
+    }
+}
+
+function Get-EcsTaskFamilyFromArn {
+    <#
+      Parses the task-definition family (no revision) out of a full
+      task-definition ARN, e.g.
+      "arn:aws:ecs:ap-south-1:928805968612:task-definition/schoolsync-staging-migrate:7"
+      -> "schoolsync-staging-migrate". Every part is read from the ARN
+      itself, never hardcoded. Fails closed (throws) rather than returning
+      a guessed/partial family if the ARN doesn't match the expected shape
+      — callers must never silently fall back to a wrong family name.
+    #>
+    param([Parameter(Mandatory)][string]$TaskDefinitionArn)
+
+    if ($TaskDefinitionArn -notmatch '^arn:aws:ecs:[^:]+:\d+:task-definition/([^:/]+):\d+$') {
+        throw "Cannot safely determine the task-definition family from ARN '$TaskDefinitionArn' — unexpected format."
+    }
+    return $Matches[1]
+}
+
+function Assert-SingleEcsTaskDefinitionArn {
+    <#
+      Validates that a captured "ARN" is actually a single scalar ECS
+      task-definition ARN belonging to the expected family, before it is
+      ever used in a mutating AWS CLI call (--task-definition ...).
+
+      Exists because PowerShell collects EVERY object emitted to a
+      function's success stream into the capturing variable — including
+      any uncaptured/unsuppressed AWS CLI JSON output a callee happened to
+      print along the way. A caller like `$newArn = SomeFunction ...` can
+      silently end up with $newArn as a multi-element array (JSON text
+      lines followed by the real ARN) instead of a single string; spreading
+      that array into `@("--task-definition", $newArn, ...)` then supplies
+      every element as a SEPARATE CLI argument, so AWS CLI reads only the
+      first of them — never the real ARN — as --task-definition's value.
+      That is exactly the STEP I "Invalid revision number" rollout failure
+      this guards against.
+
+      $Value is deliberately untyped (not [string]) so a genuinely polluted
+      multi-item array is preserved for inspection rather than silently
+      $OFS-joined into one garbled (and separately still-invalid) string by
+      PowerShell's own parameter-binding coercion.
+
+      Throws (terminating error, never returns a fallback) if $Value is not
+      a single non-empty string matching the expected ECS task-definition
+      ARN shape and family.
+    #>
+    param(
+        [Parameter(Mandatory)]$Value,
+        [Parameter(Mandatory)][string]$ExpectedFamily
+    )
+
+    if ($Value -is [array]) {
+        throw "Expected a single task-definition ARN but captured $($Value.Count) values instead (likely uncaptured AWS CLI output leaking into a success stream): $($Value -join ' | ')"
+    }
+    if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) {
+        throw "Expected a single non-empty task-definition ARN string, got: '$Value'"
+    }
+    $actualFamily = Get-EcsTaskFamilyFromArn -TaskDefinitionArn $Value
+    if ($actualFamily -ne $ExpectedFamily) {
+        throw "Task-definition ARN '$Value' belongs to family '$actualFamily', expected '$ExpectedFamily'."
+    }
+    return $Value
+}
+
 function Get-TerraformOutputJson {
     param([Parameter(Mandatory)][string]$Name)
     Push-Location $TerraformDir
@@ -109,27 +292,43 @@ function Get-TerraformOutputJson {
     }
 }
 
-function Update-EcsServiceImage {
+function Register-EcsTaskDefinitionWithImage {
     <#
-      Registers a new revision of an ECS task definition family with a
-      patched container image (same tag family, new image URI/tag), then
-      updates the given service to use it and forces a fresh deployment.
-      Shared by update-web-service.ps1 and update-worker-service.ps1 — both
-      do the exact same describe/patch/register/update/wait sequence, only
-      the cluster/service/family/container name differ.
+      The single reusable describe -> patch-image -> register primitive for
+      every ECS task-definition rollout in this repo (web, worker, and
+      migrate). Fetches the CURRENTLY REGISTERED revision of $Family,
+      replaces only the named container's `image`, and registers a new
+      revision that otherwise preserves every field register-task-definition
+      accepts: execution role, task role, cpu/memory, network mode, runtime
+      platform, volumes, and — because containerDefinitions is carried
+      through untouched apart from the one `image` field — every container's
+      own environment variables and secret ARN mappings.
+      Deliberately does NOT touch any ECS service; the caller decides
+      whether/how the new revision gets deployed (a standing service via
+      Update-EcsServiceImage below, or a one-off `aws ecs run-task` for the
+      migrate family, which has no service at all).
+
+      Never prints environment or secret VALUES — describe-task-definition's
+      `secrets` entries are ARN references only (never resolved values), and
+      this function's own output is limited to the previous/new image and
+      the new task-definition ARN.
+
+      Returns the new task-definition ARN, or exits non-zero (never returns)
+      on any describe/register failure — callers must never fall back to a
+      previously-known-good ARN silently.
     #>
     param(
-        [Parameter(Mandatory)][string]$Cluster,
-        [Parameter(Mandatory)][string]$Service,
         [Parameter(Mandatory)][string]$Family,
         [Parameter(Mandatory)][string]$ContainerName,
         [Parameter(Mandatory)][string]$ImageUri
     )
 
+    $profileArgs = Get-AwsCliProfileArgs
+
     Write-Step "Fetching current task definition ($Family)"
-    $current = aws ecs describe-task-definition --task-definition $Family --output json | ConvertFrom-Json
+    $current = aws ecs describe-task-definition --task-definition $Family --output json @profileArgs --region $env:AWS_REGION | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) {
-        Write-Fail "Could not describe task definition '$Family'. Has 'terraform apply' created it yet?"
+        Write-Fail "Could not describe task definition '$Family' (exit $LASTEXITCODE). Has 'terraform apply' created it yet?"
         exit 1
     }
     $taskDef = $current.taskDefinition
@@ -144,7 +343,11 @@ function Update-EcsServiceImage {
     Write-Success "Image: $previousImage -> $ImageUri"
 
     # register-task-definition only accepts a specific field subset — strip
-    # everything describe-task-definition adds that isn't a valid input field.
+    # everything describe-task-definition adds that isn't a valid input
+    # field (revision, taskDefinitionArn, status, registeredAt/By,
+    # requiresAttributes, compatibilities). Every field kept here is
+    # preserved from the CURRENTLY REGISTERED revision verbatim except
+    # containerDefinitions[].image, which was patched above.
     $registerPayload = [ordered]@{
         family                  = $taskDef.family
         containerDefinitions    = $taskDef.containerDefinitions
@@ -154,6 +357,14 @@ function Update-EcsServiceImage {
         memory                  = $taskDef.memory
         executionRoleArn        = $taskDef.executionRoleArn
         taskRoleArn             = $taskDef.taskRoleArn
+        volumes                 = $taskDef.volumes
+    }
+    # runtimePlatform is only present on task definitions that set it
+    # explicitly (this stack's Fargate task defs currently don't — they take
+    # the default X86_64/LINUX). Omit the key entirely rather than sending a
+    # null, which register-task-definition rejects.
+    if ($taskDef.PSObject.Properties.Name -contains "runtimePlatform" -and $taskDef.runtimePlatform) {
+        $registerPayload["runtimePlatform"] = $taskDef.runtimePlatform
     }
 
     $tmpFile = New-TemporaryFile
@@ -161,29 +372,62 @@ function Update-EcsServiceImage {
         ($registerPayload | ConvertTo-Json -Depth 30) | Set-Content -Path $tmpFile -Encoding utf8
 
         Write-Step "Registering new task definition revision"
-        $registered = aws ecs register-task-definition --cli-input-json "file://$tmpFile" --output json | ConvertFrom-Json
+        $registered = aws ecs register-task-definition --cli-input-json "file://$tmpFile" --output json @profileArgs --region $env:AWS_REGION | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) {
-            Write-Fail "aws ecs register-task-definition failed (exit $LASTEXITCODE)"
+            Write-Fail "aws ecs register-task-definition failed for family '$Family' (exit $LASTEXITCODE)"
             exit 1
         }
         $newArn = $registered.taskDefinition.taskDefinitionArn
+        $newArn = Assert-SingleEcsTaskDefinitionArn -Value $newArn -ExpectedFamily $Family
         Write-Success "Registered: $newArn"
+        return $newArn
     } finally {
         Remove-Item $tmpFile -ErrorAction SilentlyContinue
     }
+}
+
+function Update-EcsServiceImage {
+    <#
+      Registers a new revision of an ECS task definition family with a
+      patched container image (via Register-EcsTaskDefinitionWithImage),
+      then updates the given STANDING SERVICE to use it and forces a fresh
+      deployment. Shared by update-web-service.ps1 and
+      update-worker-service.ps1 — both do the exact same
+      register/update/wait sequence, only the cluster/service/family/
+      container name differ. Not used for migrate, which has no service
+      (see Register-EcsTaskDefinitionWithImage's own docs).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Cluster,
+        [Parameter(Mandatory)][string]$Service,
+        [Parameter(Mandatory)][string]$Family,
+        [Parameter(Mandatory)][string]$ContainerName,
+        [Parameter(Mandatory)][string]$ImageUri
+    )
+
+    $newArn = Register-EcsTaskDefinitionWithImage -Family $Family -ContainerName $ContainerName -ImageUri $ImageUri
+    $newArn = Assert-SingleEcsTaskDefinitionArn -Value $newArn -ExpectedFamily $Family
+
+    $profileArgs = Get-AwsCliProfileArgs
 
     Write-Step "Updating service '$Service' to the new revision (force new deployment)"
-    Invoke-Checked -FilePath "aws" -ArgumentList @(
+    # `--output json` writes the full updated-service description to stdout;
+    # piped to Out-Null so it can never leak into this function's own success
+    # stream (Invoke-Checked itself returns whatever its wrapped command
+    # emits) and get silently appended to $newArn by the caller's capture —
+    # see Assert-SingleEcsTaskDefinitionArn's docs for the failure this
+    # caused.
+    $updateServiceArgs = @(
         "ecs", "update-service",
         "--cluster", $Cluster,
         "--service", $Service,
         "--task-definition", $newArn,
-        "--force-new-deployment",
-        "--output", "json"
-    ) -FailureMessage "aws ecs update-service failed"
+        "--force-new-deployment"
+    ) + $profileArgs + @("--region", $env:AWS_REGION, "--output", "json")
+    Invoke-Checked -FilePath "aws" -ArgumentList $updateServiceArgs -FailureMessage "aws ecs update-service failed" | Out-Null
 
     Write-Step "Waiting for service to stabilize (AWS CLI default waiter: ~10 min max)"
-    aws ecs wait services-stable --cluster $Cluster --services $Service
+    aws ecs wait services-stable --cluster $Cluster --services $Service @profileArgs --region $env:AWS_REGION | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Service '$Service' did not stabilize. Check: aws ecs describe-services --cluster $Cluster --services $Service"
         exit 1
@@ -304,4 +548,176 @@ function Read-HclKeyValueFile {
         }
     }
     return $result
+}
+
+function Assert-EcrImageApproved {
+    <#
+      Confirms an image tag exists in ECR and passes the scan gate: scan
+      status COMPLETE with zero CRITICAL/HIGH findings (MEDIUM/LOW are
+      reported but not gated). Exits non-zero (never returns) on any
+      failure — a caller must never proceed to deploy an image this
+      function didn't explicitly approve.
+
+      Resolves the underlying PLATFORM-SPECIFIC manifest digest first: a
+      `docker buildx` multi-arch push (with the default provenance/SBOM
+      attestation) registers an OCI image INDEX, and ECR's scanner attaches
+      findings to the platform manifest digest INSIDE that index, never to
+      the index's own top-level digest — querying
+      describe-image-scan-findings against the tag/index digest directly
+      returns ScanNotFoundException forever, which looks identical to "scan
+      still pending" if not handled explicitly.
+
+      Never prints finding details beyond the CRITICAL/HIGH/MEDIUM/LOW
+      counts.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$RepositoryName,
+        [Parameter(Mandatory)][string]$ImageTag,
+        [string]$Platform = "amd64",
+        [int]$TimeoutSeconds = 300
+    )
+
+    $profileArgs = Get-AwsCliProfileArgs
+
+    Write-Step "Resolving platform-specific digest for ${RepositoryName}:${ImageTag}"
+    $batchGet = aws ecr batch-get-image --repository-name $RepositoryName --image-ids imageTag=$ImageTag @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "aws ecr batch-get-image failed for ${RepositoryName}:${ImageTag} (exit $LASTEXITCODE)"
+        exit 1
+    }
+    if (-not $batchGet.images -or $batchGet.images.Count -eq 0) {
+        Write-Fail "Image tag '$ImageTag' not found in repository '$RepositoryName'. Has it been pushed?"
+        exit 1
+    }
+    $manifest = $batchGet.images[0].imageManifest | ConvertFrom-Json
+
+    if ($manifest.manifests) {
+        # OCI image index / Docker manifest list (buildx multi-arch + attestation).
+        $platformManifest = $manifest.manifests | Where-Object {
+            $_.platform -and $_.platform.architecture -eq $Platform -and $_.platform.os -eq "linux"
+        } | Select-Object -First 1
+        if (-not $platformManifest) {
+            Write-Fail "No linux/$Platform manifest found inside the image index for ${RepositoryName}:${ImageTag}."
+            exit 1
+        }
+        $digest = $platformManifest.digest
+    } else {
+        # Single-manifest image — the tag's own digest is what's scanned.
+        $digest = $batchGet.images[0].imageId.imageDigest
+    }
+    Write-Success "Resolved digest: $digest"
+
+    Write-Step "Waiting for ECR scan to complete (timeout ${TimeoutSeconds}s)"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $status = $null
+    $findings = $null
+    while ((Get-Date) -lt $deadline) {
+        $result = aws ecr describe-image-scan-findings --repository-name $RepositoryName --image-id imageDigest=$digest @profileArgs --region $env:AWS_REGION --output json 2>$null | ConvertFrom-Json
+        if ($LASTEXITCODE -eq 0 -and $result -and $result.imageScanStatus) {
+            $status = $result.imageScanStatus.status
+            $findings = $result.imageScanFindings
+            if ($status -eq "COMPLETE" -or $status -eq "FAILED") { break }
+        }
+        Start-Sleep -Seconds 10
+    }
+
+    if ($status -ne "COMPLETE") {
+        Write-Fail "ECR scan for digest $digest did not reach COMPLETE within ${TimeoutSeconds}s (last status: $status)."
+        exit 1
+    }
+
+    $counts = if ($findings -and $findings.findingSeverityCounts) { $findings.findingSeverityCounts } else { $null }
+    $critical = if ($counts -and $counts.CRITICAL) { [int]$counts.CRITICAL } else { 0 }
+    $high = if ($counts -and $counts.HIGH) { [int]$counts.HIGH } else { 0 }
+    $medium = if ($counts -and $counts.MEDIUM) { [int]$counts.MEDIUM } else { 0 }
+    $low = if ($counts -and $counts.LOW) { [int]$counts.LOW } else { 0 }
+
+    Write-Success "Scan COMPLETE — CRITICAL=$critical HIGH=$high MEDIUM=$medium LOW=$low"
+    if ($critical -gt 0 -or $high -gt 0) {
+        Write-Fail "Image ${RepositoryName}:${ImageTag} (digest $digest) has $critical CRITICAL and $high HIGH finding(s) — scan gate failed."
+        exit 1
+    }
+
+    return [pscustomobject]@{
+        Digest   = $digest
+        Critical = $critical
+        High     = $high
+        Medium   = $medium
+        Low      = $low
+    }
+}
+
+function Get-SecretCurrentVersionId {
+    <#
+      Returns the Secrets Manager version id currently staged AWSCURRENT
+      for the given secret, using describe-secret (metadata only — this
+      NEVER calls get-secret-value and therefore never fetches, holds, or
+      risks printing the actual secret content). Used purely for
+      before/after rollback bookkeeping in deployment reports.
+    #>
+    param([Parameter(Mandatory)][string]$SecretId)
+
+    $profileArgs = Get-AwsCliProfileArgs
+    $desc = aws secretsmanager describe-secret --secret-id $SecretId @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Could not describe secret '$SecretId' (exit $LASTEXITCODE)"
+        exit 1
+    }
+    foreach ($prop in $desc.VersionIdsToStages.PSObject.Properties) {
+        if ($prop.Value -contains "AWSCURRENT") {
+            return $prop.Name
+        }
+    }
+    Write-Fail "No AWSCURRENT version found for secret '$SecretId'"
+    exit 1
+}
+
+function Assert-TerraformNoChanges {
+    <#
+      CI safety gate (deploy-staging.ps1 -RequireTerraformNoChanges mode):
+      runs `terraform plan -detailed-exitcode` against the REAL configured
+      backend and requires exit code 0 (no changes) before the caller is
+      allowed to perform any ECS mutation. Exit code 2 (changes present) and
+      exit code 1 (error) both stop the script — a routine CI/CD deployment
+      must never carry an implicit infrastructure change; any add/change/
+      destroy action has to go through the existing manual, reviewed
+      `terraform apply` process instead (see infra/terraform/README.md).
+
+      Deliberately never runs `terraform apply` itself — that is the whole
+      point of this gate, and it is why -RequireTerraformNoChanges mode
+      skips STEP G's apply entirely (see deploy-staging.ps1).
+
+      Exits the process (never returns a failure value) on anything other
+      than "no changes" — callers must never treat a non-zero result as
+      something to proceed past.
+    #>
+    param([Parameter(Mandatory)][string]$BackendConfig)
+
+    Push-Location $TerraformDir
+    try {
+        Write-Step "Terraform no-change gate: init"
+        Invoke-Checked -FilePath "terraform" -ArgumentList @("init", "-backend-config=$BackendConfig", "-input=false") `
+            -FailureMessage "terraform init failed"
+
+        Write-Step "Terraform no-change gate: plan -detailed-exitcode"
+        $planArgs = @("plan", "-detailed-exitcode", "-input=false")
+        if (Test-Path "terraform.tfvars") { $planArgs += "-var-file=terraform.tfvars" }
+        & terraform @planArgs
+        $code = $LASTEXITCODE
+
+        if ($code -eq 0) {
+            Write-Success "Terraform plan: No changes. Your infrastructure matches the configuration."
+            return
+        } elseif ($code -eq 2) {
+            Write-Fail "Terraform plan reports pending add/change/destroy action(s) against the staging backend."
+            Write-Fail "Routine CI/CD deployment requires zero infrastructure drift — stopping BEFORE any ECS mutation."
+            Write-Fail "Infrastructure changes must go through the existing manual, reviewed terraform apply process, not this workflow."
+            exit 2
+        } else {
+            Write-Fail "terraform plan failed (exit code $code) — cannot verify the no-change precondition. Stopping before any ECS mutation."
+            exit 1
+        }
+    } finally {
+        Pop-Location
+    }
 }
