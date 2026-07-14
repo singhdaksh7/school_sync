@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import SchoolStatusControl from "./SchoolStatusControl";
 import SubscriptionEditor from "./SubscriptionEditor";
 import InviteAdminClient from "../../invites/InviteAdminClient";
+import SchoolDangerZone from "./SchoolDangerZone";
 
 const ROLE_LABELS: Record<string, string> = {
   SCHOOL_OWNER: "Owner",
@@ -320,6 +321,14 @@ export default async function FounderSchoolDetailPage({
           )}
         </CardContent>
       </Card>
+
+      <SchoolDangerZone
+        schoolId={school.id}
+        schoolName={school.name}
+        schoolSlug={school.slug}
+        status={school.status}
+        deletionScheduledFor={school.deletionScheduledFor?.toISOString() ?? null}
+      />
     </div>
   );
 }

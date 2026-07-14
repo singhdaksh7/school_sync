@@ -39,4 +39,17 @@ describe("school lifecycle status", () => {
     expect(schoolBlockedMessage("SUSPENDED")).toBe("School access is suspended");
     expect(schoolBlockedMessage("EXPIRED")).not.toMatch(/invoice|plan|amount|₹/i);
   });
+
+  it("blocks every deletion-lifecycle status the instant it's scheduled, not only once the purge starts", () => {
+    expect(statusIsBlocked("PENDING_DELETION")).toBe(true);
+    expect(statusIsBlocked("DELETING")).toBe(true);
+    expect(statusIsBlocked("DELETION_FAILED")).toBe(true);
+    expect(statusIsBlocked("DELETED")).toBe(true);
+  });
+
+  it("uses a generic message for deletion-lifecycle statuses too — no hint that deletion is in progress leaks to blocked users", () => {
+    for (const status of ["PENDING_DELETION", "DELETING", "DELETION_FAILED", "DELETED"]) {
+      expect(schoolBlockedMessage(status)).toBe("This school is no longer available");
+    }
+  });
 });

@@ -7,7 +7,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { BackgroundJob } from "@/generated/prisma/client";
-import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema, smartTimetableGenerationPayloadSchema, fileRetentionCleanupPayloadSchema } from "@/lib/jobs";
+import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema, smartTimetableGenerationPayloadSchema, fileRetentionCleanupPayloadSchema, schoolDataPurgePayloadSchema } from "@/lib/jobs";
 import { buildReportCardBatchContext, generateReportCardForStudent } from "@/lib/report-cards";
 import { importStudentRows, type ImportRow } from "@/lib/student-import";
 import { getStudentLimitInfo } from "@/lib/plan-limits";
@@ -17,6 +17,7 @@ import { studentImportSourceRetention } from "@/lib/file-retention";
 import { systemClock } from "@/lib/clock";
 import { FILE_RETENTION_CLEANUP_BATCH_SIZE } from "@/lib/cost-guard-policy";
 import { getStorageProvider, StorageError } from "@/lib/storage";
+import { purgeSchoolData } from "@/lib/school-purge";
 
 export type JobHelpers = {
   updateProgress: (processed: number, failed: number) => Promise<void>;
@@ -227,6 +228,67 @@ const handlers: Record<string, JobHandler> = {
         hasMore: batch.length === FILE_RETENTION_CLEANUP_BATCH_SIZE,
       },
     };
+  },
+  SCHOOL_DATA_PURGE: async (job) => {
+    const payload = schoolDataPurgePayloadSchema.parse(job.payload);
+    const { schoolId } = payload;
+
+    // Compare-and-swap claim: only a school still eligible for purge
+    // (PENDING_DELETION past its retention window, a previously
+    // DELETION_FAILED school being retried, or DELETING already — a
+    // crash/lease-expiry re-entry into an already-in-progress purge, which
+    // must be allowed to resume) transitions to/stays DELETING. If a Founder
+    // cancelled/restored it before this ran (only possible while still
+    // PENDING_DELETION — cancelSchoolDeletion refuses once DELETING), the
+    // count is 0 — treat that as a clean, successful no-op rather than an
+    // error (the race is EXPECTED and safe, not exceptional).
+    const claimed = await prisma.school.updateMany({
+      where: { id: schoolId, status: { in: ["PENDING_DELETION", "DELETION_FAILED", "DELETING"] } },
+      data: { status: "DELETING" },
+    });
+    if (claimed.count === 0) {
+      return { processedItems: 0, failedItems: 0, resultMetadata: { schoolId, skipped: true, reason: "not eligible (cancelled/restored or already purged)" } };
+    }
+
+    await prisma.schoolDeletionAudit.create({
+      data: { schoolId, actorId: job.createdById ?? "system", action: "PURGE_STARTED", status: "DELETING" },
+    });
+
+    let counts: Record<string, number> = {};
+    try {
+      counts = await purgeSchoolData(schoolId, {
+        onBatch: async (label, deletedInStep) => {
+          console.log(`[job-handlers] SCHOOL_DATA_PURGE ${schoolId}: ${label} -${deletedInStep}`);
+        },
+      });
+
+      // School row deleted LAST — every explicitly-tracked high-volume child
+      // is already gone; Postgres cascade sweeps the remaining low-volume
+      // administrative tables (see purgeSchoolData's header comment for the
+      // full verified list) in this one final statement.
+      await prisma.school.delete({ where: { id: schoolId } });
+
+      await prisma.schoolDeletionAudit.create({
+        data: { schoolId, actorId: job.createdById ?? "system", action: "PURGE_COMPLETED", status: "DELETED", counts },
+      });
+    } catch (err) {
+      const sanitizedMessage = (err instanceof Error ? err.message : "Purge failed").slice(0, 500);
+      await prisma.school.updateMany({
+        where: { id: schoolId },
+        data: {
+          status: "DELETION_FAILED",
+          deletionRetryCount: { increment: 1 },
+          deletionLastError: sanitizedMessage,
+        },
+      });
+      await prisma.schoolDeletionAudit.create({
+        data: { schoolId, actorId: job.createdById ?? "system", action: "PURGE_FAILED", status: "DELETION_FAILED", counts },
+      });
+      throw err;
+    }
+
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    return { processedItems: total, failedItems: 0, resultMetadata: { schoolId, counts } };
   },
 };
 
