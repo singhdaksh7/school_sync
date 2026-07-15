@@ -46,7 +46,7 @@ resource "aws_db_instance" "main" {
   deletion_protection       = var.db_deletion_protection
 
   performance_insights_enabled = var.db_performance_insights_enabled
-  monitoring_interval          = 0     # avoid enhanced-monitoring IAM role + cost
+  monitoring_interval          = 0 # avoid enhanced-monitoring IAM role + cost
 
   apply_immediately = true
 

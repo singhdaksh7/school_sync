@@ -13,11 +13,11 @@ locals {
   has_domain              = var.domain_name != ""
   has_redirect_domain     = var.redirect_domain_name != ""
   has_verification_domain = var.verification_domain_name != ""
-  has_zone            = var.route53_zone_id != ""
-  has_existing_cert   = var.alb_certificate_arn != ""
-  create_managed_cert = local.has_domain && !local.has_existing_cert
-  certificate_arn     = local.has_existing_cert ? var.alb_certificate_arn : (local.create_managed_cert ? aws_acm_certificate.app[0].arn : "")
-  enable_https        = local.has_domain && local.certificate_arn != ""
+  has_zone                = var.route53_zone_id != ""
+  has_existing_cert       = var.alb_certificate_arn != ""
+  create_managed_cert     = local.has_domain && !local.has_existing_cert
+  certificate_arn         = local.has_existing_cert ? var.alb_certificate_arn : (local.create_managed_cert ? aws_acm_certificate.app[0].arn : "")
+  enable_https            = local.has_domain && local.certificate_arn != ""
 
   create_ses = var.ses_domain != ""
 
