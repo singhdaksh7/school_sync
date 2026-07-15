@@ -3,8 +3,8 @@
   "framework": "nextjs",
   "regions": ["sin1"],
   "crons": [
-    { "path": "/api/internal/cron/worker", "schedule": "*/5 * * * *" },
-    { "path": "/api/internal/cron/school-purge", "schedule": "0 3 * * *" },
-    { "path": "/api/internal/cron/file-retention", "schedule": "0 4 * * *" }
+    { "path": "/api/internal/cron/school-purge", "schedule": "0 1 * * *" },
+    { "path": "/api/internal/cron/file-retention", "schedule": "0 2 * * *" },
+    { "path": "/api/internal/cron/worker", "schedule": "0 3 * * *" }
   ]
 }

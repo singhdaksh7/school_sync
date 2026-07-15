@@ -55,25 +55,45 @@ claiming/idempotency logic Options A/B use — no duplicated business logic:
 
 | Cron path | Schedule | Calls |
 |---|---|---|
-| `/api/internal/cron/worker` | every 5 minutes | `processNextJob` (job-processor.ts) in a bounded loop — up to 20 jobs or 50s wall-clock, whichever first |
-| `/api/internal/cron/school-purge` | daily, 03:00 UTC | `ensureDueSchoolPurgeJobs()` (school-deletion.ts) — enqueues, never processes |
-| `/api/internal/cron/file-retention` | daily, 04:00 UTC | `ensureFileRetentionCleanupJob()` (file-retention.ts) — enqueues, never processes |
+| `/api/internal/cron/school-purge` | daily, 01:00 UTC | `ensureDueSchoolPurgeJobs()` (school-deletion.ts) — enqueues, never processes |
+| `/api/internal/cron/file-retention` | daily, 02:00 UTC | `ensureFileRetentionCleanupJob()` (file-retention.ts) — enqueues, never processes |
+| `/api/internal/cron/worker` | daily, 03:00 UTC | `processNextJob` (job-processor.ts) in a bounded loop — up to 20 jobs or 50s wall-clock, whichever first |
 
-Discovery (school-purge/file-retention) only enqueues; the worker cron's next
-5-minute tick processes whatever was enqueued. Vercel's own cron auth
+**Why all three are daily, not every few minutes:** Vercel Hobby-plan
+projects reject any cron expression that would run more than once a day —
+deployment fails outright at build time with a "Hobby accounts are limited
+to daily cron jobs" error (this bit the first version of this config; see
+`vercel.json`'s git history). Scheduling order matters here specifically
+because of that daily cadence: both discovery routes run before the worker
+route so same-day-enqueued jobs (a scheduled purge, a retention cleanup) get
+processed on that same day's worker tick rather than waiting until the
+following day. Hobby also only guarantees per-hour timing precision (±59
+min) — none of this is a promise of exact wall-clock timing, only of
+eventually running once per day. Upgrading to a Pro plan lifts both limits
+(down to once-per-minute, per-minute precision) if faster automatic
+invitation-delivery retry is ever needed; the code requires no change,
+only tighter `schedule` strings in `vercel.json`.
+
+Discovery (school-purge/file-retention) only enqueues; the worker cron's
+next tick processes whatever was enqueued. Vercel's own cron auth
 (`CRON_SECRET`, see the required-environment table above) gates all three;
 each also independently re-checks `isJobWorkerConfigured()`
 (`JOB_WORKER_SECRET`) before doing anything, so a misconfigured environment
-fails closed (503) rather than silently skipping work.
+fails closed (503) rather than silently skipping work. The common case
+doesn't wait for any of this anyway — a healthy Add-School request delivers
+its invite inline, in the same HTTP response, via
+`runInviteEmailDeliveryInline` right after the onboarding transaction
+commits; the daily worker cron exists specifically to catch the crash/failure
+case.
 
-**Overlap safety:** if a scheduled invocation is still running when the next
-one fires (a slow queue drain overlapping the next 5-minute tick), both
-requests reach the same atomic `claimNextJob` compare-and-swap
-(`src/lib/jobs.ts`) — only one can ever win a given job's claim, so
-overlapping cron ticks cannot double-process a job. This is the same
-guarantee Options A/B already rely on for concurrent worker processes; no
-additional run-level lock is layered on top because none is needed for
-correctness (see `tests/cron-worker-routes.test.ts` for the regression proof).
+**Overlap safety:** if a scheduled invocation is still running when another
+fires (a slow queue drain overlapping the next tick), both requests reach
+the same atomic `claimNextJob` compare-and-swap (`src/lib/jobs.ts`) — only
+one can ever win a given job's claim, so overlapping cron ticks cannot
+double-process a job. This is the same guarantee Options A/B already rely
+on for concurrent worker processes; no additional run-level lock is layered
+on top because none is needed for correctness (see
+`tests/cron-worker-routes.test.ts` for the regression proof).
 
 **Function-limit bounding:** the worker cron route sets
 `export const maxDuration = 60` and internally stops after 20 jobs or 50
