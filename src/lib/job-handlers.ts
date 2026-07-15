@@ -7,7 +7,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { BackgroundJob } from "@/generated/prisma/client";
-import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema, smartTimetableGenerationPayloadSchema, fileRetentionCleanupPayloadSchema, schoolDataPurgePayloadSchema } from "@/lib/jobs";
+import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema, smartTimetableGenerationPayloadSchema, fileRetentionCleanupPayloadSchema, schoolDataPurgePayloadSchema, inviteEmailDeliveryPayloadSchema, claimSpecificJob, completeJob, failJob } from "@/lib/jobs";
 import { buildReportCardBatchContext, generateReportCardForStudent } from "@/lib/report-cards";
 import { importStudentRows, type ImportRow } from "@/lib/student-import";
 import { getStudentLimitInfo } from "@/lib/plan-limits";
@@ -18,6 +18,8 @@ import { systemClock } from "@/lib/clock";
 import { FILE_RETENTION_CLEANUP_BATCH_SIZE } from "@/lib/cost-guard-policy";
 import { getStorageProvider, StorageError } from "@/lib/storage";
 import { purgeSchoolData } from "@/lib/school-purge";
+import { generateInviteToken } from "@/lib/invite-tokens";
+import { sendStaffInviteEmail } from "@/lib/email";
 
 export type JobHelpers = {
   updateProgress: (processed: number, failed: number) => Promise<void>;
@@ -30,6 +32,105 @@ export type JobResult = {
 };
 
 export type JobHandler = (job: BackgroundJob, helpers: JobHelpers) => Promise<JobResult>;
+
+/**
+ * IAM note: this file calls sendStaffInviteEmail (see the INVITE_EMAIL_DELIVERY
+ * handler below). That is safe here specifically because job-handlers.ts is
+ * ONLY ever executed inside the "web" ECS task's process — invoked via
+ * src/app/api/internal/worker/route.ts (part of the Next.js app the "web"
+ * service serves) or inline from another src/app route handler — never inside
+ * the standalone scripts/worker.ts poller, which has no Next.js/app imports
+ * at all and runs under the SES-permission-less "minimal" task role (see
+ * tests/email-iam-mapping.test.ts, which encodes and checks this exact
+ * boundary, including an explicit exception for this file).
+ */
+function resolveInviteBaseUrl(req?: Request): string {
+  const configuredBaseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL;
+  if (configuredBaseUrl) return configuredBaseUrl;
+  return req ? new URL(req.url).origin : "";
+}
+
+/**
+ * Core delivery step for the Founder "Add School" admin invite outbox
+ * (INVITE_EMAIL_DELIVERY — see src/lib/jobs.ts and
+ * src/lib/school-onboarding.ts, which creates the durable job row in the
+ * SAME transaction as the SchoolInvite). Only the invite's id is ever
+ * persisted in the job payload/result — the raw token is minted here, at
+ * send time, and handed back to the immediate in-process caller only; it is
+ * NEVER written to the job row, logged, or otherwise persisted, matching
+ * SchoolInvite.tokenHash's existing "hash only, never the raw token" rule
+ * (src/lib/invite-tokens.ts).
+ *
+ * Deliberately re-mints the token on every run rather than trying to recover
+ * the original: since only the hash is ever stored, there is nothing to
+ * "resume" across a crash — every successful run is simply a fresh, valid
+ * capability. If a crash happens in the narrow window after a successful
+ * send but before the caller records job completion, a retry can send one
+ * additional (still valid, still bounded — not unbounded) email with a new
+ * link; the previous link keeps working too until either is redeemed or
+ * expires. This is an accepted at-least-once trade-off for an external side
+ * effect that cannot be part of the same DB transaction.
+ */
+async function deliverInviteEmailNow(inviteId: string, req?: Request): Promise<{ delivered: boolean; rawToken?: string; reason?: string }> {
+  const invite = await prisma.schoolInvite.findUnique({
+    where: { id: inviteId },
+    include: { school: { select: { name: true } } },
+  });
+  if (!invite) return { delivered: false, reason: "invite not found (cancelled or already purged)" };
+  if (invite.usedAt) return { delivered: false, reason: "invite already accepted" };
+  if (invite.expiresAt.getTime() < Date.now()) return { delivered: false, reason: "invite expired" };
+
+  const { rawToken, tokenHash } = generateInviteToken();
+  await prisma.schoolInvite.update({ where: { id: invite.id }, data: { tokenHash } });
+
+  const inviteLink = `${resolveInviteBaseUrl(req)}/invite/${rawToken}`;
+  await sendStaffInviteEmail(invite.email, {
+    name: invite.name ?? invite.email,
+    role: invite.role,
+    schoolName: invite.school.name,
+    inviteLink,
+  });
+
+  return { delivered: true, rawToken };
+}
+
+/**
+ * Inline fast path: called directly by the route handler right after the
+ * Add School transaction commits, so the Founder gets the invite link back
+ * in the same HTTP response in the common (no-crash) case — with zero added
+ * latency versus the old synchronous-send design. Uses the same atomic
+ * claim as the worker (claimSpecificJob), so if a process crash means this
+ * never runs (or it runs but crashes before returning), the durable job row
+ * is left PENDING/RUNNING-with-expired-lease and the standalone worker
+ * (scripts/worker.ts, polling src/app/api/internal/worker) will claim and
+ * complete it exactly once instead — the Founder just won't see the link
+ * synchronously in that case.
+ */
+export async function runInviteEmailDeliveryInline(
+  jobId: string,
+  req?: Request
+): Promise<{ status: "COMPLETED" | "FAILED" | "SKIPPED"; rawToken?: string; error?: string }> {
+  const job = await claimSpecificJob(jobId);
+  if (!job) return { status: "SKIPPED" };
+
+  const parsed = inviteEmailDeliveryPayloadSchema.safeParse(job.payload);
+  if (!parsed.success) {
+    await failJob(job.id, job.claimToken!, "Invalid job payload");
+    return { status: "FAILED", error: "Invalid job payload" };
+  }
+
+  try {
+    const result = await deliverInviteEmailNow(parsed.data.inviteId, req);
+    await completeJob(job.id, job.claimToken!, { inviteId: parsed.data.inviteId, delivered: result.delivered, reason: result.reason ?? null });
+    return { status: "COMPLETED", rawToken: result.rawToken };
+  } catch (err) {
+    // Sanitized: never include the invite link/token, only the provider's
+    // own error message (see sendStaffInviteEmail / getEmailProvider).
+    const message = err instanceof Error ? err.message.slice(0, 300) : "Invite email delivery failed";
+    await failJob(job.id, job.claimToken!, message);
+    return { status: "FAILED", error: message };
+  }
+}
 
 const handlers: Record<string, JobHandler> = {
   REPORT_CARD_BATCH_GENERATION: async (job, { updateProgress }) => {
@@ -289,6 +390,20 @@ const handlers: Record<string, JobHandler> = {
 
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
     return { processedItems: total, failedItems: 0, resultMetadata: { schoolId, counts } };
+  },
+
+  // Poller path (src/lib/job-processor.ts / scripts/worker.ts via the
+  // internal worker route) — the job is already claimed (RUNNING) by the
+  // time this runs, so it just performs the delivery step. No req/origin is
+  // available here; deliverInviteEmailNow falls back to NEXTAUTH_URL/AUTH_URL.
+  INVITE_EMAIL_DELIVERY: async (job) => {
+    const payload = inviteEmailDeliveryPayloadSchema.parse(job.payload);
+    const result = await deliverInviteEmailNow(payload.inviteId);
+    return {
+      processedItems: result.delivered ? 1 : 0,
+      failedItems: 0,
+      resultMetadata: { inviteId: payload.inviteId, delivered: result.delivered, reason: result.reason ?? null },
+    };
   },
 };
 
