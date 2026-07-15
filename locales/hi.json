@@ -421,7 +421,9 @@
     "subtitle": "आपके स्कूल से नवीनतम अपडेट।",
     "searchPlaceholder": "घोषणाएं खोजें...",
     "noAnnouncementsFound": "कोई घोषणा नहीं मिली",
-    "byAuthor": "{{name}} द्वारा"
+    "byAuthor": "{{name}} द्वारा",
+    "unreadCount": "{{count}} अपठित",
+    "unread": "अपठित"
   },
   "studentNotebook": {
     "title": "नोटबुक जांच",

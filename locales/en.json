@@ -421,7 +421,9 @@
     "subtitle": "Latest updates from your school.",
     "searchPlaceholder": "Search announcements...",
     "noAnnouncementsFound": "No announcements found",
-    "byAuthor": "By {{name}}"
+    "byAuthor": "By {{name}}",
+    "unreadCount": "{{count}} unread",
+    "unread": "Unread"
   },
   "studentNotebook": {
     "title": "Notebook Checking",

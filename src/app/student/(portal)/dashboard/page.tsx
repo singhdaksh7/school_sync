@@ -220,7 +220,7 @@ export default async function StudentDashboardPage() {
                   <div key={a.id} className="border-b border-border pb-3 last:border-0 last:pb-0">
                     <p className="text-sm font-medium text-foreground">{a.title}</p>
                     <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{a.body}</p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">{formatDate(a.publishedAt)}</p>
+                    {a.publishedAt && <p className="mt-1 text-[11px] text-muted-foreground">{formatDate(a.publishedAt)}</p>}
                   </div>
                 ))}
               </div>
