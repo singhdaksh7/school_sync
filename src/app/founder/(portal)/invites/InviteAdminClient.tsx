@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, Search } from "lucide-react";
+import { UserPlus, Search, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -24,6 +24,7 @@ export default function InviteAdminClient({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [planState, setPlanState] = useState<"loading" | "loaded" | "error" | "empty">("loading");
   const [schoolId, setSchoolId] = useState(defaultSchoolId ?? "");
   const [schoolQuery, setSchoolQuery] = useState("");
   const [schoolResults, setSchoolResults] = useState<SchoolOption[]>([]);
@@ -35,12 +36,21 @@ export default function InviteAdminClient({
   const [error, setError] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
 
+  const loadPlans = useCallback(() => {
+    setPlanState("loading");
+    fetch("/api/founder/plans?activeOnly=true", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Request failed"))))
+      .then((json: { plans: Plan[] }) => {
+        setPlans(json.plans);
+        setPlanState(json.plans.length === 0 ? "empty" : "loaded");
+      })
+      .catch(() => setPlanState("error"));
+  }, []);
+
   useEffect(() => {
     if (!open) return;
-    fetch("/api/founder/plans", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json: { plans: Plan[] } | null) => { if (json) setPlans(json.plans); });
-  }, [open]);
+    loadPlans();
+  }, [open, loadPlans]);
 
   useEffect(() => {
     if (defaultSchoolId || !schoolQuery.trim()) { setSchoolResults([]); return; }
@@ -156,14 +166,30 @@ export default function InviteAdminClient({
 
               <div className="space-y-1.5">
                 <Label>Plan</Label>
-                <Select value={planId} onValueChange={setPlanId}>
-                  <SelectTrigger><SelectValue placeholder="Select a plan" /></SelectTrigger>
-                  <SelectContent>
-                    {plans.map((plan) => (
-                      <SelectItem key={plan.id} value={plan.id}>{plan.name}{!plan.isActive ? " (inactive)" : ""}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {planState === "loading" && <div className="h-10 w-full animate-pulse rounded-md bg-muted" />}
+                {planState === "error" && (
+                  <div className="flex items-center justify-between rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    <span>Couldn&apos;t load plans.</span>
+                    <button type="button" onClick={loadPlans} className="inline-flex items-center gap-1 font-medium hover:underline">
+                      <RefreshCw className="h-3.5 w-3.5" /> Retry
+                    </button>
+                  </div>
+                )}
+                {planState === "empty" && (
+                  <div className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
+                    No active plans available. Create one in Billing first.
+                  </div>
+                )}
+                {planState === "loaded" && (
+                  <Select value={planId} onValueChange={setPlanId}>
+                    <SelectTrigger><SelectValue placeholder="Select a plan" /></SelectTrigger>
+                    <SelectContent>
+                      {plans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
 
               {error && <p className="text-sm text-destructive">{error}</p>}
@@ -176,7 +202,7 @@ export default function InviteAdminClient({
             ) : (
               <>
                 <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
-                <Button onClick={save} disabled={saving}>{saving ? "Sending..." : "Send Invite"}</Button>
+                <Button onClick={save} disabled={saving || planState !== "loaded"}>{saving ? "Sending..." : "Send Invite"}</Button>
               </>
             )}
           </DialogFooter>

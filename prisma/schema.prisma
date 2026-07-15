@@ -21,6 +21,22 @@ enum SchoolStatus {
   TRIAL
   EXPIRED
   SUSPENDED
+  /**
+   * Founder has scheduled tenant-data purge; restorable until deletionScheduledFor.
+   */
+  PENDING_DELETION
+  /**
+   * Purge job has started removing tenant data; no longer restorable.
+   */
+  DELETING
+  /**
+   * Purge job failed and needs retry (see School.deletionRetryCount/deletionLastError).
+   */
+  DELETION_FAILED
+  /**
+   * Purge completed — tenant data removed; row kept as a tombstone.
+   */
+  DELETED
 }
 
 enum BillingCycle {
@@ -162,6 +178,13 @@ enum JobType {
   STUDENT_BULK_IMPORT
   SMART_TIMETABLE_GENERATION
   FILE_RETENTION_CLEANUP
+  SCHOOL_DATA_PURGE
+  // Durable outbox record for the Founder "Add School" admin invite (see
+  // src/lib/school-onboarding.ts): created in the SAME transaction as the
+  // School/SchoolSubscription/SchoolInvite rows, so a crash after commit but
+  // before the email is sent can never leave the invite permanently
+  // unsent — the standalone worker will still find and process this row.
+  INVITE_EMAIL_DELIVERY
 }
 
 enum JobStatus {
@@ -173,33 +196,33 @@ enum JobStatus {
 }
 
 model User {
-  id                     String                     @id @default(cuid())
-  name                   String
-  email                  String                     @unique
-  password               String
-  role                   UserRole                   @default(SCHOOL_OWNER)
-  schoolId               String?
-  school                 School?                    @relation("SchoolAdmins", fields: [schoolId], references: [id])
-  ownedSchool            School?                    @relation("SchoolOwner")
-  invitesSent            SchoolInvite[]             @relation("InviteSender")
-  attendancesMarked      Attendance[]
-  teacherProfile         Teacher?                   @relation("TeacherUser")
-  examResultsSubmitted   ExamResult[]               @relation("ResultSubmitter")
-  announcements          Announcement[]
-  feePaymentsRecorded    FeePayment[]               @relation("FeeRecorder")
-  leavesReviewed         LeaveRequest[]             @relation("LeaveReviewer")
-  earlyLeavesReviewed    TeacherEarlyLeaveRequest[] @relation("EarlyLeaveApprover")
-  transfersBy            SectionTransfer[]          @relation("TransferBy")
-  auditLogs              AuditLog[]                 @relation("AuditUser")
-  paymentProofsSubmitted PaymentProofSubmission[]   @relation("PaymentProofSubmitter")
-  paymentProofsReviewed  PaymentProofSubmission[]   @relation("PaymentProofReviewer")
-  invoicesCreated        Invoice[]                  @relation("InvoiceCreator")
-  teachersDeleted        Teacher[]                  @relation("TeacherDeletedBy")
+  id                                String                      @id @default(cuid())
+  name                              String
+  email                             String                      @unique
+  password                          String
+  role                              UserRole                    @default(SCHOOL_OWNER)
+  schoolId                          String?
+  school                            School?                     @relation("SchoolAdmins", fields: [schoolId], references: [id])
+  ownedSchool                       School?                     @relation("SchoolOwner")
+  invitesSent                       SchoolInvite[]              @relation("InviteSender")
+  attendancesMarked                 Attendance[]
+  teacherProfile                    Teacher?                    @relation("TeacherUser")
+  examResultsSubmitted              ExamResult[]                @relation("ResultSubmitter")
+  announcements                     Announcement[]
+  feePaymentsRecorded               FeePayment[]                @relation("FeeRecorder")
+  leavesReviewed                    LeaveRequest[]              @relation("LeaveReviewer")
+  earlyLeavesReviewed               TeacherEarlyLeaveRequest[]  @relation("EarlyLeaveApprover")
+  transfersBy                       SectionTransfer[]           @relation("TransferBy")
+  auditLogs                         AuditLog[]                  @relation("AuditUser")
+  paymentProofsSubmitted            PaymentProofSubmission[]    @relation("PaymentProofSubmitter")
+  paymentProofsReviewed             PaymentProofSubmission[]    @relation("PaymentProofReviewer")
+  invoicesCreated                   Invoice[]                   @relation("InvoiceCreator")
+  teachersDeleted                   Teacher[]                   @relation("TeacherDeletedBy")
   operationalRoleAssignmentsCreated OperationalRoleAssignment[] @relation("OperationalRoleAssignmentCreatedBy")
-  passwordResetTokens    PasswordResetToken[]
-  timetableDraftsCreated TimetableDraft[]           @relation("TimetableDraftCreatedBy")
-  createdAt              DateTime                   @default(now())
-  updatedAt              DateTime                   @updatedAt
+  passwordResetTokens               PasswordResetToken[]
+  timetableDraftsCreated            TimetableDraft[]            @relation("TimetableDraftCreatedBy")
+  createdAt                         DateTime                    @default(now())
+  updatedAt                         DateTime                    @updatedAt
 }
 
 model PasswordResetToken {
@@ -216,96 +239,117 @@ model PasswordResetToken {
 }
 
 model School {
-  id                          String                     @id @default(cuid())
-  name                        String
-  slug                        String                     @unique
-  address                     String?
-  phone                       String?
-  email                       String?
-  website                     String?
-  customDomain                String?                    @unique
-  logoUrl                     String?
-  logoFileId                  String?                    @unique
-  logoFile                    StoredFile?                @relation("SchoolLogoFile", fields: [logoFileId], references: [id], onDelete: SetNull)
-  primaryColor                String?
-  secondaryColor              String?
-  appName                     String?
-  poweredBySchoolSync         Boolean                    @default(true)
-  status                      SchoolStatus               @default(ACTIVE)
-  periodsPerDay               Int                        @default(6)
-  teacherAttendanceCutoffTime String                     @default("09:30")
+  id                                   String                        @id @default(cuid())
+  name                                 String
+  slug                                 String                        @unique
+  address                              String?
+  phone                                String?
+  email                                String?
+  website                              String?
+  customDomain                         String?                       @unique
+  logoUrl                              String?
+  logoFileId                           String?                       @unique
+  logoFile                             StoredFile?                   @relation("SchoolLogoFile", fields: [logoFileId], references: [id], onDelete: SetNull)
+  primaryColor                         String?
+  secondaryColor                       String?
+  appName                              String?
+  poweredBySchoolSync                  Boolean                       @default(true)
+  status                               SchoolStatus                  @default(ACTIVE)
+  periodsPerDay                        Int                           @default(6)
+  teacherAttendanceCutoffTime          String                        @default("09:30")
   // School Operations Command Center: IANA timezone identifier used for every
   // "today"/"current period" calculation (src/lib/school-time.ts). No prior
   // School field expressed this explicitly — the whole app has always assumed
   // server-local time IS school-local time. This default preserves that
   // existing implicit assumption (India-first product) rather than silently
   // changing behavior for schools that never configure it.
-  timezone                    String                     @default("Asia/Kolkata")
+  timezone                             String                        @default("Asia/Kolkata")
   // Smart Timetable: working days per week (1=Mon..N). Combined with
   // periodsPerDay this defines the weekly slot capacity (see
   // src/lib/timetable-capacity.ts). Nullable-free with a safe default so
   // existing schools (implicitly Mon-Sat, matching TimetableSlot.dayOfWeek
   // 1-6) behave identically until a school explicitly reconfigures it.
-  timetableWorkingDays               Int                  @default(6)
+  timetableWorkingDays                 Int                           @default(6)
   // Teacher workload rule DEFAULTS (school-wide fallback). Nullable: when
   // unset, the effective default is derived from
   // timetableWorkingDays * periodsPerDay (see teacher-workload-rules.ts) —
   // never a hardcoded "30" for every school. A TeacherWorkloadOverride row
   // can override any of these per-teacher.
-  defaultMaxWeeklyTeachingPeriods     Int?
-  defaultMinFreeTeachingPeriods       Int?
-  defaultMaxDailyTeachingPeriods      Int?
+  defaultMaxWeeklyTeachingPeriods      Int?
+  defaultMinFreeTeachingPeriods        Int?
+  defaultMaxDailyTeachingPeriods       Int?
   defaultMaxConsecutiveTeachingPeriods Int?
-  ownerId                     String?                    @unique
-  owner                       User?                      @relation("SchoolOwner", fields: [ownerId], references: [id])
-  admins                      User[]                     @relation("SchoolAdmins")
-  classes                     Class[]
-  subjects                    Subject[]
-  teachers                    Teacher[]
-  students                    Student[]
-  guardians                   Guardian[]
-  studentGuardians            StudentGuardian[]
-  invites                     SchoolInvite[]
-  attendances                 Attendance[]
-  timetableSlots              TimetableSlot[]
-  examSchemes                 ExamScheme[]
-  announcements               Announcement[]
-  holidays                    Holiday[]
-  feeStructures               FeeStructure[]
-  feePayments                 FeePayment[]
-  reportCards                 ReportCard[]
-  leaveRequests               LeaveRequest[]
-  homework                    Homework[]
-  homeworkSubmissions         HomeworkSubmission[]
-  examMilestones              ExamMilestone[]
-  notebookChecks              NotebookCheck[]
-  arrangements                Arrangement[]
-  earlyLeaveRequests          TeacherEarlyLeaveRequest[]
-  sectionTransfers            SectionTransfer[]
-  auditLogs                   AuditLog[]
-  aiInsightCache              AIInsightCache?
-  teacherCustomRoles          TeacherCustomRole[]
-  teacherRoleAssignments      TeacherRoleAssignment[]
-  reportCardTemplates         ReportCardTemplate[]
-  subscription                SchoolSubscription?
-  featureFlags                SchoolFeatureFlag[]
-  paymentProofs               PaymentProofSubmission[]
-  invoices                    Invoice[]
-  notifications               FounderNotification[]
-  storedFiles                 StoredFile[]
-  backgroundJobs              BackgroundJob[]
-  customDomains               CustomDomain[]
-  teacherWorkloadOverrides     TeacherWorkloadOverride[]
-  teacherSubjectEligibilities  TeacherSubjectEligibility[]
-  timetableSubjectRequirements TimetableSubjectRequirement[]
-  timetableDrafts              TimetableDraft[]
-  authSessions                 AuthSession[]
-  authLoginEvents              AuthLoginEvent[]
-  authFailureStates            AuthFailureState[]
-  periodSchedule                SchoolPeriodSchedule[]
-  operationalRoleAssignments    OperationalRoleAssignment[]
-  createdAt                   DateTime                   @default(now())
-  updatedAt                   DateTime                   @updatedAt
+  // Client-supplied idempotency key for the Founder "Add School" transaction
+  // (school + subscription + admin invite created atomically) — lets a
+  // retried/double submit reuse the same result instead of creating a
+  // duplicate school. Null for schools created through any other path.
+  creationIdempotencyKey               String?                       @unique
+  // ── School lifecycle: archive / scheduled deletion / purge (smallest schema
+  // change compatible with the existing SchoolStatus model — see
+  // src/lib/school-deletion.ts). preDeletionStatus captures the status to
+  // restore to if the Founder cancels/restores before the retention window
+  // elapses; the rest track the request, the purge job, and failure/retry.
+  preDeletionStatus                    SchoolStatus?
+  deletionRequestedAt                  DateTime?
+  deletionRequestedById                String?
+  deletionScheduledFor                 DateTime?
+  deletionCancelledAt                  DateTime?
+  deletionJobId                        String?
+  deletionRetryCount                   Int                           @default(0)
+  // Sanitized, bounded operator-facing message only — never raw error/stack/PII.
+  deletionLastError                    String?
+  ownerId                              String?                       @unique
+  owner                                User?                         @relation("SchoolOwner", fields: [ownerId], references: [id])
+  admins                               User[]                        @relation("SchoolAdmins")
+  classes                              Class[]
+  subjects                             Subject[]
+  teachers                             Teacher[]
+  students                             Student[]
+  guardians                            Guardian[]
+  studentGuardians                     StudentGuardian[]
+  invites                              SchoolInvite[]
+  attendances                          Attendance[]
+  timetableSlots                       TimetableSlot[]
+  examSchemes                          ExamScheme[]
+  announcements                        Announcement[]
+  holidays                             Holiday[]
+  feeStructures                        FeeStructure[]
+  feePayments                          FeePayment[]
+  reportCards                          ReportCard[]
+  leaveRequests                        LeaveRequest[]
+  homework                             Homework[]
+  homeworkSubmissions                  HomeworkSubmission[]
+  examMilestones                       ExamMilestone[]
+  notebookChecks                       NotebookCheck[]
+  arrangements                         Arrangement[]
+  earlyLeaveRequests                   TeacherEarlyLeaveRequest[]
+  sectionTransfers                     SectionTransfer[]
+  auditLogs                            AuditLog[]
+  aiInsightCache                       AIInsightCache?
+  teacherCustomRoles                   TeacherCustomRole[]
+  teacherRoleAssignments               TeacherRoleAssignment[]
+  reportCardTemplates                  ReportCardTemplate[]
+  subscription                         SchoolSubscription?
+  featureFlags                         SchoolFeatureFlag[]
+  paymentProofs                        PaymentProofSubmission[]
+  invoices                             Invoice[]
+  notifications                        FounderNotification[]
+  storedFiles                          StoredFile[]
+  backgroundJobs                       BackgroundJob[]
+  customDomains                        CustomDomain[]
+  teacherWorkloadOverrides             TeacherWorkloadOverride[]
+  teacherSubjectEligibilities          TeacherSubjectEligibility[]
+  timetableSubjectRequirements         TimetableSubjectRequirement[]
+  timetableDrafts                      TimetableDraft[]
+  authSessions                         AuthSession[]
+  authLoginEvents                      AuthLoginEvent[]
+  authFailureStates                    AuthFailureState[]
+  periodSchedule                       SchoolPeriodSchedule[]
+  operationalRoleAssignments           OperationalRoleAssignment[]
+  createdAt                            DateTime                      @default(now())
+  updatedAt                            DateTime                      @updatedAt
+
+  @@index([status, deletionScheduledFor])
 }
 
 model SchoolInvite {
@@ -336,38 +380,38 @@ model SchoolInvite {
 }
 
 model Class {
-  id            String         @id @default(cuid())
-  name          String
-  schoolId      String
-  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sections      Section[]
-  feeStructures FeeStructure[]
-  subjects      Subject[]
+  id                           String                        @id @default(cuid())
+  name                         String
+  schoolId                     String
+  school                       School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sections                     Section[]
+  feeStructures                FeeStructure[]
+  subjects                     Subject[]
   timetableSubjectRequirements TimetableSubjectRequirement[]
   timetableDrafts              TimetableDraft[]
-  createdAt     DateTime       @default(now())
+  createdAt                    DateTime                      @default(now())
 
   @@unique([name, schoolId])
 }
 
 model Section {
-  id             String            @id @default(cuid())
-  name           String
-  classId        String
-  class          Class             @relation(fields: [classId], references: [id], onDelete: Cascade)
-  students       Student[]
-  attendances    Attendance[]
-  reportCards    ReportCard[]
-  mentor         Teacher?          @relation("SectionMentor")
-  timetableSlots TimetableSlot[]
-  homework       Homework[]
-  arrangements   Arrangement[]
-  subjects       Subject[]
-  transfersFrom  SectionTransfer[] @relation("TransferFrom")
-  transfersTo    SectionTransfer[] @relation("TransferTo")
+  id                           String                        @id @default(cuid())
+  name                         String
+  classId                      String
+  class                        Class                         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  students                     Student[]
+  attendances                  Attendance[]
+  reportCards                  ReportCard[]
+  mentor                       Teacher?                      @relation("SectionMentor")
+  timetableSlots               TimetableSlot[]
+  homework                     Homework[]
+  arrangements                 Arrangement[]
+  subjects                     Subject[]
+  transfersFrom                SectionTransfer[]             @relation("TransferFrom")
+  transfersTo                  SectionTransfer[]             @relation("TransferTo")
   timetableSubjectRequirements TimetableSubjectRequirement[]
   timetableDrafts              TimetableDraft[]
-  createdAt      DateTime          @default(now())
+  createdAt                    DateTime                      @default(now())
 
   @@unique([name, classId])
 }
@@ -389,40 +433,40 @@ model Subject {
 }
 
 model Teacher {
-  id                        String                     @id @default(cuid())
-  name                      String
-  email                     String?
-  phone                     String?
-  subject                   String?
-  schoolId                  String
-  school                    School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  userId                    String?                    @unique
-  user                      User?                      @relation("TeacherUser", fields: [userId], references: [id])
-  mentorSectionId           String?                    @unique
-  mentorSection             Section?                   @relation("SectionMentor", fields: [mentorSectionId], references: [id])
-  invites                   TeacherInvite[]
-  attendances               Attendance[]
-  timetableSlots            TimetableSlot[]            @relation("TeacherSlots")
-  leaveRequests             LeaveRequest[]
-  homework                  Homework[]
-  generatedReportCards      ReportCard[]               @relation("ReportCardGenerator")
-  arrangmentsAsAbsent       Arrangement[]              @relation("ArrangementAbsent")
-  arrangmentsAsSubstitute   Arrangement[]              @relation("ArrangementSubstitute")
-  earlyLeaveRequests        TeacherEarlyLeaveRequest[]
-  roleAssignments           TeacherRoleAssignment[]
-  homeworkCompletionsMarked HomeworkStudentStatus[]    @relation("HomeworkCompletionMarker")
-  notebookChecks            NotebookCheck[]
-  workloadOverride          TeacherWorkloadOverride?
-  subjectEligibilities      TeacherSubjectEligibility[]
-  preferredForRequirements  TimetableSubjectRequirement[] @relation("PreferredTeacher")
-  timetableDraftSlots       TimetableDraftSlot[]
+  id                         String                        @id @default(cuid())
+  name                       String
+  email                      String?
+  phone                      String?
+  subject                    String?
+  schoolId                   String
+  school                     School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  userId                     String?                       @unique
+  user                       User?                         @relation("TeacherUser", fields: [userId], references: [id])
+  mentorSectionId            String?                       @unique
+  mentorSection              Section?                      @relation("SectionMentor", fields: [mentorSectionId], references: [id])
+  invites                    TeacherInvite[]
+  attendances                Attendance[]
+  timetableSlots             TimetableSlot[]               @relation("TeacherSlots")
+  leaveRequests              LeaveRequest[]
+  homework                   Homework[]
+  generatedReportCards       ReportCard[]                  @relation("ReportCardGenerator")
+  arrangmentsAsAbsent        Arrangement[]                 @relation("ArrangementAbsent")
+  arrangmentsAsSubstitute    Arrangement[]                 @relation("ArrangementSubstitute")
+  earlyLeaveRequests         TeacherEarlyLeaveRequest[]
+  roleAssignments            TeacherRoleAssignment[]
+  homeworkCompletionsMarked  HomeworkStudentStatus[]       @relation("HomeworkCompletionMarker")
+  notebookChecks             NotebookCheck[]
+  workloadOverride           TeacherWorkloadOverride?
+  subjectEligibilities       TeacherSubjectEligibility[]
+  preferredForRequirements   TimetableSubjectRequirement[] @relation("PreferredTeacher")
+  timetableDraftSlots        TimetableDraftSlot[]
   operationalRoleAssignments OperationalRoleAssignment[]
-  isDeleted                 Boolean                    @default(false)
-  deletedAt                 DateTime?
-  deletedById               String?
-  deletedBy                 User?                      @relation("TeacherDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
-  createdAt                 DateTime                   @default(now())
-  updatedAt                 DateTime                   @updatedAt
+  isDeleted                  Boolean                       @default(false)
+  deletedAt                  DateTime?
+  deletedById                String?
+  deletedBy                  User?                         @relation("TeacherDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  createdAt                  DateTime                      @default(now())
+  updatedAt                  DateTime                      @updatedAt
 
   @@index([schoolId])
   @@index([schoolId, isDeleted])
@@ -469,17 +513,17 @@ model TimetableSlot {
  * period times (see docs/school-operations-command-center.md).
  */
 model SchoolPeriodSchedule {
-  id             String   @id @default(cuid())
-  schoolId       String
-  school         School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  periodNumber   Int
-  label          String?
+  id              String  @id @default(cuid())
+  schoolId        String
+  school          School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  periodNumber    Int
+  label           String?
   // Zero-padded 24h "HH:MM" — deliberately a plain string (not DateTime): this
   // is a time-of-day, not an instant, and lexicographic string comparison of
   // zero-padded HH:MM is a correct, simple ordering — no Date/timezone parsing
   // needed to compare "is it currently within this period".
-  startTime      String
-  endTime        String
+  startTime       String
+  endTime         String
   isInstructional Boolean @default(true)
 
   @@unique([schoolId, periodNumber])
@@ -494,24 +538,28 @@ model SchoolPeriodSchedule {
 // src/lib/smart-timetable-publish.ts), which copies its slots into
 // TimetableSlot atomically. See docs/smart-timetable-architecture.md.
 
-/** Per-teacher override of the school's default workload rule fields (any field left null falls back to the School default, which itself falls back to a working-days*periodsPerDay-derived value — see teacher-workload-rules.ts). */
+/**
+ * Per-teacher override of the school's default workload rule fields (any field left null falls back to the School default, which itself falls back to a working-days*periodsPerDay-derived value — see teacher-workload-rules.ts).
+ */
 model TeacherWorkloadOverride {
-  id                        String   @id @default(cuid())
-  teacherId                 String   @unique
-  teacher                   Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  schoolId                  String
-  school                    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  maxWeeklyTeachingPeriods  Int?
-  minFreeTeachingPeriods    Int?
-  maxDailyTeachingPeriods   Int?
+  id                            String   @id @default(cuid())
+  teacherId                     String   @unique
+  teacher                       Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  schoolId                      String
+  school                        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  maxWeeklyTeachingPeriods      Int?
+  minFreeTeachingPeriods        Int?
+  maxDailyTeachingPeriods       Int?
   maxConsecutiveTeachingPeriods Int?
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 
   @@index([schoolId])
 }
 
-/** Explicit teacher-can-teach-subject eligibility (subject identified by name, matching the existing free-text convention already used by Teacher.subject / TimetableSlot.subject — there is no global per-school Subject catalog; see baseline audit in docs/smart-timetable-architecture.md). A teacher with no rows here falls back to eligibility via their single Teacher.subject field (backward compatible with every teacher seeded before this feature existed). */
+/**
+ * Explicit teacher-can-teach-subject eligibility (subject identified by name, matching the existing free-text convention already used by Teacher.subject / TimetableSlot.subject — there is no global per-school Subject catalog; see baseline audit in docs/smart-timetable-architecture.md). A teacher with no rows here falls back to eligibility via their single Teacher.subject field (backward compatible with every teacher seeded before this feature existed).
+ */
 model TeacherSubjectEligibility {
   id          String   @id @default(cuid())
   schoolId    String
@@ -525,24 +573,26 @@ model TeacherSubjectEligibility {
   @@index([schoolId, subjectName])
 }
 
-/** Weekly period requirement for one subject in one class/section's timetable (used for capacity validation + generation, not the live TimetableSlot rows directly). */
+/**
+ * Weekly period requirement for one subject in one class/section's timetable (used for capacity validation + generation, not the live TimetableSlot rows directly).
+ */
 model TimetableSubjectRequirement {
-  id                    String   @id @default(cuid())
-  schoolId              String
-  school                School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  classId               String
-  class                 Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
-  sectionId             String
-  section               Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  subjectName           String
+  id                     String   @id @default(cuid())
+  schoolId               String
+  school                 School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId                String
+  class                  Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId              String
+  section                Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectName            String
   requiredPeriodsPerWeek Int
-  minPeriodsPerDay      Int?
-  maxPeriodsPerDay      Int?
-  allowConsecutive      Boolean  @default(false)
-  preferredTeacherId    String?
+  minPeriodsPerDay       Int?
+  maxPeriodsPerDay       Int?
+  allowConsecutive       Boolean  @default(false)
+  preferredTeacherId     String?
   preferredTeacher       Teacher? @relation("PreferredTeacher", fields: [preferredTeacherId], references: [id], onDelete: SetNull)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   @@unique([sectionId, subjectName])
   @@index([schoolId])
@@ -562,29 +612,31 @@ enum TimetableDraftSource {
   HYBRID
 }
 
-/** A generated or manually-built timetable NOT yet published — never read by any operational consumer (teacher schedule, attendance, substitutions, arrangements). Publishing copies validated TimetableDraftSlot rows into live TimetableSlot atomically (see PART 21). */
+/**
+ * A generated or manually-built timetable NOT yet published — never read by any operational consumer (teacher schedule, attendance, substitutions, arrangements). Publishing copies validated TimetableDraftSlot rows into live TimetableSlot atomically (see PART 21).
+ */
 model TimetableDraft {
-  id               String                @id @default(cuid())
-  schoolId         String
-  school           School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  classId          String
-  class            Class                 @relation(fields: [classId], references: [id], onDelete: Cascade)
-  sectionId        String
-  section          Section               @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  status           TimetableDraftStatus  @default(DRAFT)
-  source           TimetableDraftSource  @default(MANUAL)
-  qualityScore     Float?
+  id             String               @id @default(cuid())
+  schoolId       String
+  school         School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId        String
+  class          Class                @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId      String
+  section        Section              @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  status         TimetableDraftStatus @default(DRAFT)
+  source         TimetableDraftSource @default(MANUAL)
+  qualityScore   Float?
   // Small generation metadata (weights version, seed, batch id, search stats).
   // Deliberately NOT where slot data lives — see TimetableDraftSlot below.
-  configSnapshot   Json?
-  diagnostics      Json?
-  generationSeed   String?
-  createdById      String?
-  createdBy        User?                 @relation("TimetableDraftCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-  publishedAt      DateTime?
-  slots            TimetableDraftSlot[]
+  configSnapshot Json?
+  diagnostics    Json?
+  generationSeed String?
+  createdById    String?
+  createdBy      User?                @relation("TimetableDraftCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  publishedAt    DateTime?
+  slots          TimetableDraftSlot[]
 
   @@index([schoolId])
   @@index([sectionId])
@@ -944,26 +996,26 @@ model LeaveRequest {
 }
 
 model Homework {
-  id              String                  @id @default(cuid())
-  schoolId        String
-  school          School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sectionId       String
-  section         Section                 @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  teacherId       String
-  teacher         Teacher                 @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  subject         String
-  title           String
-  description     String?
-  dueDate         DateTime
-  deadlineAt      DateTime
-  attachmentUrl   String?
-  attachmentFileId String?                @unique
-  attachmentFile  StoredFile?             @relation("HomeworkAttachmentFile", fields: [attachmentFileId], references: [id], onDelete: SetNull)
-  status          HomeworkStatus          @default(ACTIVE)
-  studentStatuses HomeworkStudentStatus[]
-  submissions     HomeworkSubmission[]
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  id               String                  @id @default(cuid())
+  schoolId         String
+  school           School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sectionId        String
+  section          Section                 @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  teacherId        String
+  teacher          Teacher                 @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject          String
+  title            String
+  description      String?
+  dueDate          DateTime
+  deadlineAt       DateTime
+  attachmentUrl    String?
+  attachmentFileId String?                 @unique
+  attachmentFile   StoredFile?             @relation("HomeworkAttachmentFile", fields: [attachmentFileId], references: [id], onDelete: SetNull)
+  status           HomeworkStatus          @default(ACTIVE)
+  studentStatuses  HomeworkStudentStatus[]
+  submissions      HomeworkSubmission[]
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
 
   @@index([schoolId, dueDate])
   @@index([schoolId, deadlineAt])
@@ -1011,7 +1063,7 @@ model HomeworkSubmission {
   guardian         Guardian?                        @relation(fields: [guardianId], references: [id], onDelete: SetNull)
   attachmentUrl    String?
   attachmentFileId String?                          @unique
-  attachmentFile   StoredFile?                       @relation("HomeworkSubmissionAttachmentFile", fields: [attachmentFileId], references: [id], onDelete: SetNull)
+  attachmentFile   StoredFile?                      @relation("HomeworkSubmissionAttachmentFile", fields: [attachmentFileId], references: [id], onDelete: SetNull)
   fileName         String?
   fileType         String?
   submittedAt      DateTime                         @default(now())
@@ -1216,13 +1268,11 @@ model TeacherRoleAssignment {
  * > 0 is an Alternate, in ascending priority order. Deliberately NOT a fixed
  * set of School.primaryTeacherId/alternateTeacherId columns — an arbitrary
  * number of ordered alternates must be representable.
- *
  * `roleType` is a plain String (not a Prisma enum) matching the existing
  * FeeStructure.frequency precedent in this schema — new role types (e.g. a
  * future Academic Head) can be introduced without a schema migration, while
  * only "TEACHER_OPERATIONS" is actually used/validated in this phase (see
  * OPERATIONAL_ROLE_TYPES in operational-roles.ts).
- *
  * This table is NEVER mutated by the effective-head resolver — availability
  * (leave/attendance/deletion/effective dates) is computed dynamically at read
  * time from already-existing facts (LeaveRequest, Attendance, Teacher.isDeleted).
@@ -1258,18 +1308,39 @@ model OperationalRoleAssignment {
 // stays accurate even if a plan's price changes later.
 
 model SubscriptionPlan {
-  id            String               @id @default(cuid())
-  name          String               @unique
-  slug          String               @unique
-  priceMonthly  Decimal              @db.Decimal(10, 2)
-  priceAnnual   Decimal              @db.Decimal(10, 2)
-  maxStudents   Int?
-  isActive      Boolean              @default(true)
-  subscriptions SchoolSubscription[]
-  invoices      Invoice[]
-  schoolInvites SchoolInvite[]
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  id                String               @id @default(cuid())
+  name              String               @unique
+  // Immutable after creation (never updated by the PATCH route) — serves as
+  // the ticket's "stable unique plan code"; reusing this existing field
+  // instead of adding a redundant one.
+  slug              String               @unique
+  description       String?
+  // ISO 4217 code. India-first product (School.timezone defaults to
+  // Asia/Kolkata) so INR is the default, not a guess.
+  currency          String               @default("INR")
+  // Legacy display-precision decimal prices, kept for existing read paths
+  // (BillingPlansClient, invoices) — priceMonthlyMinor/priceAnnualMinor below
+  // are the canonical integer-minor-unit source of truth going forward.
+  priceMonthly      Decimal              @db.Decimal(10, 2)
+  priceAnnual       Decimal              @db.Decimal(10, 2)
+  // Canonical monetary values in integer minor units (paise for INR) — never
+  // floating point. Kept in sync with priceMonthly/priceAnnual by the plan
+  // CRUD routes (src/app/api/founder/plans).
+  priceMonthlyMinor Int                  @default(0)
+  priceAnnualMinor  Int                  @default(0)
+  maxStudents       Int?
+  staffLimit        Int?
+  // Default feature-entitlement template for schools created on this plan —
+  // copied into that school's SchoolFeatureFlag rows at creation time; does
+  // not itself gate anything at runtime (SchoolFeatureFlag remains the single
+  // enforcement source, see src/lib/feature-flags).
+  enabledFeatures   FeatureFlagKey[]     @default([])
+  isActive          Boolean              @default(true)
+  subscriptions     SchoolSubscription[]
+  invoices          Invoice[]
+  schoolInvites     SchoolInvite[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 }
 
 model SchoolSubscription {
@@ -1286,6 +1357,37 @@ model SchoolSubscription {
   updatedAt        DateTime         @updatedAt
 
   @@index([planId])
+}
+
+// Minimal, non-PII deletion audit trail (ticket requirement: "actor ID,
+// school ID/hash, timestamps, status and aggregate deletion counts" only —
+// never student names/emails/tokens/filenames). Deliberately has NO Prisma
+// relation to School or User (plain scalar id columns, same pattern already
+// used for AuthSession/AuthLoginEvent actor fields) so this row survives
+// both the eventual School row purge AND any future User deletion — it must
+// outlive the very entities it's auditing the deletion of.
+model SchoolDeletionAudit {
+  id        String                    @id @default(cuid())
+  schoolId  String
+  actorId   String
+  action    SchoolDeletionAuditAction
+  status    String
+  // Aggregate counts only, e.g. {"students":812,"teachers":40} — never row
+  // contents, names, or identifiers.
+  counts    Json?
+  createdAt DateTime                  @default(now())
+
+  @@index([schoolId, createdAt])
+}
+
+enum SchoolDeletionAuditAction {
+  SCHEDULED
+  CANCELLED
+  RESTORED
+  PURGE_STARTED
+  PURGE_PROGRESS
+  PURGE_COMPLETED
+  PURGE_FAILED
 }
 
 // ─── Phase 3: feature flags, manual billing operations, notifications ───────
@@ -1402,12 +1504,12 @@ model StoredFile {
   updatedAt        DateTime              @updatedAt
 
   schoolLogoFor                   School?                 @relation("SchoolLogoFile")
-  reportCardTemplateLogoFor       ReportCardTemplate?      @relation("ReportCardTemplateLogoFile")
-  reportCardTemplateStampFor      ReportCardTemplate?      @relation("ReportCardTemplateStampFile")
-  reportCardTemplateSignatureFor  ReportCardTemplate?      @relation("ReportCardTemplateSignatureFile")
-  homeworkAttachmentFor           Homework?                @relation("HomeworkAttachmentFile")
-  homeworkSubmissionAttachmentFor HomeworkSubmission?      @relation("HomeworkSubmissionAttachmentFile")
-  paymentProofReceiptFor          PaymentProofSubmission?  @relation("PaymentProofReceiptFile")
+  reportCardTemplateLogoFor       ReportCardTemplate?     @relation("ReportCardTemplateLogoFile")
+  reportCardTemplateStampFor      ReportCardTemplate?     @relation("ReportCardTemplateStampFile")
+  reportCardTemplateSignatureFor  ReportCardTemplate?     @relation("ReportCardTemplateSignatureFile")
+  homeworkAttachmentFor           Homework?               @relation("HomeworkAttachmentFile")
+  homeworkSubmissionAttachmentFor HomeworkSubmission?     @relation("HomeworkSubmissionAttachmentFile")
+  paymentProofReceiptFor          PaymentProofSubmission? @relation("PaymentProofReceiptFile")
 
   @@index([schoolId, category, createdAt])
   @@index([schoolId, createdAt])
@@ -1415,11 +1517,17 @@ model StoredFile {
 }
 
 enum FileRetentionPolicy {
-  /** Has a computed expiresAt; eligible for automatic cleanup once past it. */
+  /**
+   * Has a computed expiresAt; eligible for automatic cleanup once past it.
+   */
   EXPIRING
-  /** Never auto-expires (e.g. SaaS payment proofs). */
+  /**
+   * Never auto-expires (e.g. SaaS payment proofs).
+   */
   LONG_TERM
-  /** Retained while referenced by its owning entity; not age-deleted (e.g. report-card assets, branding images). */
+  /**
+   * Retained while referenced by its owning entity; not age-deleted (e.g. report-card assets, branding images).
+   */
   REFERENCE_MANAGED
 }
 
@@ -1434,11 +1542,15 @@ enum SessionActorType {
   PARENT
   STUDENT
   TEACHER
-  /** SCHOOL_OWNER / SCHOOL_ADMIN / VICE_PRINCIPAL, treated as one policy bucket per product decision (see docs). */
+  /**
+   * SCHOOL_OWNER / SCHOOL_ADMIN / VICE_PRINCIPAL, treated as one policy bucket per product decision (see docs).
+   */
   ADMIN_STAFF
 }
 
-/** A revocable mobile/API session — the server-side counterpart to a signed mobile JWT's `sid` claim (see src/lib/auth-sessions.ts). Never stores the raw token. */
+/**
+ * A revocable mobile/API session — the server-side counterpart to a signed mobile JWT's `sid` claim (see src/lib/auth-sessions.ts). Never stores the raw token.
+ */
 model AuthSession {
   id                   String           @id @default(cuid())
   schoolId             String
@@ -1466,7 +1578,9 @@ model AuthSession {
   @@index([expiresAt])
 }
 
-/** One row per successful credential-based login — the durable rolling-24h quota source (src/lib/auth-login-quota.ts). Bounded by createdAt-indexed queries; not an unbounded history table in practice (see retention note in docs). */
+/**
+ * One row per successful credential-based login — the durable rolling-24h quota source (src/lib/auth-login-quota.ts). Bounded by createdAt-indexed queries; not an unbounded history table in practice (see retention note in docs).
+ */
 model AuthLoginEvent {
   id         String           @id @default(cuid())
   schoolId   String
@@ -1486,7 +1600,9 @@ model AuthLoginEvent {
   @@index([createdAt])
 }
 
-/** Atomic failed-password escalation state per (school + normalized identifier + auth flow) bucket — never keyed on confirmed account existence (src/lib/auth-failure.ts). */
+/**
+ * Atomic failed-password escalation state per (school + normalized identifier + auth flow) bucket — never keyed on confirmed account existence (src/lib/auth-failure.ts).
+ */
 model AuthFailureState {
   id              String    @id @default(cuid())
   bucketKey       String    @unique
@@ -1506,36 +1622,31 @@ model AuthFailureState {
 // Durable background-job records. Result payloads are bounded summaries only —
 // never large source files or generated documents.
 model BackgroundJob {
-  id             String    @id @default(cuid())
-  schoolId       String?
-  school         School?   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  type           JobType
-  status         JobStatus @default(PENDING)
-  payload        Json
-  totalItems     Int       @default(0)
-  processedItems Int       @default(0)
-  failedItems    Int       @default(0)
-  progress       Int       @default(0)
-  resultMetadata Json?
-  errorSummary   String?
-  createdById    String?
-  claimToken     String?
-  claimedAt      DateTime?
-  leaseExpiresAt DateTime?
-  attempts       Int       @default(0)
+  id                 String    @id @default(cuid())
+  schoolId           String?
+  school             School?   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  type               JobType
+  status             JobStatus @default(PENDING)
+  payload            Json
+  totalItems         Int       @default(0)
+  processedItems     Int       @default(0)
+  failedItems        Int       @default(0)
+  progress           Int       @default(0)
+  resultMetadata     Json?
+  errorSummary       String?
+  createdById        String?
+  claimToken         String?
+  claimedAt          DateTime?
+  leaseExpiresAt     DateTime?
+  attempts           Int       @default(0)
   // Stable hash of (type + normalized payload) — lets job creation reuse an
   // existing PENDING/RUNNING equivalent job instead of creating a duplicate
   // (see src/lib/job-dedup.ts). Null for job types that don't opt in.
   payloadFingerprint String?
-  createdAt      DateTime  @default(now())
-  startedAt      DateTime?
-  completedAt    DateTime?
-  updatedAt      DateTime  @updatedAt
-
-  @@index([status, createdAt])
-  @@index([schoolId, createdAt])
-  @@index([type, status])
-  @@index([schoolId, type, status, payloadFingerprint])
+  createdAt          DateTime  @default(now())
+  startedAt          DateTime?
+  completedAt        DateTime?
+  updatedAt          DateTime  @updatedAt
   // NOTE (Phase 4, PART 11): a PARTIAL UNIQUE INDEX also exists on
   // (schoolId, type, payloadFingerprint) WHERE status IN ('PENDING','RUNNING')
   // AND payloadFingerprint IS NOT NULL — hand-authored in migration
@@ -1555,6 +1666,11 @@ model BackgroundJob {
   // clause entirely. If a future job type combines schoolId: null with
   // payloadFingerprint-based dedup, this index would need `NULLS NOT
   // DISTINCT` (Postgres 15+) added to actually close that case.
+
+  @@index([status, createdAt])
+  @@index([schoolId, createdAt])
+  @@index([type, status])
+  @@index([schoolId, type, status, payloadFingerprint])
 }
 
 // ── Wave C: custom-domain ownership verification ─────────────────────────────
@@ -1573,19 +1689,19 @@ enum CustomDomainStatus {
 }
 
 model CustomDomain {
-  id                 String              @id @default(cuid())
+  id                 String             @id @default(cuid())
   schoolId           String
-  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school             School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   hostname           String
-  normalizedHostname String              @unique
-  status             CustomDomainStatus  @default(PENDING)
-  verificationMethod String              @default("DNS_TXT")
+  normalizedHostname String             @unique
+  status             CustomDomainStatus @default(PENDING)
+  verificationMethod String             @default("DNS_TXT")
   verificationToken  String
   lastCheckedAt      DateTime?
   verifiedAt         DateTime?
   failureReason      String?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([schoolId])
   @@index([status])

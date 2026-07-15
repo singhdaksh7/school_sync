@@ -9,13 +9,21 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SCHOOL_STATUSES, SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT, type SchoolStatusValue } from "@/lib/school-status";
+import type { SchoolStatus } from "@/generated/prisma/client";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
 
-export default function SchoolStatusControl({ schoolId, status }: { schoolId: string; status: SchoolStatusValue }) {
+// Deletion-lifecycle statuses aren't selectable here (see SCHOOL_STATUSES) —
+// falls back to ACTIVE as the dropdown's starting point in that case; the
+// badge above it still shows the school's true current status.
+function asSelectable(status: SchoolStatus): SchoolStatusValue {
+  return (SCHOOL_STATUSES as readonly string[]).includes(status) ? (status as SchoolStatusValue) : "ACTIVE";
+}
+
+export default function SchoolStatusControl({ schoolId, status }: { schoolId: string; status: SchoolStatus }) {
   const { t } = useTranslation();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [pendingStatus, setPendingStatus] = useState<SchoolStatusValue>(status);
+  const [pendingStatus, setPendingStatus] = useState<SchoolStatusValue>(asSelectable(status));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
