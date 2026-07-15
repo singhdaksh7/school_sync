@@ -44,14 +44,15 @@ Assert-AwsAuthenticated | Out-Null
 
 Write-Step "Reading Terraform outputs"
 $cluster        = Get-TerraformOutputRaw "ecs_cluster_name"
-$subnets        = (Get-TerraformOutputJson "public_subnet_ids") -join ","
+$subnets        = (Get-TerraformOutputJson "ecs_task_subnet_ids") -join ","
+$assignPublicIp = if ((Get-TerraformOutputRaw "ecs_assign_public_ip") -eq "true") { "ENABLED" } else { "DISABLED" }
 $securityGroup  = Get-TerraformOutputRaw "ecs_tasks_security_group_id"
 $taskDefinition = $TaskDefinitionArn
 Write-Success "cluster=$cluster"
 Write-Success "taskDefinition=$taskDefinition (caller-supplied, not resolved from Terraform)"
 
 Write-Step "Starting migration task (npx prisma migrate deploy)"
-$networkConfig = "awsvpcConfiguration={subnets=[$subnets],securityGroups=[$securityGroup],assignPublicIp=ENABLED}"
+$networkConfig = "awsvpcConfiguration={subnets=[$subnets],securityGroups=[$securityGroup],assignPublicIp=$assignPublicIp}"
 $profileArgs = Get-AwsCliProfileArgs
 
 $runResult = aws ecs run-task `
@@ -104,7 +105,7 @@ Write-Host "    container exitCode: $exitCode"
 
 if ($null -eq $exitCode -or $exitCode -ne 0) {
     Write-Fail "Migration FAILED (exitCode=$exitCode). Deployment halted — web/worker services were not touched."
-    Write-Fail "Inspect logs: aws logs tail /ecs/schoolsync-staging/migrate --since 30m"
+    Write-Fail "Inspect the migrate CloudWatch log group reported by terraform output cloudwatch_log_groups."
     exit 1
 }
 

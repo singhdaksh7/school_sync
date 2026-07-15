@@ -72,3 +72,28 @@ resource "aws_lb_listener" "https" {
     target_group_arn = aws_lb_target_group.web.arn
   }
 }
+
+resource "aws_lb_listener_rule" "redirect_alternate_domain" {
+  count = local.enable_https && local.has_redirect_domain ? 1 : 0
+
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 10
+
+  action {
+    type = "redirect"
+    redirect {
+      host        = var.domain_name
+      port        = "443"
+      protocol    = "HTTPS"
+      path        = "/#{path}"
+      query       = "#{query}"
+      status_code = "HTTP_301"
+    }
+  }
+
+  condition {
+    host_header {
+      values = [var.redirect_domain_name]
+    }
+  }
+}

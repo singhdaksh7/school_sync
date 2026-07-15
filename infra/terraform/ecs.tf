@@ -5,6 +5,29 @@ resource "aws_ecs_cluster" "main" {
     name  = "containerInsights"
     value = var.enable_container_insights ? "enabled" : "disabled"
   }
+
+  lifecycle {
+    precondition {
+      condition     = var.environment != "production" || var.ecs_use_private_subnets
+      error_message = "environment=production requires ecs_use_private_subnets=true."
+    }
+    precondition {
+      condition     = var.environment != "production" || var.enable_nat_gateway
+      error_message = "environment=production requires enable_nat_gateway=true so private ECS tasks retain outbound access."
+    }
+    precondition {
+      condition     = var.environment != "production" || (startswith(var.app_base_url, "https://") && var.domain_name != "" && var.redirect_domain_name != "")
+      error_message = "environment=production requires domain_name, redirect_domain_name, and an https:// app_base_url so both www and apex are AWS-owned."
+    }
+    precondition {
+      condition     = var.environment != "production" || var.manage_domain_dns_record || var.verification_domain_name != ""
+      error_message = "production build-out with manage_domain_dns_record=false requires verification_domain_name for verified-TLS origin checks."
+    }
+    precondition {
+      condition     = var.environment != "production" || (lower(var.email_provider) == "ses" && var.ses_domain != "")
+      error_message = "environment=production requires AWS SES with a non-empty ses_domain."
+    }
+  }
 }
 
 locals {
@@ -106,9 +129,9 @@ resource "aws_ecs_service" "web" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = aws_subnet.public[*].id
+    subnets          = local.ecs_task_subnet_ids
     security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = true
+    assign_public_ip = local.ecs_assign_public_ip
   }
 
   load_balancer {
@@ -205,9 +228,9 @@ resource "aws_ecs_service" "worker" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = aws_subnet.public[*].id
+    subnets          = local.ecs_task_subnet_ids
     security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = true
+    assign_public_ip = local.ecs_assign_public_ip
   }
 
   # Same rolling-deployment + auto-rollback posture as the web service (see

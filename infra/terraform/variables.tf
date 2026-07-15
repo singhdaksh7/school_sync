@@ -74,6 +74,12 @@ variable "enable_nat_gateway" {
   default     = false
 }
 
+variable "ecs_use_private_subnets" {
+  description = "Run ECS web/worker/migration tasks in private subnets with no public IP. Production requires this together with enable_nat_gateway=true; staging keeps the cheaper public-subnet default."
+  type        = bool
+  default     = false
+}
+
 # ── ECR (existing repository — never created/destroyed by this config) ────
 
 variable "ecr_repository_name" {
@@ -169,6 +175,18 @@ variable "db_instance_class" {
   default     = "db.t4g.micro"
 }
 
+variable "db_multi_az" {
+  description = "Create a synchronous RDS standby in a second AZ. Production requires true; staging defaults to false for cost control."
+  type        = bool
+  default     = false
+}
+
+variable "db_performance_insights_enabled" {
+  description = "Enable RDS Performance Insights. Recommended for production, optional for staging."
+  type        = bool
+  default     = false
+}
+
 variable "db_allocated_storage" {
   description = "Storage in GB (gp3)."
   type        = number
@@ -204,6 +222,12 @@ variable "redis_engine_version" {
   default     = "8.0"
 }
 
+variable "redis_multi_az" {
+  description = "Create two cache nodes with automatic failover across AZs. Production requires true; staging defaults to one node."
+  type        = bool
+  default     = false
+}
+
 # ── S3 ───────────────────────────────────────────────────────────────────
 
 variable "s3_bucket_name" {
@@ -221,7 +245,7 @@ variable "enable_public_asset_access" {
 # ── Domain / TLS (optional — required for the mobile app's HTTPS requirement) ──
 
 variable "domain_name" {
-  description = "Staging domain to serve the app on (e.g. staging-api.schoolsync.example). Leave empty to stand up HTTP-only on the ALB's default DNS name — NOT suitable for the Android app, which requires HTTPS."
+  description = "Primary domain to serve the app on. Leave empty to stand up HTTP-only on the ALB's default DNS name — not suitable for production or the Android app, which require HTTPS."
   type        = string
   default     = ""
 }
@@ -232,10 +256,34 @@ variable "route53_zone_id" {
   default     = ""
 }
 
-variable "alb_certificate_arn" {
-  description = "Existing ACM certificate ARN to use instead of provisioning one. Leave empty to have Terraform create + DNS-validate a certificate for domain_name (requires route53_zone_id, or manual validation via outputs)."
+variable "manage_domain_dns_record" {
+  description = "Whether Terraform may create/update the Route53 alias for domain_name. Set false during production build-out so ACM can validate without cutting traffic over from Vercel; set true only for the reviewed DNS cutover."
+  type        = bool
+  default     = true
+}
+
+variable "verification_domain_name" {
+  description = "Optional temporary Route53 hostname pointing to the ALB for verified-TLS production checks before domain_name is cut over (for example aws-production.zipinnovate.com)."
   type        = string
   default     = ""
+}
+
+variable "redirect_domain_name" {
+  description = "Optional alternate hostname served by the same certificate and redirected by the ALB to domain_name (for example the apex zipinnovate.com redirecting to www.zipinnovate.com)."
+  type        = string
+  default     = ""
+}
+
+variable "alb_certificate_arn" {
+  description = "Existing, genuinely externally-managed ACM certificate ARN to use instead of provisioning one. Leave empty to have Terraform create + validate its own certificate for domain_name (requires route53_zone_id, or the manual_acm_certificate_validation_complete two-stage flow below). Do NOT set this to Terraform's own managed certificate's ARN after manual validation — that flips create_managed_cert to false and plans destruction of the very certificate the listener is using. Use manual_acm_certificate_validation_complete for that case instead."
+  type        = string
+  default     = ""
+}
+
+variable "manual_acm_certificate_validation_complete" {
+  description = "Two-stage activation switch for the no-Route53-zone managed-certificate path (domain_name set, route53_zone_id empty, alb_certificate_arn empty). First apply leaves this false: Terraform creates and retains aws_acm_certificate.app but does not enable HTTPS, and surfaces the DNS validation records to create externally (see the manual_acm_validation_records_required output). Once those records propagate and ACM shows the certificate as ISSUED, set this to true and re-apply: Terraform continues managing the SAME certificate resource (never recreates it) and enables the HTTPS listener using its ARN directly. Has no effect when route53_zone_id or alb_certificate_arn is set — those paths validate/supply the certificate through their own mechanism."
+  type        = bool
+  default     = false
 }
 
 # ── Email provider selection ────────────────────────────────────────────
@@ -309,6 +357,26 @@ variable "app_base_url" {
   description = "Public base URL for NEXTAUTH_URL/AUTH_URL (e.g. https://staging-api.schoolsync.example). Leave empty to fall back to request-origin-derived links."
   type        = string
   default     = ""
+}
+
+# ── AWS-native maintenance schedules ─────────────────────────────────────
+
+variable "enable_maintenance_schedules" {
+  description = "Enable EventBridge API Destinations that enqueue school-purge and file-retention jobs through the authenticated internal maintenance endpoints. Keep false until the production domain points to this ALB."
+  type        = bool
+  default     = false
+}
+
+variable "school_purge_schedule_expression" {
+  description = "EventBridge schedule expression for discovering due school purges."
+  type        = string
+  default     = "cron(0 1 * * ? *)"
+}
+
+variable "file_retention_schedule_expression" {
+  description = "EventBridge schedule expression for enqueueing file-retention cleanup."
+  type        = string
+  default     = "cron(0 2 * * ? *)"
 }
 
 # ── Observability / cost knobs ─────────────────────────────────────────────

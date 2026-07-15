@@ -1,0 +1,28 @@
+# Production GitHub OIDC roles. Copy to ignored terraform.tfvars only in a
+# separate production-bootstrap worktree/state.
+aws_account_id        = "928805968612"
+aws_region            = "ap-south-1"
+project_name          = "schoolsync"
+deployment_environment = "production"
+
+github_repository_owner = "singhdaksh7"
+github_repository_name  = "school_sync"
+github_branch           = "main"
+github_environment      = "production"
+
+# The staging bootstrap stack already owns the account-level GitHub OIDC
+# provider. Production must reuse its exact ARN; never attempt a duplicate.
+github_oidc_provider_arn = "REPLACE_WITH_EXISTING_GITHUB_OIDC_PROVIDER_ARN"
+
+ecr_repository_name        = "schoolsync"
+ecs_cluster_name           = "schoolsync-production-cluster"
+ecs_web_service_name       = "schoolsync-production-web"
+ecs_worker_service_name    = "schoolsync-production-worker"
+ecs_execution_role_name    = "schoolsync-production-ecs-execution"
+ecs_task_web_role_name     = "schoolsync-production-ecs-task-web"
+ecs_task_minimal_role_name = "schoolsync-production-ecs-task-minimal"
+eventbridge_maintenance_role_name = "schoolsync-production-eventbridge-maintenance"
+
+terraform_state_bucket = "schoolsync-tfstate-928805968612-ap-south-1"
+terraform_state_key    = "schoolsync/production/terraform.tfstate"
+terraform_lock_table   = "schoolsync-terraform-locks"
