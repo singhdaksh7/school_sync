@@ -3,17 +3,52 @@
 # serves HTTP only on its default *.elb.amazonaws.com DNS name, which is NOT
 # sufficient for the Android app (architecture requires HTTPS). Three modes:
 #
-#   1. var.alb_certificate_arn set            -> use that cert as-is.
+#   1. var.alb_certificate_arn set            -> use that cert as-is (assumed
+#                                                 already ISSUED; this module
+#                                                 never validates it).
 #   2. var.domain_name + var.route53_zone_id  -> Terraform creates + fully
-#                                                 DNS-validates a cert, and
-#                                                 creates the ALB alias record.
+#                                                 DNS-validates a cert via
+#                                                 aws_acm_certificate_validation,
+#                                                 and creates the ALB alias
+#                                                 record. The HTTPS listener
+#                                                 (see locals.tf certificate_arn)
+#                                                 only attaches the cert once
+#                                                 that validation resource
+#                                                 resolves — never the raw,
+#                                                 possibly-still-
+#                                                 PENDING_VALIDATION
+#                                                 aws_acm_certificate ARN.
 #   3. var.domain_name only (no zone)          -> Terraform creates the cert
-#                                                 and stops; the DNS
+#                                                 (PENDING_VALIDATION) and
+#                                                 stops there — no
+#                                                 aws_acm_certificate_validation
+#                                                 resource exists for this
+#                                                 path (nothing here can
+#                                                 create the validation DNS
+#                                                 records without a zone), so
+#                                                 there is nothing safe to
+#                                                 attach to a listener yet.
+#                                                 local.enable_https is false
+#                                                 and NO HTTPS listener is
+#                                                 created in this mode. The
 #                                                 validation CNAME + the ALB
 #                                                 alias target are surfaced in
 #                                                 outputs.tf for manual
 #                                                 creation in whatever system
 #                                                 hosts DNS for that domain.
+#                                                 This is deliberately
+#                                                 two-stage: once the
+#                                                 certificate shows ISSUED in
+#                                                 ACM (after that manual DNS
+#                                                 record propagates and AWS
+#                                                 validates it), re-apply with
+#                                                 var.alb_certificate_arn set
+#                                                 to this same certificate's
+#                                                 ARN to enable HTTPS —
+#                                                 switching to mode 1 above. A
+#                                                 bare re-apply without that
+#                                                 variable set will NOT enable
+#                                                 HTTPS on its own.
 
 resource "aws_acm_certificate" "app" {
   count = local.create_managed_cert ? 1 : 0

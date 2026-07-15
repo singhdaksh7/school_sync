@@ -226,8 +226,13 @@ jobs:
               }
           }
 
-          Write-Step "Verifying running containers use the expected commit image tag/digest"
+          Write-Step "Verifying running containers use the expected commit image tag AND digest"
           $expectedImage = "${{ needs.build-and-scan.outputs.image_tag }}"
+          $expectedDigest = "${{ needs.build-and-scan.outputs.image_digest }}"
+          if ([string]::IsNullOrWhiteSpace($expectedDigest)) {
+              Write-Fail "build-and-scan.outputs.image_digest is empty — refusing to verify against a blank digest"
+              $failed = $true
+          }
           foreach ($svc in $services.services) {
               $taskArns = (aws ecs list-tasks --cluster $env:ECS_CLUSTER --service-name $svc.serviceName @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json).taskArns
               if (-not $taskArns -or $taskArns.Count -eq 0) {
@@ -238,29 +243,56 @@ jobs:
               $tasks = aws ecs describe-tasks --cluster $env:ECS_CLUSTER --tasks $taskArns @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json
               foreach ($task in $tasks.tasks) {
                   foreach ($container in $task.containers) {
-                      if ($container.image -notmatch [regex]::Escape($expectedImage)) {
-                          Write-Fail "$($svc.serviceName) container $($container.name) is running '$($container.image)', expected tag $expectedImage"
+                      # Tag match alone is NOT sufficient proof of the running image — a
+                      # tag can be re-pushed/overwritten in ECR after this workflow
+                      # recorded its digest. The digest is the only value that
+                      # actually identifies the exact image bytes running right now,
+                      # so both must match; either mismatch fails the deployment.
+                      $tagOk = $container.image -match [regex]::Escape($expectedImage)
+                      $digestOk = -not [string]::IsNullOrWhiteSpace($container.imageDigest) -and $container.imageDigest -eq $expectedDigest
+                      if (-not $tagOk -or -not $digestOk) {
+                          Write-Fail "$($svc.serviceName) container $($container.name) mismatch — image='$($container.image)' (expected tag $expectedImage), imageDigest='$($container.imageDigest)' (expected $expectedDigest)"
                           $failed = $true
                       } else {
-                          Write-Success "$($svc.serviceName) container $($container.name) running expected image ($($container.image))"
+                          Write-Success "$($svc.serviceName) container $($container.name) running expected image+digest ($($container.image), $($container.imageDigest))"
                       }
                   }
               }
           }
 
           Write-Step "Verifying ALB target health"
-          $tgArn = (aws elbv2 describe-target-groups --names "schoolsync-production-web-tg" @profileArgs --region $env:AWS_REGION --output json 2>$null | ConvertFrom-Json).TargetGroups[0].TargetGroupArn
-          if ($tgArn) {
-              $health = aws elbv2 describe-target-health --target-group-arn $tgArn @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json
-              $healthy = $health.TargetHealthDescriptions | Where-Object { $_.TargetHealth.State -eq "healthy" }
-              if (-not $healthy -or $healthy.Count -eq 0) {
-                  Write-Fail "No healthy ALB target found for the web target group"
+          # Fail closed: an unresolvable target group or a failed
+          # describe-target-health call means we cannot prove the deployment
+          # is healthy, which is exactly the situation this check exists to
+          # catch — it must never be treated as "nothing to check".
+          $tgArn = $null
+          try {
+              $tgArn = (aws elbv2 describe-target-groups --names "schoolsync-production-web-tg" @profileArgs --region $env:AWS_REGION --output json 2>$null | ConvertFrom-Json).TargetGroups[0].TargetGroupArn
+          } catch {
+              $tgArn = $null
+          }
+          if (-not $tgArn) {
+              Write-Fail "Could not resolve the production web target group (schoolsync-production-web-tg) — failing rather than skipping ALB health verification"
+              $failed = $true
+          } else {
+              $health = $null
+              try {
+                  $health = aws elbv2 describe-target-health --target-group-arn $tgArn @profileArgs --region $env:AWS_REGION --output json | ConvertFrom-Json
+              } catch {
+                  $health = $null
+              }
+              if (-not $health -or -not $health.TargetHealthDescriptions) {
+                  Write-Fail "describe-target-health failed or returned no data for target group $tgArn — failing rather than skipping ALB health verification"
                   $failed = $true
               } else {
-                  Write-Success "$($healthy.Count) healthy ALB target(s)"
+                  $healthy = $health.TargetHealthDescriptions | Where-Object { $_.TargetHealth.State -eq "healthy" }
+                  if (-not $healthy -or $healthy.Count -eq 0) {
+                      Write-Fail "No healthy ALB target found for the web target group"
+                      $failed = $true
+                  } else {
+                      Write-Success "$($healthy.Count) healthy ALB target(s)"
+                  }
               }
-          } else {
-              Write-Warn "Could not resolve the web target group by name — skipping ALB health check"
           }
 
           Write-Step "Scanning recent web/worker logs for new TLS / redirect / JSON-parse errors"

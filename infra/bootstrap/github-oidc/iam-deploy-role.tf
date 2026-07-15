@@ -94,9 +94,15 @@ locals {
   cloudwatch_alarm_arns = [
     "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-alb-unhealthy-targets",
     "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-alb-5xx",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-ecs-web-cpu",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-ecs-web-memory",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-ecs-worker-cpu",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-ecs-worker-running-tasks-low",
     "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-rds-cpu",
     "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-rds-low-storage",
     "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-rds-connections",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-redis-cpu",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-redis-memory",
   ]
 
   # Exact ElastiCache subnet group ARN for this stack.

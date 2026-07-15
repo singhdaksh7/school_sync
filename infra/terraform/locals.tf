@@ -16,8 +16,33 @@ locals {
   has_zone                = var.route53_zone_id != ""
   has_existing_cert       = var.alb_certificate_arn != ""
   create_managed_cert     = local.has_domain && !local.has_existing_cert
-  certificate_arn         = local.has_existing_cert ? var.alb_certificate_arn : (local.create_managed_cert ? aws_acm_certificate.app[0].arn : "")
-  enable_https            = local.has_domain && local.certificate_arn != ""
+
+  # NEVER aws_acm_certificate.app[0].arn directly — that ARN exists the
+  # instant the certificate resource is created, while the certificate
+  # itself is still PENDING_VALIDATION, well before DNS validation
+  # completes. The HTTPS listener (alb.tf) must not attach a cert ACM
+  # hasn't finished validating.
+  #   - An explicitly supplied var.alb_certificate_arn always wins (assumed
+  #     already ISSUED — this module does not manage or validate it).
+  #   - Route53-managed path (a zone was supplied): aws_route53_record.cert_validation
+  #     creates the DNS validation records automatically, and
+  #     aws_acm_certificate_validation.app[0].certificate_arn only resolves
+  #     once ACM confirms validation — referencing it here forces Terraform
+  #     to wait for that before the listener can use it.
+  #   - Manual/external-DNS path (domain supplied, no zone): there is no
+  #     aws_acm_certificate_validation resource at all (see its count in
+  #     acm-dns.tf), so there is nothing safe to attach yet. certificate_arn
+  #     is "" and enable_https below is false — Terraform creates the
+  #     PENDING_VALIDATION certificate and surfaces the validation records
+  #     to create externally (outputs.tf's manual_acm_validation_records_required)
+  #     but does NOT stand up an HTTPS listener from that alone. Once the
+  #     certificate shows ISSUED in ACM, re-apply with var.alb_certificate_arn
+  #     set to this same certificate's ARN (switching to the first branch
+  #     above) to enable HTTPS — a deliberate two-stage process, not a bug.
+  certificate_arn = local.has_existing_cert ? var.alb_certificate_arn : (
+    local.create_managed_cert && local.has_zone ? aws_acm_certificate_validation.app[0].certificate_arn : ""
+  )
+  enable_https = local.has_domain && local.certificate_arn != ""
 
   create_ses = var.ses_domain != ""
 

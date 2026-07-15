@@ -133,7 +133,7 @@ describe("Deploy role: application-stack terraform-plan refresh permissions", ()
     expect(stmt).toMatch(/resources\s*=\s*\[local\.app_s3_bucket_arn_pattern\]/);
   });
 
-  it("cloudwatch:ListTagsForResource is scoped to exactly the 5 confirmed alarm ARNs, enumerated (not a wildcard resource)", () => {
+  it("cloudwatch:ListTagsForResource is scoped to exactly all 11 tagged alarm ARNs created by cloudwatch.tf, enumerated (not a wildcard resource)", () => {
     const stmt = findSid("TerraformPlanCloudWatchAlarmTagsReadOnly");
     expect(stmt).toMatch(/actions\s*=\s*\["cloudwatch:ListTagsForResource"\]/);
     expect(stmt).toMatch(/resources\s*=\s*local\.cloudwatch_alarm_arns/);
@@ -145,8 +145,20 @@ describe("Deploy role: application-stack terraform-plan refresh permissions", ()
       .split(",")
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
-    expect(arnLines).toHaveLength(5);
-    for (const name of ["alb-unhealthy-targets", "alb-5xx", "rds-cpu", "rds-low-storage", "rds-connections"]) {
+    expect(arnLines).toHaveLength(11);
+    for (const name of [
+      "alb-unhealthy-targets",
+      "alb-5xx",
+      "ecs-web-cpu",
+      "ecs-web-memory",
+      "ecs-worker-cpu",
+      "ecs-worker-running-tasks-low",
+      "rds-cpu",
+      "rds-low-storage",
+      "rds-connections",
+      "redis-cpu",
+      "redis-memory",
+    ]) {
       expect(arnsMatch![1]).toMatch(new RegExp(`\\$\\{local\\.application_name_prefix\\}-${name}`));
     }
     // Every entry is a concrete alarm ARN, never a bare wildcard resource.

@@ -101,7 +101,7 @@ output "acm_certificate_arn" {
 }
 
 output "manual_acm_validation_records_required" {
-  description = "Non-null only when a certificate was requested (var.domain_name set) but no Route 53 zone was supplied — create these DNS records wherever domain_name's DNS is actually hosted, then re-run terraform apply."
+  description = "Non-null only when a certificate was requested (var.domain_name set) but no Route 53 zone was supplied. Create these DNS records wherever domain_name's DNS is actually hosted. This is a two-stage process: re-running terraform apply alone does NOT enable HTTPS, because no aws_acm_certificate_validation resource exists for this path (nothing here can create the validation records without a zone) — local.certificate_arn stays empty and no HTTPS listener is created until the certificate is safely validated. Once ACM shows the certificate as ISSUED (check via the AWS console/CLI after the DNS record propagates), re-apply with var.alb_certificate_arn set to acm_certificate_arn's value to enable HTTPS."
   value = local.create_managed_cert && !local.has_zone ? [
     for dvo in aws_acm_certificate.app[0].domain_validation_options : {
       name  = dvo.resource_record_name
