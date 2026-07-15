@@ -105,9 +105,22 @@ enum LeaveStatus {
 }
 
 enum HomeworkStatus {
+  DRAFT
+  SCHEDULED
   ACTIVE
   CLOSED
   CANCELLED
+}
+
+// Homework 2.0: explicit assessment mode chosen at creation time.
+// CHECKING_ONLY: notebook/completion checking, marks never accepted.
+// GRADED: marks required (Homework.maxMarks) and validated per student.
+// Legacy rows (created before this mode existed) are backfilled
+// deterministically — see migration 20260716000000_homework_v2's comment
+// and docs in src/lib/homework.ts.
+enum HomeworkAssessmentMode {
+  CHECKING_ONLY
+  GRADED
 }
 
 enum HomeworkStudentSubmissionStatus {
@@ -996,32 +1009,50 @@ model LeaveRequest {
 }
 
 model Homework {
-  id               String                  @id @default(cuid())
-  schoolId         String
-  school           School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sectionId        String
-  section          Section                 @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  teacherId        String
-  teacher          Teacher                 @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  subject          String
-  title            String
-  description      String?
-  dueDate          DateTime
-  deadlineAt       DateTime
-  attachmentUrl    String?
-  attachmentFileId String?                 @unique
-  attachmentFile   StoredFile?             @relation("HomeworkAttachmentFile", fields: [attachmentFileId], references: [id], onDelete: SetNull)
-  status           HomeworkStatus          @default(ACTIVE)
-  studentStatuses  HomeworkStudentStatus[]
-  submissions      HomeworkSubmission[]
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  id                 String                  @id @default(cuid())
+  schoolId           String
+  school             School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sectionId          String
+  section            Section                 @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  teacherId          String
+  teacher            Teacher                 @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject            String
+  title              String
+  description        String?
+  // Homework 2.0: dueDate is the start/publish date+time (unchanged column,
+  // corrected semantics — every pre-2.0 row has dueDate == deadlineAt, which
+  // remains valid since a homework "starting" and "due" at the same instant
+  // is a degenerate-but-legal case, not a data error). deadlineAt remains the
+  // student submission deadline. checkingDeadlineAt is new and optional.
+  dueDate            DateTime
+  deadlineAt         DateTime
+  checkingDeadlineAt DateTime?
+  // Homework 2.0 assessment mode. Defaults to CHECKING_ONLY for the Prisma
+  // client's own writes; the migration backfills existing rows to GRADED
+  // wherever a historical maxScore was ever recorded (see the migration
+  // comment and src/lib/homework.ts's ASSESSMENT_MODE_BACKFILL doc block).
+  assessmentMode     HomeworkAssessmentMode  @default(CHECKING_ONLY)
+  // Required and > 0 only for GRADED homework going forward (enforced in
+  // the API/service layer, not a DB constraint, because legacy backfilled
+  // GRADED rows may not have a single well-defined historical max — see
+  // src/lib/homework.ts). Must stay null for CHECKING_ONLY (DB-enforced,
+  // see the migration's CHECK constraint).
+  maxMarks           Float?
+  attachmentUrl      String?
+  attachmentFileId   String?                 @unique
+  attachmentFile     StoredFile?             @relation("HomeworkAttachmentFile", fields: [attachmentFileId], references: [id], onDelete: SetNull)
+  status             HomeworkStatus          @default(ACTIVE)
+  studentStatuses    HomeworkStudentStatus[]
+  submissions        HomeworkSubmission[]
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
   @@index([schoolId, dueDate])
   @@index([schoolId, deadlineAt])
   @@index([schoolId, status])
   @@index([sectionId, subject])
   @@index([teacherId])
+  @@index([schoolId, assessmentMode])
 }
 
 model HomeworkStudentStatus {
@@ -1036,7 +1067,18 @@ model HomeworkStudentStatus {
   submittedAt       DateTime?
   score             Float?
   maxScore          Float?
+  // PRIVATE — teacher-facing only. NEVER serialize this to a student/guardian
+  // API response (see src/lib/homework.ts's toStudentVisibleHomework and
+  // tests/homework-v2-private-remarks.test.ts). Historically this field WAS
+  // leaked to students (a pre-2.0 bug fixed here) — existing content is left
+  // exactly as-is (never deleted/rewritten), but is no longer displayed to
+  // students/guardians; teachers must use studentFeedback below for anything
+  // a student should see going forward.
   teacherRemark     String?
+  // Homework 2.0: student/guardian-visible feedback, distinct from the
+  // private teacherRemark above. Null for every pre-2.0 row (deliberately
+  // never backfilled from teacherRemark — see the migration comment).
+  studentFeedback   String?
   parentVisible     Boolean                          @default(true)
   checkedAt         DateTime?
   markedAt          DateTime?
@@ -1070,7 +1112,11 @@ model HomeworkSubmission {
   status           HomeworkSubmissionStatus
   submissionStatus HomeworkAcademicSubmissionStatus @default(PENDING)
   submissionMethod HomeworkSubmissionMethod         @default(NONE)
+  // PRIVATE — see the identical note on HomeworkStudentStatus.teacherRemark
+  // above. Never serialized to a student/guardian API response.
   teacherRemark    String?
+  // Homework 2.0: student/guardian-visible feedback for this submission.
+  studentFeedback  String?
   score            Float?
   maxScore         Float?
   reviewedAt       DateTime?

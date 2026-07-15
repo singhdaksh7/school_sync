@@ -8,6 +8,7 @@ import {
   getTeacherByUserId,
   parseOptionalNumber,
   validateScore,
+  validateStudentMarks,
 } from "@/lib/homework";
 import { resolveManagedOrLegacyUrl } from "@/lib/file-service";
 
@@ -56,13 +57,26 @@ export async function PATCH(
   const scoreError = validateScore(score, maxScore);
   if (scoreError) return NextResponse.json({ error: scoreError }, { status: 400 });
 
+  const marksError = validateStudentMarks({
+    assessmentMode: homework.assessmentMode,
+    homeworkMaxMarks: homework.maxMarks,
+    score,
+  });
+  if (marksError) return NextResponse.json({ error: marksError }, { status: 400 });
+
   const teacherRemark = typeof body.teacherRemark === "string" && body.teacherRemark.trim()
     ? body.teacherRemark.trim()
+    : null;
+  const studentFeedback = typeof body.studentFeedback === "string" && body.studentFeedback.trim()
+    ? body.studentFeedback.trim()
     : null;
   if (body.status === "REJECTED" && !teacherRemark) {
     return NextResponse.json({ error: "Teacher remark is required when rejecting homework" }, { status: 400 });
   }
-  if (body.status === "REVIEWED" && (score === null || maxScore === null)) {
+  // GRADED homework still requires a score when marking REVIEWED (matches
+  // pre-2.0 behavior exactly); CHECKING_ONLY never requires or accepts one
+  // (validateStudentMarks above already rejected any non-null score).
+  if (body.status === "REVIEWED" && homework.assessmentMode === "GRADED" && (score === null || maxScore === null)) {
     return NextResponse.json({ error: "Score and max score are required when checking homework" }, { status: 400 });
   }
 
@@ -77,6 +91,7 @@ export async function PATCH(
         score,
         maxScore,
         teacherRemark,
+        studentFeedback,
         reviewedAt,
         checkedAt: reviewedAt,
         submissionStatus,
@@ -99,6 +114,7 @@ export async function PATCH(
         score,
         maxScore,
         teacherRemark,
+        studentFeedback,
         checkedAt: reviewedAt,
       },
       update: {
@@ -109,6 +125,7 @@ export async function PATCH(
         score,
         maxScore,
         teacherRemark,
+        studentFeedback,
         checkedAt: reviewedAt,
       },
     });

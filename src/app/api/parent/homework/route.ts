@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { resolveManagedOrLegacyUrl } from "@/lib/file-service";
+import { isHomeworkVisibleToStudents, omitPrivateRemark, shouldShowMaxMarks } from "@/lib/homework";
 
 export async function GET(req: NextRequest) {
   try {
@@ -69,12 +70,15 @@ export async function GET(req: NextRequest) {
         })
       : [];
 
-    const homework = await Promise.all(statuses.map(async (item) => {
+    const visibleStatuses = statuses.filter((item) => isHomeworkVisibleToStudents(item.homework));
+
+    const homework = await Promise.all(visibleStatuses.map(async (item) => {
       const submission = item.homework.submissions.find((submitted) => submitted.studentId === item.studentId) || null;
       const [attachmentUrl, submissionAttachmentUrl] = await Promise.all([
         resolveManagedOrLegacyUrl(item.homework),
         submission ? resolveManagedOrLegacyUrl(submission) : Promise.resolve(null),
       ]);
+      const graded = shouldShowMaxMarks(item.homework.assessmentMode);
       return {
       id: item.id,
       homeworkId: item.homeworkId,
@@ -85,16 +89,21 @@ export async function GET(req: NextRequest) {
       subject: item.homework.subject,
       dueDate: item.homework.dueDate,
       deadlineAt: item.homework.deadlineAt,
+      checkingDeadlineAt: item.homework.checkingDeadlineAt,
+      assessmentMode: item.homework.assessmentMode,
+      maxMarks: graded ? item.homework.maxMarks : null,
       attachmentUrl,
       homeworkStatus: item.homework.status,
       submissionStatus: submission?.submissionStatus ?? item.submissionStatus,
       submissionMethod: submission?.submissionMethod ?? item.submissionMethod,
       submittedAt: submission?.submittedAt ?? item.submittedAt,
       checkedAt: submission?.checkedAt ?? item.checkedAt,
-      score: submission?.score ?? item.score,
-      maxScore: submission?.maxScore ?? item.maxScore,
-      teacherRemark: submission?.teacherRemark ?? item.teacherRemark,
-      submission: submission ? { ...submission, attachmentUrl: submissionAttachmentUrl } : null,
+      score: graded ? (submission?.score ?? item.score) : null,
+      maxScore: graded ? (submission?.maxScore ?? item.maxScore) : null,
+      // teacherRemark is PRIVATE — never sent to a guardian. studentFeedback
+      // is the only teacher note a guardian may see.
+      studentFeedback: submission?.studentFeedback ?? item.studentFeedback,
+      submission: submission ? { ...omitPrivateRemark(submission), attachmentUrl: submissionAttachmentUrl } : null,
       teacher: item.homework.teacher,
       section: item.homework.section,
       };

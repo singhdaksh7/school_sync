@@ -3,14 +3,20 @@ import { prisma } from "@/lib/prisma";
 import { getTeacherAuth } from "@/lib/mobile-auth";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { logAudit } from "@/lib/audit";
 import {
+  editHomeworkSchema,
   getHomeworkForTeacherAccess,
   getTeacherByUserId,
   homeworkIncludeForList,
   normalizeSubject,
   parseRequiredDate,
+  validateAssessmentMode,
+  validateHomeworkDates,
   validateHomeworkTeacherAssignment,
+  validateStatusTransition,
   withResolvedAttachments,
+  type HomeworkLifecycleStatus,
 } from "@/lib/homework";
 
 export async function PATCH(
@@ -38,43 +44,83 @@ export async function PATCH(
   });
   if (denied) return denied;
 
-  const body = await req.json();
+  const rawBody = await req.json().catch(() => null);
+  const parsed = editHomeworkSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
+  }
+  const body = parsed.data;
+
   const data: {
     title?: string;
     description?: string | null;
     dueDate?: Date;
     deadlineAt?: Date;
+    checkingDeadlineAt?: Date | null;
     attachmentUrl?: string | null;
-    status?: "ACTIVE" | "CLOSED" | "CANCELLED";
+    assessmentMode?: "CHECKING_ONLY" | "GRADED";
+    maxMarks?: number | null;
+    status?: HomeworkLifecycleStatus;
     sectionId?: string;
     subject?: string;
   } = {};
 
-  if (body.title !== undefined) {
-    const title = typeof body.title === "string" ? body.title.trim() : "";
-    if (!title) return NextResponse.json({ error: "Title is required" }, { status: 400 });
-    data.title = title;
-  }
-  if (body.description !== undefined) {
-    data.description = typeof body.description === "string" && body.description.trim() ? body.description.trim() : null;
-  }
-  if (body.attachmentUrl !== undefined) {
-    data.attachmentUrl = typeof body.attachmentUrl === "string" && body.attachmentUrl.trim() ? body.attachmentUrl.trim() : null;
-  }
+  if (body.title !== undefined) data.title = body.title;
+  if (body.description !== undefined) data.description = body.description?.trim() || null;
+  if (body.attachmentUrl !== undefined) data.attachmentUrl = body.attachmentUrl?.trim() || null;
+
   if (body.dueDate !== undefined) {
     const dueDate = parseRequiredDate(body.dueDate);
-    if (!dueDate) return NextResponse.json({ error: "Valid due date is required" }, { status: 400 });
+    if (!dueDate) return NextResponse.json({ error: "Valid start date is required" }, { status: 400 });
     data.dueDate = dueDate;
-    data.deadlineAt = dueDate;
   }
-  if (body.status !== undefined) {
-    if (!["ACTIVE", "CLOSED", "CANCELLED"].includes(body.status)) {
-      return NextResponse.json({ error: "Invalid homework status" }, { status: 400 });
+  if (body.deadlineAt !== undefined) {
+    const deadlineAt = parseRequiredDate(body.deadlineAt);
+    if (!deadlineAt) return NextResponse.json({ error: "Valid submission deadline is required" }, { status: 400 });
+    data.deadlineAt = deadlineAt;
+  }
+  if (body.checkingDeadlineAt !== undefined) {
+    if (body.checkingDeadlineAt === null) {
+      data.checkingDeadlineAt = null;
+    } else {
+      const checkingDeadlineAt = parseRequiredDate(body.checkingDeadlineAt);
+      if (!checkingDeadlineAt) return NextResponse.json({ error: "Valid checking deadline is required" }, { status: 400 });
+      data.checkingDeadlineAt = checkingDeadlineAt;
     }
-    data.status = body.status;
   }
 
-  const nextSectionId = typeof body.sectionId === "string" ? body.sectionId : homework.sectionId;
+  const effectiveDueDate = data.dueDate ?? homework.dueDate;
+  const effectiveDeadlineAt = data.deadlineAt ?? homework.deadlineAt;
+  const effectiveCheckingDeadlineAt = data.checkingDeadlineAt !== undefined ? data.checkingDeadlineAt : homework.checkingDeadlineAt;
+  if (data.dueDate || data.deadlineAt || data.checkingDeadlineAt !== undefined) {
+    const dateError = validateHomeworkDates({
+      dueDate: effectiveDueDate,
+      deadlineAt: effectiveDeadlineAt,
+      checkingDeadlineAt: effectiveCheckingDeadlineAt,
+    });
+    if (dateError) return NextResponse.json({ error: dateError }, { status: 400 });
+  }
+
+  if (body.assessmentMode !== undefined || body.maxMarks !== undefined) {
+    const effectiveMode = body.assessmentMode ?? homework.assessmentMode;
+    const effectiveMaxMarks = body.maxMarks !== undefined ? body.maxMarks : homework.maxMarks;
+    const modeError = validateAssessmentMode({ assessmentMode: effectiveMode, maxMarks: effectiveMaxMarks });
+    if (modeError) return NextResponse.json({ error: modeError }, { status: 400 });
+    data.assessmentMode = effectiveMode;
+    data.maxMarks = effectiveMaxMarks;
+  }
+
+  let auditAction: "HOMEWORK_UPDATED" | "HOMEWORK_PUBLISHED" | "HOMEWORK_CLOSED" | "HOMEWORK_CANCELLED" = "HOMEWORK_UPDATED";
+  if (body.status !== undefined) {
+    const transitionError = validateStatusTransition(homework.status, body.status);
+    if (transitionError) return NextResponse.json({ error: transitionError }, { status: 400 });
+    data.status = body.status;
+    if (body.status === "ACTIVE" && homework.status !== "ACTIVE") auditAction = "HOMEWORK_PUBLISHED";
+    else if (body.status === "CLOSED") auditAction = "HOMEWORK_CLOSED";
+    else if (body.status === "CANCELLED") auditAction = "HOMEWORK_CANCELLED";
+  }
+
+  const nextSectionId = body.sectionId ?? homework.sectionId;
   const nextSubject = body.subject !== undefined ? normalizeSubject(body.subject) : homework.subject;
   if (body.subject !== undefined && !nextSubject) {
     return NextResponse.json({ error: "Subject is required" }, { status: 400 });
@@ -115,6 +161,17 @@ export async function PATCH(
       include: homeworkIncludeForList(),
     });
   });
+
+  if (updated) {
+    await logAudit({
+      action: auditAction,
+      entityType: "Homework",
+      entityId: updated.id,
+      metadata: { title: updated.title, status: updated.status, assessmentMode: updated.assessmentMode },
+      userId: teacherAuth.userId,
+      schoolId: teacher.schoolId,
+    });
+  }
 
   return NextResponse.json(updated ? await withResolvedAttachments(updated) : updated);
 }

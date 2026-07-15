@@ -5,11 +5,14 @@ import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { logAudit } from "@/lib/audit";
 import {
+  createHomeworkSchema,
   getTeacherAssignments,
   getTeacherByUserId,
   homeworkIncludeForList,
   normalizeSubject,
   parseRequiredDate,
+  validateAssessmentMode,
+  validateHomeworkDates,
   validateHomeworkTeacherAssignment,
   withResolvedAttachments,
 } from "@/lib/homework";
@@ -55,22 +58,44 @@ export async function POST(req: Request) {
   const featureDenied = await requireSchoolFeature(teacher.schoolId, "HOMEWORK");
   if (featureDenied) return featureDenied;
 
-  const body = await req.json();
-  const title = typeof body.title === "string" ? body.title.trim() : "";
-  const subject = normalizeSubject(body.subject);
-  const sectionId = typeof body.sectionId === "string" ? body.sectionId : "";
-  const dueDate = parseRequiredDate(body.dueDate);
-  const description = typeof body.description === "string" && body.description.trim() ? body.description.trim() : null;
-  const attachmentUrl = typeof body.attachmentUrl === "string" && body.attachmentUrl.trim() ? body.attachmentUrl.trim() : null;
+  const rawBody = await req.json().catch(() => null);
+  const parsed = createHomeworkSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
+  }
+  const body = parsed.data;
 
-  if (!title) return NextResponse.json({ error: "Title is required" }, { status: 400 });
+  const title = body.title;
+  const subject = normalizeSubject(body.subject);
+  const sectionId = body.sectionId;
+  const dueDate = parseRequiredDate(body.dueDate);
+  // Backward-compatible default: a caller that never sends deadlineAt gets
+  // deadlineAt === dueDate, exactly like the pre-2.0 endpoint always did.
+  const deadlineAt = body.deadlineAt ? parseRequiredDate(body.deadlineAt) : dueDate;
+  const checkingDeadlineAt = body.checkingDeadlineAt ? parseRequiredDate(body.checkingDeadlineAt) : null;
+  const description = body.description?.trim() || null;
+  const attachmentUrl = body.attachmentUrl?.trim() || null;
+  const maxMarks = body.maxMarks ?? null;
+
   if (!subject) return NextResponse.json({ error: "Subject is required" }, { status: 400 });
-  if (!sectionId) return NextResponse.json({ error: "Section is required" }, { status: 400 });
-  if (!dueDate) return NextResponse.json({ error: "Valid due date is required" }, { status: 400 });
+  if (!dueDate) return NextResponse.json({ error: "Valid start date is required" }, { status: 400 });
+  if (!deadlineAt) return NextResponse.json({ error: "Valid submission deadline is required" }, { status: 400 });
+  if (body.checkingDeadlineAt && !checkingDeadlineAt) {
+    return NextResponse.json({ error: "Valid checking deadline is required" }, { status: 400 });
+  }
+
+  const dateError = validateHomeworkDates({ dueDate, deadlineAt, checkingDeadlineAt });
+  if (dateError) return NextResponse.json({ error: dateError }, { status: 400 });
+
+  const modeError = validateAssessmentMode({ assessmentMode: body.assessmentMode, maxMarks });
+  if (modeError) return NextResponse.json({ error: modeError }, { status: 400 });
 
   const denied = await requireTeacherPermission(teacher.id, teacher.schoolId, "HOMEWORK", "CREATE", { sectionId });
   if (denied) return denied;
 
+  // Never trust a client-supplied schoolId/teacherId — both come exclusively
+  // from the authenticated teacher record resolved above, never from the
+  // request body (createHomeworkSchema has no such fields at all).
   const assignmentError = await validateHomeworkTeacherAssignment(teacher.schoolId, teacher.id, sectionId, subject);
   if (assignmentError) return NextResponse.json({ error: assignmentError }, { status: 403 });
 
@@ -89,8 +114,12 @@ export async function POST(req: Request) {
         title,
         description,
         dueDate,
-        deadlineAt: dueDate,
+        deadlineAt,
+        checkingDeadlineAt,
+        assessmentMode: body.assessmentMode,
+        maxMarks,
         attachmentUrl,
+        status: body.status,
       },
     });
 
@@ -112,10 +141,16 @@ export async function POST(req: Request) {
 
   if (created) {
     await logAudit({
-      action: "HOMEWORK_CREATED",
+      action: created.status === "DRAFT" ? "HOMEWORK_CREATED" : "HOMEWORK_PUBLISHED",
       entityType: "Homework",
       entityId: created.id,
-      metadata: { title: created.title, subject: created.subject, sectionId: created.sectionId },
+      metadata: {
+        title: created.title,
+        subject: created.subject,
+        sectionId: created.sectionId,
+        assessmentMode: created.assessmentMode,
+        status: created.status,
+      },
       userId: teacherAuth.userId,
       schoolId: teacher.schoolId,
     });
