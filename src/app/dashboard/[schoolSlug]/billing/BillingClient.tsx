@@ -12,7 +12,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { formatDate, formatCurrency } from "@/lib/utils";
-import { SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT, type SchoolStatusValue } from "@/lib/school-status";
+import { SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT } from "@/lib/school-status";
+import type { SchoolStatus } from "@/generated/prisma/client";
 import { PAYMENT_PROOF_STATUS_LABEL, PAYMENT_PROOF_STATUS_BADGE_VARIANT, INVOICE_STATUS_LABEL, INVOICE_STATUS_BADGE_VARIANT, type PaymentProofStatusValue, type InvoiceStatusValue } from "@/lib/billing-status";
 
 const MAX_FILE_BYTES = 2_000_000;
@@ -55,7 +56,7 @@ export default function BillingClient({
   subscription,
 }: {
   schoolId: string;
-  status: SchoolStatusValue;
+  status: SchoolStatus;
   isOverdue: boolean;
   subscription: SubscriptionSummary;
 }) {

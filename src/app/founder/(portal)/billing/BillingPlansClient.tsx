@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Pencil, CreditCard } from "lucide-react";
+import { Plus, Pencil, Trash2, CreditCard } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,20 +12,45 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { FEATURE_FLAG_KEYS, FEATURE_FLAG_LABELS, type FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
 
 type Plan = {
   id: string;
   name: string;
+  description: string | null;
+  currency: string;
   priceMonthly: string;
   priceAnnual: string;
   maxStudents: number | null;
+  staffLimit: number | null;
+  enabledFeatures: FeatureFlagKeyValue[];
   isActive: boolean;
   _count: { subscriptions: number };
 };
 
-type FormState = { name: string; priceMonthly: string; priceAnnual: string; maxStudents: string; isActive: boolean };
+type FormState = {
+  name: string;
+  description: string;
+  currency: string;
+  priceMonthly: string;
+  priceAnnual: string;
+  maxStudents: string;
+  staffLimit: string;
+  enabledFeatures: FeatureFlagKeyValue[];
+  isActive: boolean;
+};
 
-const EMPTY_FORM: FormState = { name: "", priceMonthly: "", priceAnnual: "", maxStudents: "", isActive: true };
+const EMPTY_FORM: FormState = {
+  name: "",
+  description: "",
+  currency: "INR",
+  priceMonthly: "",
+  priceAnnual: "",
+  maxStudents: "",
+  staffLimit: "",
+  enabledFeatures: [...FEATURE_FLAG_KEYS],
+  isActive: true,
+};
 
 export default function BillingPlansClient() {
   const { t } = useTranslation();
@@ -37,6 +62,8 @@ export default function BillingPlansClient() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -63,13 +90,26 @@ export default function BillingPlansClient() {
     setEditingPlan(plan);
     setForm({
       name: plan.name,
+      description: plan.description ?? "",
+      currency: plan.currency,
       priceMonthly: plan.priceMonthly,
       priceAnnual: plan.priceAnnual,
       maxStudents: plan.maxStudents?.toString() ?? "",
+      staffLimit: plan.staffLimit?.toString() ?? "",
+      enabledFeatures: plan.enabledFeatures,
       isActive: plan.isActive,
     });
     setFormError(null);
     setDialogOpen(true);
+  }
+
+  function toggleFeature(key: FeatureFlagKeyValue) {
+    setForm((f) => ({
+      ...f,
+      enabledFeatures: f.enabledFeatures.includes(key)
+        ? f.enabledFeatures.filter((k) => k !== key)
+        : [...f.enabledFeatures, key],
+    }));
   }
 
   async function save() {
@@ -82,9 +122,13 @@ export default function BillingPlansClient() {
 
     const payload = {
       name: form.name.trim(),
+      description: form.description.trim() || null,
+      currency: form.currency.trim().toUpperCase() || "INR",
       priceMonthly: Number(form.priceMonthly) || 0,
       priceAnnual: Number(form.priceAnnual) || 0,
       maxStudents: form.maxStudents.trim() ? Number(form.maxStudents) : null,
+      staffLimit: form.staffLimit.trim() ? Number(form.staffLimit) : null,
+      enabledFeatures: form.enabledFeatures,
       ...(editingPlan ? { isActive: form.isActive } : {}),
     };
 
@@ -105,6 +149,23 @@ export default function BillingPlansClient() {
     }
   }
 
+  async function deletePlan(plan: Plan) {
+    if (plan._count.subscriptions > 0) return; // button is disabled in this case; defense in depth
+    if (!window.confirm(`Delete the "${plan.name}" plan? This cannot be undone.`)) return;
+    setDeletingId(plan.id);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/founder/plans/${plan.id}`, { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || t("founder.requestFailed"));
+      load();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : t("auth.somethingWentWrong"));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex items-center justify-between">
@@ -116,6 +177,10 @@ export default function BillingPlansClient() {
           <Plus className="h-4 w-4" /> {t("founder.createPlan")}
         </Button>
       </div>
+
+      {deleteError && (
+        <div className="bg-destructive/10 text-destructive text-sm px-4 py-3 rounded-md border border-destructive/30">{deleteError}</div>
+      )}
 
       <Card className="border-border">
         <CardHeader>
@@ -163,9 +228,21 @@ export default function BillingPlansClient() {
                         <Badge variant={plan.isActive ? "success" : "secondary"}>{plan.isActive ? t("founder.active") : t("founder.inactive")}</Badge>
                       </td>
                       <td className="py-3 text-right">
-                        <Button variant="outline" size="sm" onClick={() => openEdit(plan)} className="gap-1.5">
-                          <Pencil className="h-3.5 w-3.5" /> {t("common.edit")}
-                        </Button>
+                        <div className="flex justify-end gap-1.5">
+                          <Button variant="outline" size="sm" onClick={() => openEdit(plan)} className="gap-1.5">
+                            <Pencil className="h-3.5 w-3.5" /> {t("common.edit")}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deletePlan(plan)}
+                            disabled={plan._count.subscriptions > 0 || deletingId === plan.id}
+                            title={plan._count.subscriptions > 0 ? "Assigned to a school — deactivate instead of deleting" : undefined}
+                            className="gap-1.5 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -199,8 +276,29 @@ export default function BillingPlansClient() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>{t("founder.maxStudentsOptional")}</Label>
-              <Input type="number" min="0" value={form.maxStudents} onChange={(e) => setForm((f) => ({ ...f, maxStudents: e.target.value }))} placeholder={t("founder.leaveBlankUnlimited")} />
+              <Label>Description</Label>
+              <Input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional, shown to Founders only" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>{t("founder.maxStudentsOptional")}</Label>
+                <Input type="number" min="0" value={form.maxStudents} onChange={(e) => setForm((f) => ({ ...f, maxStudents: e.target.value }))} placeholder={t("founder.leaveBlankUnlimited")} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Staff limit (optional)</Label>
+                <Input type="number" min="0" value={form.staffLimit} onChange={(e) => setForm((f) => ({ ...f, staffLimit: e.target.value }))} placeholder="Leave blank = unlimited" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Enabled modules</Label>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-lg border border-border p-3">
+                {FEATURE_FLAG_KEYS.map((key) => (
+                  <label key={key} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" className="h-3.5 w-3.5" checked={form.enabledFeatures.includes(key)} onChange={() => toggleFeature(key)} />
+                    {FEATURE_FLAG_LABELS[key]}
+                  </label>
+                ))}
+              </div>
             </div>
             {editingPlan && (
               <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">

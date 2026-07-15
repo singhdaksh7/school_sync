@@ -86,6 +86,22 @@ human decision to deploy:
     against the deployed environment before declaring the release done.
 ```
 
+**`vercel.json`'s `buildCommand` intentionally never runs `prisma migrate
+deploy`** (only `prisma generate && next build`) — every Vercel build
+(production or preview) would otherwise attempt a migration apply against
+whatever `DATABASE_URL`/`DIRECT_URL` that build resolves, with no
+serialization between concurrent builds. Deploys always run against
+whatever schema Neon already has; step 7 below is the only place migrations
+are ever applied, run by hand, once, before merging the release.
+
+**The exact same `DIRECT_URL ?? DATABASE_URL` fallback described in §4 below
+applies to the bare `npx prisma migrate deploy`/`migrate status` commands
+too, not just the preflight script** — `prisma.config.ts` reads
+`DIRECT_URL` first, and `dotenv/config` will silently fill it from `.env`
+even when you've exported `DATABASE_URL` yourself in the same shell command.
+Always export **both** `DATABASE_URL` and `DIRECT_URL` explicitly for every
+migration-related command in this workflow, never just one.
+
 Every additive migration in this repository's history (`ADD COLUMN`,
 `CREATE TABLE`, loosened `NOT NULL`) is backward-compatible with the
 previous application code, so a code rollback alone is sufficient if a

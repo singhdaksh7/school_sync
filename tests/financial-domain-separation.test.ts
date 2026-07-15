@@ -205,7 +205,7 @@ describe("feature-flag separation", () => {
 
 describe("SaaS billing routes remain unaffected", () => {
   it("Founder plans remain accessible", async () => {
-    const res = await founderPlansGet();
+    const res = await founderPlansGet(new Request("http://localhost/api/founder/plans"));
     expect(res.status).toBe(200);
     expect((await res.json()).plans).toEqual([]);
   });

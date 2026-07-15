@@ -3,6 +3,11 @@ import { requireFounderSession } from "@/lib/founder";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { isSchoolPaymentOverdue } from "@/lib/payment-overdue";
+import { createSchoolWithAdminSchema, createSchoolWithAdmin } from "@/lib/school-onboarding";
+import { runInviteEmailDeliveryInline } from "@/lib/job-handlers";
+import { createNotification } from "@/lib/founder-notifications";
+import { logAudit } from "@/lib/audit";
+import { getClientIp } from "@/lib/request-ip";
 
 const PAGE_SIZE = 10;
 const VALID_STATUSES = ["ACTIVE", "TRIAL", "EXPIRED", "SUSPENDED"] as const;
@@ -115,4 +120,96 @@ export async function GET(req: Request) {
     pageSize: PAGE_SIZE,
     totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
   });
+}
+
+function inviteBaseUrl(req: Request) {
+  const configuredBaseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL;
+  const requestBaseUrl = new URL(req.url).origin;
+  return configuredBaseUrl || requestBaseUrl;
+}
+
+/**
+ * The integrated Founder "Add School" transaction: school + subscription +
+ * initial admin invite + a durable INVITE_EMAIL_DELIVERY outbox job, created
+ * atomically and idempotently by src/lib/school-onboarding.ts. Delivery
+ * itself is attempted HERE, inline, immediately after commit, via
+ * runInviteEmailDeliveryInline (src/lib/job-handlers.ts) — the only src/lib
+ * call site allowed to invoke sendStaffInviteEmail (see
+ * tests/email-iam-mapping.test.ts), because it runs exclusively inside the
+ * web task's process. If this process crashes before/during that inline
+ * attempt, the durable job row survives and the standalone worker delivers
+ * the invite instead — see tests/invite-email-delivery.test.ts.
+ */
+export async function POST(req: Request) {
+  const session = await requireFounderSession();
+  if (!session?.user?.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = await req.json().catch(() => null);
+  const parsed = createSchoolWithAdminSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
+  }
+
+  const result = await createSchoolWithAdmin(parsed.data, session.user.id);
+  if (!result.ok) {
+    const status = result.code === "VALIDATION" ? 400 : 404;
+    return NextResponse.json({ error: result.error, code: result.code }, { status });
+  }
+
+  const { school, invite, plan, deduplicated, deliveryJobId } = result;
+  let inviteLink: string | null = null;
+  let emailError: string | null = null;
+
+  if (deliveryJobId) {
+    const delivery = await runInviteEmailDeliveryInline(deliveryJobId, req);
+    if (delivery.status === "COMPLETED" && delivery.rawToken) {
+      inviteLink = `${inviteBaseUrl(req)}/invite/${delivery.rawToken}`;
+    } else if (delivery.status === "FAILED") {
+      console.error("Failed to send Add-School admin invite email:", delivery.error);
+      emailError = "School created, but the invite email could not be sent. Share the link manually or resend it from the school's page.";
+    } else {
+      // SKIPPED: another runner (the standalone worker) already claimed the
+      // durable job — it will deliver the invite; there is no link to show
+      // synchronously in this response.
+      emailError = "School created. The invite email is being delivered — refresh the school's page shortly for the invite link.";
+    }
+
+    await createNotification({
+      type: "SCHOOL_REGISTERED",
+      title: "New school registered",
+      message: `${school.name} was created by the Founder.`,
+      schoolId: school.id,
+    });
+
+    const ipAddress = getClientIp(req);
+    await logAudit({
+      action: "SCHOOL_CREATED",
+      entityType: "School",
+      entityId: school.id,
+      metadata: { name: school.name, planId: plan.id },
+      userId: session.user.id,
+      schoolId: school.id,
+      ipAddress,
+    });
+    await logAudit({
+      action: "FOUNDER_INVITE_CREATED",
+      entityType: "SchoolInvite",
+      entityId: invite.id,
+      metadata: { name: invite.name, email: invite.email, planId: plan.id },
+      userId: session.user.id,
+      schoolId: school.id,
+      ipAddress,
+    });
+  }
+
+  return NextResponse.json(
+    {
+      school,
+      invite: { id: invite?.id, email: invite?.email },
+      inviteLink,
+      emailError,
+      deduplicated,
+    },
+    { status: deduplicated ? 200 : 201 }
+  );
 }
