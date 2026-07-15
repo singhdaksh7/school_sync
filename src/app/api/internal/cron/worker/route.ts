@@ -15,9 +15,16 @@ import { processNextJob } from "@/lib/job-processor";
  *
  * Bounded for Vercel Function limits: stops after MAX_JOBS_PER_RUN jobs OR
  * once DEADLINE_MS of wall-clock time has elapsed, whichever comes first —
- * never a single invocation that tries to drain an unbounded queue. A
- * schedule of every few minutes (see vercel.json) picks up anything left
- * over on the next run.
+ * never a single invocation that tries to drain an unbounded queue.
+ *
+ * Scheduled once daily (see vercel.json) — Hobby-plan Vercel accounts reject
+ * any cron expression that would run more than once per day at deploy time,
+ * so this is the safety net for missed/failed deliveries, not the fast
+ * path: the common case (a healthy Add-School request) is already delivered
+ * inline, in the same HTTP response, via runInviteEmailDeliveryInline
+ * (job-handlers.ts) immediately after the onboarding transaction commits.
+ * Upgrading to a Pro plan and tightening this schedule (down to once/minute)
+ * is a one-line vercel.json change if faster automatic retry is ever needed.
  *
  * Overlap-safe by construction: claimNextJob's compare-and-swap (jobs.ts)
  * means two overlapping invocations of this route (a slow run still
