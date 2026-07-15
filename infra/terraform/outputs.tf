@@ -8,6 +8,11 @@ output "app_url" {
   value       = local.has_domain ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}"
 }
 
+output "verification_url" {
+  description = "Temporary verified-TLS origin URL used before the primary production DNS cutover."
+  value       = local.has_verification_domain ? "https://${var.verification_domain_name}" : null
+}
+
 output "ecr_repository_url" {
   value = data.aws_ecr_repository.app.repository_url
 }
@@ -75,6 +80,16 @@ output "public_subnet_ids" {
   value = aws_subnet.public[*].id
 }
 
+output "ecs_task_subnet_ids" {
+  description = "Subnets used by ECS services and one-off migration tasks."
+  value       = local.ecs_task_subnet_ids
+}
+
+output "ecs_assign_public_ip" {
+  description = "Whether ECS tasks receive public IPs (false for production)."
+  value       = local.ecs_assign_public_ip
+}
+
 output "ecs_tasks_security_group_id" {
   value = aws_security_group.ecs_tasks.id
 }
@@ -98,7 +113,7 @@ output "manual_acm_validation_records_required" {
 
 output "manual_alb_alias_record_required" {
   description = "Non-null only when a domain was supplied but no Route 53 zone was — point domain_name at the ALB (CNAME/ALIAS, per your DNS provider) using this target."
-  value       = local.has_domain && !local.has_zone ? aws_lb.main.dns_name : null
+  value       = local.has_domain && (!local.has_zone || !var.manage_domain_dns_record) ? aws_lb.main.dns_name : null
 }
 
 output "manual_ses_verification_records_required" {

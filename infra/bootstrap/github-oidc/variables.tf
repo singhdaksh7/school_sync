@@ -11,9 +11,26 @@ variable "aws_account_id" {
 }
 
 variable "aws_region" {
-  description = "AWS region for provider configuration and for every regional ARN below (ECS/ECR/logs/DynamoDB). IAM and the OIDC provider itself are global, but this stack also builds region-qualified ARNs for the staging application's resources."
+  description = "AWS region for provider configuration and every regional ARN below."
   type        = string
   default     = "ap-south-1"
+}
+
+variable "project_name" {
+  description = "Project prefix used by the application stack."
+  type        = string
+  default     = "schoolsync"
+}
+
+variable "deployment_environment" {
+  description = "Exact application environment these OIDC roles may deploy."
+  type        = string
+  default     = "staging"
+
+  validation {
+    condition     = contains(["staging", "production"], var.deployment_environment)
+    error_message = "deployment_environment must be exactly staging or production."
+  }
 }
 
 # ── GitHub trust — every value here is compiled into an exact `sub`
@@ -44,7 +61,7 @@ variable "github_repository_name" {
 }
 
 variable "github_branch" {
-  description = "Exact branch the staging-build role's trust policy is scoped to, via the branch-ref subject `repo:OWNER/REPO:ref:refs/heads/BRANCH` (not the environment subject used by the deploy role)."
+  description = "Exact branch the build role's trust policy is scoped to, via the branch-ref subject `repo:OWNER/REPO:ref:refs/heads/BRANCH`."
   type        = string
   default     = "staging"
 
@@ -55,7 +72,7 @@ variable "github_branch" {
 }
 
 variable "github_environment" {
-  description = "Exact GitHub Environment name the staging-deploy role's trust policy is scoped to, via the environment subject `repo:OWNER/REPO:environment:ENVIRONMENT` (not a branch ref)."
+  description = "Exact protected GitHub Environment name the deploy role's trust policy is scoped to."
   type        = string
   default     = "staging"
 
@@ -97,7 +114,7 @@ variable "github_oidc_provider_arn" {
 #    created/modified/deleted by this stack — see README.md) ──────────────
 
 variable "ecr_repository_name" {
-  description = "Existing ECR repository name the staging-build role may push immutable images to."
+  description = "Existing ECR repository name the build role may push immutable images to."
   type        = string
   default     = "schoolsync"
 }
@@ -135,21 +152,27 @@ variable "ecs_task_minimal_role_name" {
   default     = "schoolsync-staging-ecs-task-minimal"
 }
 
-# ── Staging application Terraform backend (read/lock only — see
+variable "eventbridge_maintenance_role_name" {
+  description = "EventBridge API Destination invocation role created by the application stack when maintenance schedules are enabled."
+  type        = string
+  default     = "schoolsync-staging-eventbridge-maintenance"
+}
+
+# ── Application Terraform backend (read/lock only — see
 #    iam-deploy-role.tf's TerraformStateReadAndLock statement) ─────────────
 
 variable "terraform_state_bucket" {
-  description = "S3 bucket holding the STAGING APPLICATION Terraform state (infra/terraform/backend.hcl) — NOT this bootstrap stack's own backend. The deploy role needs read/lock access here to run the pre-mutation no-change plan gate in the deploy-staging workflow."
+  description = "S3 bucket holding this environment's application Terraform state — not this bootstrap stack's own backend."
   type        = string
 }
 
 variable "terraform_state_key" {
-  description = "State object key within terraform_state_bucket for the staging application stack."
+  description = "State object key within terraform_state_bucket for this application environment."
   type        = string
   default     = "schoolsync/staging/terraform.tfstate"
 }
 
 variable "terraform_lock_table" {
-  description = "DynamoDB table used for the staging application Terraform state lock."
+  description = "DynamoDB table used for this environment's application Terraform state lock."
   type        = string
 }

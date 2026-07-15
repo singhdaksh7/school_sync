@@ -1,6 +1,6 @@
-# ── schoolsync-github-staging-build ─────────────────────────────────────
+# ── Environment-scoped GitHub build role ────────────────────────────────
 #
-# Assumed only by CI runs on the exact `staging` branch (push/PR builds never
+# Assumed only by CI runs on the exact configured branch (PR builds never
 # get AWS access — see .github/workflows/ci.yml, which has no id-token
 # permission at all). Its only job: push/scan immutable images to the
 # existing `schoolsync` ECR repository. No ECS, no Terraform state, no
@@ -35,7 +35,7 @@ data "aws_iam_policy_document" "build_trust" {
 }
 
 resource "aws_iam_role" "github_staging_build" {
-  name                 = "schoolsync-github-staging-build"
+  name                 = "${var.project_name}-github-${var.deployment_environment}-build"
   description          = "Assumed via GitHub OIDC by CI on refs/heads/${var.github_branch} only. ECR push/scan-read on the schoolsync repository only - no ECS/Terraform/Secrets/PassRole/RDS/S3-app-data access."
   assume_role_policy   = data.aws_iam_policy_document.build_trust.json
   max_session_duration = 3600
@@ -47,7 +47,15 @@ resource "aws_iam_role" "github_staging_build" {
         !strcontains(var.github_repository_name, "*"),
         !strcontains(var.github_branch, "*"),
       ])
-      error_message = "Wildcard repository/branch trust is not permitted for schoolsync-github-staging-build — every one of github_repository_owner/github_repository_name/github_branch must be an exact value."
+      error_message = "Wildcard repository/branch trust is not permitted for the GitHub build role."
+    }
+    precondition {
+      condition = (
+        var.deployment_environment == "staging" && var.github_branch == "staging"
+        ) || (
+        var.deployment_environment == "production" && var.github_branch == "main"
+      )
+      error_message = "staging build trust must target staging; production build trust must target main."
     }
   }
 }
@@ -93,7 +101,7 @@ data "aws_iam_policy_document" "build_permissions" {
 }
 
 resource "aws_iam_role_policy" "github_staging_build" {
-  name   = "schoolsync-github-staging-build-ecr-push"
+  name   = "${var.project_name}-github-${var.deployment_environment}-build-ecr-push"
   role   = aws_iam_role.github_staging_build.id
   policy = data.aws_iam_policy_document.build_permissions.json
 }

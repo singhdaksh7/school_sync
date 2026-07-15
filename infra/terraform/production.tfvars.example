@@ -1,0 +1,59 @@
+# Production template only. Copy to an ignored terraform.tfvars in a clean
+# production worktree. Review every REPLACE value before planning. This file
+# deliberately keeps DNS cutover and scheduled maintenance disabled.
+
+aws_region   = "ap-south-1"
+project_name = "schoolsync"
+environment  = "production"
+
+ecr_repository_name = "schoolsync"
+image_tag          = "REPLACE_WITH_FULL_MAIN_COMMIT_SHA"
+
+# Production network posture: ECS has no public IP and exits through NAT;
+# RDS/Valkey remain private and accept traffic only from the ECS task SG.
+enable_nat_gateway      = true
+ecs_use_private_subnets = true
+
+web_desired_count    = 2
+worker_desired_count = 1
+
+db_instance_class                = "db.t4g.small"
+db_allocated_storage             = 50
+db_backup_retention_days         = 14
+db_skip_final_snapshot           = false
+db_deletion_protection           = true
+db_multi_az                      = true
+db_performance_insights_enabled = true
+
+redis_node_type = "cache.t4g.micro"
+redis_multi_az  = true
+
+# ACM validation may be created safely, but the www alias remains untouched
+# until data migration and origin verification have passed. The final DNS
+# cutover is a separate reviewed plan that changes only this flag to true.
+domain_name              = "www.zipinnovate.com"
+redirect_domain_name     = "zipinnovate.com"
+route53_zone_id          = "REPLACE_WITH_ZIPINNOVATE_ROUTE53_ZONE_ID"
+alb_certificate_arn      = ""
+app_base_url             = "https://www.zipinnovate.com"
+manage_domain_dns_record = false
+verification_domain_name = "aws-production.zipinnovate.com"
+
+email_provider = "ses"
+ses_domain     = "zipinnovate.com"
+
+# Enable only after www.zipinnovate.com resolves to this ALB. Until then,
+# enabling these API Destinations could enqueue work in the old Vercel DB.
+enable_maintenance_schedules = false
+
+enable_public_asset_access = false
+log_retention_days        = 30
+enable_container_insights = true
+
+# Set via TF_VAR_alarm_notification_email or -var, never commit an address
+# here unless it is intentionally public project metadata.
+# alarm_notification_email = ""
+
+# Optional feature keys must be supplied through TF_VAR_ environment
+# variables or -var and must never be committed.
+# anthropic_api_key = ""

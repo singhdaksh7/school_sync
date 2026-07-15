@@ -77,6 +77,11 @@
   this itself (zero CRITICAL/HIGH findings required); it does not trust an
   earlier out-of-band scan result.
 
+.PARAMETER DeploymentEnvironment
+  Exact Terraform environment expected in terraform.tfvars. Defaults to
+  staging for backward compatibility; production workflows must pass
+  production. The script aborts before any mutation if the file differs.
+
 .PARAMETER AutoApprove
   Skip the interactive confirmation before `terraform apply` (step G).
   Without this switch, the script always pauses for an explicit "yes".
@@ -131,6 +136,7 @@
 param(
     [Parameter(Mandatory)][string]$ExpectedAccountId,
     [Parameter(Mandatory)][string]$ImageTag,
+    [ValidateSet("staging", "production")][string]$DeploymentEnvironment = "staging",
     [switch]$AutoApprove,
     [switch]$SkipMigration,
     [switch]$SkipPreflight,
@@ -148,7 +154,7 @@ if ($UseOidcCredentials) {
 
 . (Join-Path $PSScriptRoot "common.ps1")
 
-Write-Host "SchoolSync staging deployment" -ForegroundColor Magenta
+Write-Host "SchoolSync $DeploymentEnvironment deployment" -ForegroundColor Magenta
 Write-Host "==============================" -ForegroundColor Magenta
 
 # ── A. Verify account/region and preflight ────────────────────────────────
@@ -167,6 +173,14 @@ Write-Success "Authenticated account matches -ExpectedAccountId ($($identity.Acc
 Write-Step "STEP A: Validating Terraform availability"
 Assert-TerraformAvailable
 $backendConfig = Assert-BackendConfigExists
+$tfvarsPath = Join-Path $TerraformDir "terraform.tfvars"
+$tfvars = Read-HclKeyValueFile -Path $tfvarsPath
+if ($tfvars["environment"] -ne $DeploymentEnvironment) {
+    Write-Fail "terraform.tfvars environment='$($tfvars["environment"])' does not match -DeploymentEnvironment '$DeploymentEnvironment'."
+    Write-Fail "Refusing to deploy using another environment's state/configuration."
+    exit 1
+}
+Write-Success "terraform.tfvars targets environment '$DeploymentEnvironment'"
 
 if (-not $SkipPreflight) {
     Write-Step "STEP A: Running AWS prerequisite preflight"
@@ -433,7 +447,7 @@ Write-Host "                           new=$newSecretVersionId"
 Write-Host ""
 $logsProfileHint = if ($env:AWS_PROFILE) { "--profile $env:AWS_PROFILE " } else { "" }
 Write-Host "  Status check:   ./infra/scripts/show-deployment-status.ps1"
-Write-Host "  Logs:           aws logs tail /ecs/schoolsync-staging/web --follow $logsProfileHint--region $env:AWS_REGION"
+Write-Host "  Logs:           aws logs tail /ecs/schoolsync-$DeploymentEnvironment/web --follow $logsProfileHint--region $env:AWS_REGION"
 Write-Host ""
 Write-Host "  COORDINATED ROLLBACK (manual, not automatic — see runbook above):" -ForegroundColor Yellow
 Write-Host "    Rolling back after this point requires BOTH:" -ForegroundColor Yellow

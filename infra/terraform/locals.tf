@@ -10,7 +10,9 @@ locals {
     var.tags
   )
 
-  has_domain          = var.domain_name != ""
+  has_domain              = var.domain_name != ""
+  has_redirect_domain     = var.redirect_domain_name != ""
+  has_verification_domain = var.verification_domain_name != ""
   has_zone            = var.route53_zone_id != ""
   has_existing_cert   = var.alb_certificate_arn != ""
   create_managed_cert = local.has_domain && !local.has_existing_cert
@@ -26,6 +28,11 @@ locals {
   web_internal_dns            = "web.${local.service_discovery_namespace}"
   worker_internal_url         = "http://${local.web_internal_dns}:${var.container_port}/api/internal/worker"
 
+  # Staging can retain the cost-conscious public-subnet posture. Production
+  # is guarded in ecs.tf and must select private subnets + NAT egress.
+  ecs_task_subnet_ids  = var.ecs_use_private_subnets ? aws_subnet.private[*].id : aws_subnet.public[*].id
+  ecs_assign_public_ip = !var.ecs_use_private_subnets
+
   # CloudWatch alarm notification destination — see cloudwatch.tf. An
   # existing topic ARN always wins; otherwise create one only if an email
   # was supplied; otherwise alarms exist with no alarm_actions.
@@ -38,8 +45,8 @@ locals {
   # db_backup_retention_days), not just "more than zero".
   production_min_backup_retention_days = 7
 
-  # member_clusters is a set(string) (num_cache_clusters=1, so exactly one
-  # element) — sets have no index, so this converts to a list first. Used by
-  # the redis_cpu/redis_memory alarms in cloudwatch.tf.
+  # member_clusters is a set(string), so it has no index. Monitor the first
+  # primary/member cluster with the existing alarms; production also has
+  # replication-group failover protection through its second Multi-AZ node.
   redis_cache_cluster_id = tolist(aws_elasticache_replication_group.main.member_clusters)[0]
 }

@@ -18,7 +18,11 @@
 resource "aws_acm_certificate" "app" {
   count = local.create_managed_cert ? 1 : 0
 
-  domain_name       = var.domain_name
+  domain_name = var.domain_name
+  subject_alternative_names = compact([
+    var.redirect_domain_name,
+    var.verification_domain_name,
+  ])
   validation_method = "DNS"
 
   lifecycle {
@@ -51,10 +55,38 @@ resource "aws_acm_certificate_validation" "app" {
 }
 
 resource "aws_route53_record" "app_alias" {
-  count = local.has_domain && local.has_zone ? 1 : 0
+  count = local.has_domain && local.has_zone && var.manage_domain_dns_record ? 1 : 0
 
   zone_id = var.route53_zone_id
   name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "verification_alias" {
+  count = local.has_verification_domain && local.has_zone ? 1 : 0
+
+  zone_id = var.route53_zone_id
+  name    = var.verification_domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "redirect_alias" {
+  count = local.has_redirect_domain && local.has_zone && var.manage_domain_dns_record ? 1 : 0
+
+  zone_id = var.route53_zone_id
+  name    = var.redirect_domain_name
   type    = "A"
 
   alias {

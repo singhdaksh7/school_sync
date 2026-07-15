@@ -1,10 +1,20 @@
 output "github_staging_build_role_arn" {
-  description = "Configure as the STAGING_BUILD_ROLE_ARN repository variable (Settings > Secrets and variables > Actions > Variables tab) — this is not sensitive, never store it as a secret."
+  description = "Build role ARN for the selected deployment_environment. Store as a GitHub repository variable, not a secret. Legacy output name retained for staging-state compatibility."
   value       = aws_iam_role.github_staging_build.arn
 }
 
 output "github_staging_deploy_role_arn" {
-  description = "Configure as the STAGING_DEPLOY_ROLE_ARN variable on the `staging` GitHub Environment (Settings > Environments > staging > Environment variables) — not a repository-level variable, and not a secret."
+  description = "Deploy role ARN for the selected deployment_environment. Store as a GitHub Environment variable, not a secret. Legacy output name retained for staging-state compatibility."
+  value       = aws_iam_role.github_staging_deploy.arn
+}
+
+output "github_build_role_arn" {
+  description = "Build role ARN for this environment; it is an identifier, not a secret."
+  value       = aws_iam_role.github_staging_build.arn
+}
+
+output "github_deploy_role_arn" {
+  description = "Deploy role ARN for this environment; it is an identifier, not a secret."
   value       = aws_iam_role.github_staging_deploy.arn
 }
 

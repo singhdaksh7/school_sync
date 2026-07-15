@@ -1,0 +1,7 @@
+# Production OIDC-role bootstrap state. Separate from both the production
+# application state and the existing staging OIDC bootstrap state.
+bucket         = "schoolsync-tfstate-928805968612-ap-south-1"
+key            = "schoolsync/bootstrap/github-oidc-production/terraform.tfstate"
+region         = "ap-south-1"
+dynamodb_table = "schoolsync-terraform-locks"
+encrypt        = true

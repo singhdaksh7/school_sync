@@ -74,6 +74,12 @@ variable "enable_nat_gateway" {
   default     = false
 }
 
+variable "ecs_use_private_subnets" {
+  description = "Run ECS web/worker/migration tasks in private subnets with no public IP. Production requires this together with enable_nat_gateway=true; staging keeps the cheaper public-subnet default."
+  type        = bool
+  default     = false
+}
+
 # ── ECR (existing repository — never created/destroyed by this config) ────
 
 variable "ecr_repository_name" {
@@ -169,6 +175,18 @@ variable "db_instance_class" {
   default     = "db.t4g.micro"
 }
 
+variable "db_multi_az" {
+  description = "Create a synchronous RDS standby in a second AZ. Production requires true; staging defaults to false for cost control."
+  type        = bool
+  default     = false
+}
+
+variable "db_performance_insights_enabled" {
+  description = "Enable RDS Performance Insights. Recommended for production, optional for staging."
+  type        = bool
+  default     = false
+}
+
 variable "db_allocated_storage" {
   description = "Storage in GB (gp3)."
   type        = number
@@ -204,6 +222,12 @@ variable "redis_engine_version" {
   default     = "8.0"
 }
 
+variable "redis_multi_az" {
+  description = "Create two cache nodes with automatic failover across AZs. Production requires true; staging defaults to one node."
+  type        = bool
+  default     = false
+}
+
 # ── S3 ───────────────────────────────────────────────────────────────────
 
 variable "s3_bucket_name" {
@@ -221,13 +245,31 @@ variable "enable_public_asset_access" {
 # ── Domain / TLS (optional — required for the mobile app's HTTPS requirement) ──
 
 variable "domain_name" {
-  description = "Staging domain to serve the app on (e.g. staging-api.schoolsync.example). Leave empty to stand up HTTP-only on the ALB's default DNS name — NOT suitable for the Android app, which requires HTTPS."
+  description = "Primary domain to serve the app on. Leave empty to stand up HTTP-only on the ALB's default DNS name — not suitable for production or the Android app, which require HTTPS."
   type        = string
   default     = ""
 }
 
 variable "route53_zone_id" {
   description = "Existing Route 53 hosted zone ID for domain_name. Leave empty if DNS is not managed in this AWS account/Route53 — ACM validation records and the ALB alias record will be surfaced as outputs for manual creation instead."
+  type        = string
+  default     = ""
+}
+
+variable "manage_domain_dns_record" {
+  description = "Whether Terraform may create/update the Route53 alias for domain_name. Set false during production build-out so ACM can validate without cutting traffic over from Vercel; set true only for the reviewed DNS cutover."
+  type        = bool
+  default     = true
+}
+
+variable "verification_domain_name" {
+  description = "Optional temporary Route53 hostname pointing to the ALB for verified-TLS production checks before domain_name is cut over (for example aws-production.zipinnovate.com)."
+  type        = string
+  default     = ""
+}
+
+variable "redirect_domain_name" {
+  description = "Optional alternate hostname served by the same certificate and redirected by the ALB to domain_name (for example the apex zipinnovate.com redirecting to www.zipinnovate.com)."
   type        = string
   default     = ""
 }
@@ -309,6 +351,26 @@ variable "app_base_url" {
   description = "Public base URL for NEXTAUTH_URL/AUTH_URL (e.g. https://staging-api.schoolsync.example). Leave empty to fall back to request-origin-derived links."
   type        = string
   default     = ""
+}
+
+# ── AWS-native maintenance schedules ─────────────────────────────────────
+
+variable "enable_maintenance_schedules" {
+  description = "Enable EventBridge API Destinations that enqueue school-purge and file-retention jobs through the authenticated internal maintenance endpoints. Keep false until the production domain points to this ALB."
+  type        = bool
+  default     = false
+}
+
+variable "school_purge_schedule_expression" {
+  description = "EventBridge schedule expression for discovering due school purges."
+  type        = string
+  default     = "cron(0 1 * * ? *)"
+}
+
+variable "file_retention_schedule_expression" {
+  description = "EventBridge schedule expression for enqueueing file-retention cleanup."
+  type        = string
+  default     = "cron(0 2 * * ? *)"
 }
 
 # ── Observability / cost knobs ─────────────────────────────────────────────
