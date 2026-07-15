@@ -7,11 +7,15 @@ import { join, extname } from "node:path";
  * permissions are granted ONLY to those task roles.
  *
  * Email is sent exclusively via src/lib/email.ts's sendPasswordResetEmail /
- * sendStaffInviteEmail, both called only from Next.js API routes (src/app) —
- * i.e. only in-process in the web app. Neither the worker (scripts/worker.ts,
- * which only makes authenticated HTTP calls to the web service's internal
+ * sendStaffInviteEmail, called only from Next.js API routes (src/app) OR from
+ * src/lib/job-handlers.ts — the one sanctioned src/lib exception, because
+ * that file executes ONLY inside the web task's own process (invoked via
+ * src/app/api/internal/worker/route.ts, or inline from a src/app route right
+ * after a transaction commits — see src/lib/school-onboarding.ts /
+ * runInviteEmailDeliveryInline). Neither the worker (scripts/worker.ts, which
+ * only makes authenticated HTTP calls to the web service's internal
  * endpoint) nor the migration task (`npx prisma migrate deploy`, no
- * application code at all) ever imports src/lib/email.ts.
+ * application code at all) ever imports src/lib/email.ts or job-handlers.ts.
  */
 
 const ROOT = process.cwd();
@@ -49,10 +53,11 @@ describe("email call sites are confined to the web app", () => {
     expect(migrateScript.toLowerCase()).not.toContain("email");
   });
 
-  it("every call site of the email-sending functions lives under src/app (the Next.js web app)", () => {
+  it("every call site of the email-sending functions lives under src/app, or is the one sanctioned src/lib/job-handlers.ts exception", () => {
     const appFiles = walk(join(ROOT, "src", "app"), [".ts", ".tsx"]);
     const libFiles = walk(join(ROOT, "src", "lib"), [".ts"]).filter((f) => !f.endsWith(join("src", "lib", "email.ts")));
     const candidateFiles = [...appFiles, ...libFiles];
+    const sanctionedLibException = join(ROOT, "src", "lib", "job-handlers.ts");
 
     const callers = candidateFiles.filter((file) => {
       const source = readFileSync(file, "utf-8");
@@ -61,7 +66,7 @@ describe("email call sites are confined to the web app", () => {
 
     expect(callers.length).toBeGreaterThan(0); // sanity: the search itself actually finds real call sites
     for (const file of callers) {
-      expect(file).toContain(join("src", "app"));
+      expect(file === sanctionedLibException || file.includes(join("src", "app"))).toBe(true);
     }
   });
 });

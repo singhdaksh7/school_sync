@@ -30,13 +30,15 @@ const activePlan = { id: "plan1", slug: "basic", isActive: true, priceMonthly: "
 function makeTxClient() {
   const school = { id: "school1", name: "Greenwood High", slug: "greenwood-high" };
   const invite = { id: "invite1", email: "jane@school.edu", name: "Jane Doe", planId: "plan1" };
+  const job = { id: "job1", type: "INVITE_EMAIL_DELIVERY", schoolId: "school1", status: "PENDING" };
   const tx = {
     school: { create: vi.fn().mockResolvedValue(school) },
     schoolSubscription: { create: vi.fn().mockResolvedValue({}) },
     schoolFeatureFlag: { createMany: vi.fn().mockResolvedValue({}) },
     schoolInvite: { create: vi.fn().mockResolvedValue(invite) },
+    backgroundJob: { create: vi.fn().mockResolvedValue(job) },
   };
-  return { tx, school, invite };
+  return { tx, school, invite, job };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -60,11 +62,11 @@ describe("createSchoolWithAdmin — plan validation", () => {
 });
 
 describe("createSchoolWithAdmin — success path", () => {
-  it("creates school + subscription + invite atomically and normalizes the admin email", async () => {
+  it("creates school + subscription + invite + a durable delivery job atomically, and normalizes the admin email", async () => {
     p.school.findUnique.mockResolvedValueOnce(null); // idempotency-key lookup: no existing school
     p.school.findUnique.mockResolvedValueOnce(null); // slug-collision check: slug free
     p.subscriptionPlan.findUnique.mockResolvedValue(activePlan);
-    const { tx, school, invite } = makeTxClient();
+    const { tx, school, invite, job } = makeTxClient();
     p.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
 
     const result = await createSchoolWithAdmin(validInput, "founder1");
@@ -73,12 +75,51 @@ describe("createSchoolWithAdmin — success path", () => {
     if (!result.ok) throw new Error("expected ok result");
     expect(result.school).toEqual(school);
     expect(result.invite).toEqual(invite);
-    expect(result.rawInviteToken).toBeTruthy();
+    expect(result.deliveryJobId).toBe(job.id);
     expect(result.deduplicated).toBe(false);
 
     expect(tx.schoolInvite.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ email: "jane@school.edu", role: "SCHOOL_ADMIN" }) })
     );
+    // No raw token is ever generated/persisted in this transaction — only
+    // the durable outbox job. tokenHash is minted later, at actual send time.
+    expect(tx.schoolInvite.create.mock.calls[0][0].data).not.toHaveProperty("tokenHash");
+    expect(tx.backgroundJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "INVITE_EMAIL_DELIVERY",
+          schoolId: school.id,
+          payload: { inviteId: invite.id },
+          payloadFingerprint: invite.id,
+          status: "PENDING",
+        }),
+      })
+    );
+  });
+
+  it("the durable delivery job is created strictly AFTER the invite, inside the same transaction — proving a crash right after commit still leaves both rows behind", async () => {
+    p.school.findUnique.mockResolvedValueOnce(null);
+    p.school.findUnique.mockResolvedValueOnce(null);
+    p.subscriptionPlan.findUnique.mockResolvedValue(activePlan);
+    const { tx } = makeTxClient();
+    const callOrder: string[] = [];
+    tx.schoolInvite.create.mockImplementation(async () => {
+      callOrder.push("invite");
+      return { id: "invite1", email: "jane@school.edu", name: "Jane Doe", planId: "plan1" };
+    });
+    tx.backgroundJob.create.mockImplementation(async () => {
+      callOrder.push("job");
+      return { id: "job1" };
+    });
+    p.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+    const result = await createSchoolWithAdmin(validInput, "founder1");
+
+    expect(result.ok).toBe(true);
+    // Both writes happened inside the ONE transaction callback that
+    // $transaction commits atomically — there is no code path where the
+    // invite exists without the job, or vice versa.
+    expect(callOrder).toEqual(["invite", "job"]);
   });
 
   it("appends a slug suffix on collision rather than failing", async () => {
@@ -107,7 +148,7 @@ describe("createSchoolWithAdmin — idempotency", () => {
 
     const result = await createSchoolWithAdmin(validInput, "founder1");
 
-    expect(result).toMatchObject({ ok: true, deduplicated: true, rawInviteToken: null });
+    expect(result).toMatchObject({ ok: true, deduplicated: true, deliveryJobId: null });
     expect(p.$transaction).not.toHaveBeenCalled();
   });
 

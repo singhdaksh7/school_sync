@@ -179,6 +179,12 @@ enum JobType {
   SMART_TIMETABLE_GENERATION
   FILE_RETENTION_CLEANUP
   SCHOOL_DATA_PURGE
+  // Durable outbox record for the Founder "Add School" admin invite (see
+  // src/lib/school-onboarding.ts): created in the SAME transaction as the
+  // School/SchoolSubscription/SchoolInvite rows, so a crash after commit but
+  // before the email is sent can never leave the invite permanently
+  // unsent — the standalone worker will still find and process this row.
+  INVITE_EMAIL_DELIVERY
 }
 
 enum JobStatus {

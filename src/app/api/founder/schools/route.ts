@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { isSchoolPaymentOverdue } from "@/lib/payment-overdue";
 import { createSchoolWithAdminSchema, createSchoolWithAdmin } from "@/lib/school-onboarding";
-import { sendStaffInviteEmail } from "@/lib/email";
+import { runInviteEmailDeliveryInline } from "@/lib/job-handlers";
 import { createNotification } from "@/lib/founder-notifications";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
@@ -130,11 +130,15 @@ function inviteBaseUrl(req: Request) {
 
 /**
  * The integrated Founder "Add School" transaction: school + subscription +
- * initial admin invite, created atomically and idempotently by
- * src/lib/school-onboarding.ts. The email send/notification/audit calls
- * happen HERE (not in the lib helper) — sendStaffInviteEmail call sites must
- * live under src/app only (see tests/email-iam-mapping.test.ts): only the
- * web ECS task role has SES permission.
+ * initial admin invite + a durable INVITE_EMAIL_DELIVERY outbox job, created
+ * atomically and idempotently by src/lib/school-onboarding.ts. Delivery
+ * itself is attempted HERE, inline, immediately after commit, via
+ * runInviteEmailDeliveryInline (src/lib/job-handlers.ts) — the only src/lib
+ * call site allowed to invoke sendStaffInviteEmail (see
+ * tests/email-iam-mapping.test.ts), because it runs exclusively inside the
+ * web task's process. If this process crashes before/during that inline
+ * attempt, the durable job row survives and the standalone worker delivers
+ * the invite instead — see tests/invite-email-delivery.test.ts.
  */
 export async function POST(req: Request) {
   const session = await requireFounderSession();
@@ -152,22 +156,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: result.error, code: result.code }, { status });
   }
 
-  const { school, invite, plan, deduplicated, rawInviteToken } = result;
+  const { school, invite, plan, deduplicated, deliveryJobId } = result;
   let inviteLink: string | null = null;
   let emailError: string | null = null;
 
-  if (rawInviteToken) {
-    inviteLink = `${inviteBaseUrl(req)}/invite/${rawInviteToken}`;
-    try {
-      await sendStaffInviteEmail(invite.email, {
-        name: invite.name ?? invite.email,
-        role: "SCHOOL_ADMIN",
-        schoolName: school.name,
-        inviteLink,
-      });
-    } catch (err) {
-      console.error("Failed to send Add-School admin invite email:", err);
+  if (deliveryJobId) {
+    const delivery = await runInviteEmailDeliveryInline(deliveryJobId, req);
+    if (delivery.status === "COMPLETED" && delivery.rawToken) {
+      inviteLink = `${inviteBaseUrl(req)}/invite/${delivery.rawToken}`;
+    } else if (delivery.status === "FAILED") {
+      console.error("Failed to send Add-School admin invite email:", delivery.error);
       emailError = "School created, but the invite email could not be sent. Share the link manually or resend it from the school's page.";
+    } else {
+      // SKIPPED: another runner (the standalone worker) already claimed the
+      // durable job — it will deliver the invite; there is no link to show
+      // synchronously in this response.
+      emailError = "School created. The invite email is being delivered — refresh the school's page shortly for the invite link.";
     }
 
     await createNotification({

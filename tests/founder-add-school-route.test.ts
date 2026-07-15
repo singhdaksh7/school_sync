@@ -5,14 +5,14 @@ vi.mock("@/lib/school-onboarding", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/school-onboarding")>();
   return { ...actual, createSchoolWithAdmin: vi.fn() };
 });
-vi.mock("@/lib/email", () => ({ sendStaffInviteEmail: vi.fn() }));
+vi.mock("@/lib/job-handlers", () => ({ runInviteEmailDeliveryInline: vi.fn() }));
 vi.mock("@/lib/founder-notifications", () => ({ createNotification: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ logAudit: vi.fn() }));
 vi.mock("@/lib/request-ip", () => ({ getClientIp: vi.fn(() => "127.0.0.1") }));
 
 import { requireFounderSession } from "@/lib/founder";
 import { createSchoolWithAdmin } from "@/lib/school-onboarding";
-import { sendStaffInviteEmail } from "@/lib/email";
+import { runInviteEmailDeliveryInline } from "@/lib/job-handlers";
 import { POST as addSchoolPost } from "@/app/api/founder/schools/route";
 
 const founderSession = { user: { id: "founder1" } };
@@ -37,55 +37,76 @@ describe("POST /api/founder/schools (Add School)", () => {
     vi.mocked(createSchoolWithAdmin).mockResolvedValue({ ok: false, code: "PLAN_INACTIVE", error: "Selected plan is not active" });
     const res = await addSchoolPost(jsonReq("POST", { idempotencyKey: "k".repeat(10), name: "XY", planId: "p1", adminName: "AB", adminEmail: "a@b.com" }));
     expect(res.status).toBe(404);
-    expect(sendStaffInviteEmail).not.toHaveBeenCalled();
+    expect(runInviteEmailDeliveryInline).not.toHaveBeenCalled();
   });
 
-  it("on success, sends the invite email and returns the link", async () => {
+  it("on success, attempts inline delivery of the durable job and returns the link", async () => {
     vi.mocked(createSchoolWithAdmin).mockResolvedValue({
       ok: true,
       deduplicated: false,
       school: { id: "school1", name: "X" } as never,
       invite: { id: "invite1", email: "a@b.com", name: "A" } as never,
       plan: { id: "plan1", name: "Basic" },
-      rawInviteToken: "raw-token-abc",
+      deliveryJobId: "job1",
     });
+    vi.mocked(runInviteEmailDeliveryInline).mockResolvedValue({ status: "COMPLETED", rawToken: "raw-token-abc" });
+
     const res = await addSchoolPost(jsonReq("POST", { idempotencyKey: "k".repeat(10), name: "XY", planId: "p1", adminName: "AB", adminEmail: "a@b.com" }));
     const json = await res.json();
     expect(res.status).toBe(201);
     expect(json.inviteLink).toContain("raw-token-abc");
     expect(json.emailError).toBeNull();
-    expect(sendStaffInviteEmail).toHaveBeenCalled();
+    expect(runInviteEmailDeliveryInline).toHaveBeenCalledWith("job1", expect.any(Request));
   });
 
-  it("invitation failure is visible (emailError) but the request still succeeds — safely retryable, not a hard failure", async () => {
+  it("invitation failure is visible (emailError) but the request still succeeds — the durable job remains retryable", async () => {
     vi.mocked(createSchoolWithAdmin).mockResolvedValue({
       ok: true,
       deduplicated: false,
       school: { id: "school1", name: "X" } as never,
       invite: { id: "invite1", email: "a@b.com", name: "A" } as never,
       plan: { id: "plan1", name: "Basic" },
-      rawInviteToken: "raw-token-abc",
+      deliveryJobId: "job1",
     });
-    vi.mocked(sendStaffInviteEmail).mockRejectedValue(new Error("SES down"));
+    vi.mocked(runInviteEmailDeliveryInline).mockResolvedValue({ status: "FAILED", error: "SES down" });
 
     const res = await addSchoolPost(jsonReq("POST", { idempotencyKey: "k".repeat(10), name: "XY", planId: "p1", adminName: "AB", adminEmail: "a@b.com" }));
     const json = await res.json();
     expect(res.status).toBe(201);
     expect(json.emailError).toBeTruthy();
+    expect(json.inviteLink).toBeNull();
   });
 
-  it("a deduplicated (retried) submit returns 200, not 201, and never re-sends the email/re-runs side effects", async () => {
+  it("a crash-recovered SKIPPED inline attempt (another runner already claimed the job) still succeeds, with no link to show yet", async () => {
+    vi.mocked(createSchoolWithAdmin).mockResolvedValue({
+      ok: true,
+      deduplicated: false,
+      school: { id: "school1", name: "X" } as never,
+      invite: { id: "invite1", email: "a@b.com", name: "A" } as never,
+      plan: { id: "plan1", name: "Basic" },
+      deliveryJobId: "job1",
+    });
+    vi.mocked(runInviteEmailDeliveryInline).mockResolvedValue({ status: "SKIPPED" });
+
+    const res = await addSchoolPost(jsonReq("POST", { idempotencyKey: "k".repeat(10), name: "XY", planId: "p1", adminName: "AB", adminEmail: "a@b.com" }));
+    const json = await res.json();
+    expect(res.status).toBe(201);
+    expect(json.inviteLink).toBeNull();
+    expect(json.emailError).toBeTruthy();
+  });
+
+  it("a deduplicated (retried) submit returns 200, not 201, and never attempts delivery again", async () => {
     vi.mocked(createSchoolWithAdmin).mockResolvedValue({
       ok: true,
       deduplicated: true,
       school: { id: "school1", name: "X" } as never,
       invite: { id: "invite1", email: "a@b.com" } as never,
       plan: { id: "plan1", name: "Basic" },
-      rawInviteToken: null,
+      deliveryJobId: null,
     });
     const res = await addSchoolPost(jsonReq("POST", { idempotencyKey: "k".repeat(10), name: "XY", planId: "p1", adminName: "AB", adminEmail: "a@b.com" }));
     expect(res.status).toBe(200);
-    expect(sendStaffInviteEmail).not.toHaveBeenCalled();
+    expect(runInviteEmailDeliveryInline).not.toHaveBeenCalled();
   });
 
   it("rejects a malformed body (missing idempotencyKey) with 400 before calling the domain layer", async () => {

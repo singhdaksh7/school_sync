@@ -29,7 +29,14 @@ vi.mock("@/lib/prisma", () => ({
     schoolInvite: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn() },
     backgroundJob: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn() },
     schoolSubscription: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
-    user: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), delete: vi.fn(), deleteMany: vi.fn() },
+    user: {
+      findMany: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+    },
+    passwordResetToken: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     school: { updateMany: vi.fn(), delete: vi.fn() },
     schoolDeletionAudit: { create: vi.fn() },
   },
@@ -54,22 +61,71 @@ beforeEach(() => {
     if (model.findMany) model.findMany.mockResolvedValue([]);
   }
   p.schoolSubscription.deleteMany.mockResolvedValue({ count: 1 });
-  p.user.updateMany.mockResolvedValue({ count: 0 });
+  p.user.findMany.mockResolvedValue([]);
+  p.user.update.mockResolvedValue({});
+  p.passwordResetToken.deleteMany.mockResolvedValue({ count: 0 });
   vi.mocked(getStorageProvider).mockImplementation(() => {
     throw new StorageError("NOT_CONFIGURED", "Storage not configured");
   });
 });
 
-describe("purgeSchoolData — identity rule (never delete a User row)", () => {
-  it("clears User.schoolId via updateMany for this school's staff — never calls user.delete/deleteMany", async () => {
-    p.user.updateMany.mockResolvedValue({ count: 3 });
+describe("purgeSchoolData — identity rule (never delete a User row, never leave PII behind)", () => {
+  it("irreversibly anonymizes every direct school-admin/owner User account — never a bare schoolId:null", async () => {
+    p.user.findMany.mockResolvedValueOnce([{ id: "admin1" }, { id: "admin2" }]).mockResolvedValue([]);
 
     const counts = await purgeSchoolData("school1", noopProgress);
 
-    expect(p.user.updateMany).toHaveBeenCalledWith({ where: { schoolId: "school1" }, data: { schoolId: null } });
+    expect(p.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { schoolId: "school1" } })
+    );
+    expect(p.user.update).toHaveBeenCalledWith({
+      where: { id: "admin1" },
+      data: expect.objectContaining({ name: "Deleted User", email: expect.stringContaining("purged.invalid"), schoolId: null }),
+    });
+    expect(p.user.update).toHaveBeenCalledWith({
+      where: { id: "admin2" },
+      data: expect.objectContaining({ name: "Deleted User", email: expect.stringContaining("purged.invalid"), schoolId: null }),
+    });
+    // The old password hash is never left in place — a fresh random value is written.
+    const call = p.user.update.mock.calls.find((c) => c[0].where.id === "admin1")!;
+    expect(call[0].data.password).toEqual(expect.any(String));
+    expect(p.passwordResetToken.deleteMany).toHaveBeenCalledWith({ where: { userId: "admin1" } });
     expect(p.user.delete).not.toHaveBeenCalled();
     expect(p.user.deleteMany).not.toHaveBeenCalled();
-    expect(counts.staffMembershipsCleared).toBe(3);
+    expect(counts.schoolAdminUserAccountsAnonymized).toBe(2);
+  });
+
+  it("anonymizes Teacher-linked login accounts (User.schoolId not set) BEFORE the Teacher rows are deleted", async () => {
+    const callOrder: string[] = [];
+    let teacherLinkedCalls = 0;
+    let teacherDeleteFindCalls = 0;
+    p.teacher.findMany.mockImplementation(async (args: { select?: { userId?: boolean; id?: boolean } }) => {
+      if (args.select?.userId) {
+        teacherLinkedCalls += 1;
+        callOrder.push("findTeacherLinkedUsers");
+        return teacherLinkedCalls === 1 ? [{ userId: "teacherUser1" }] : [];
+      }
+      teacherDeleteFindCalls += 1;
+      callOrder.push("findTeachersForDelete");
+      return teacherDeleteFindCalls === 1 ? [{ id: "teacher1" }] : [];
+    });
+    p.teacher.deleteMany.mockImplementation(async () => {
+      callOrder.push("deleteTeachers");
+      return { count: 0 };
+    });
+    p.user.update.mockImplementation(async () => {
+      callOrder.push("anonymizeTeacherUser");
+      return {};
+    });
+
+    const counts = await purgeSchoolData("school1", noopProgress);
+
+    expect(p.user.update).toHaveBeenCalledWith({
+      where: { id: "teacherUser1" },
+      data: expect.objectContaining({ name: "Deleted User", schoolId: null }),
+    });
+    expect(callOrder.indexOf("anonymizeTeacherUser")).toBeLessThan(callOrder.indexOf("deleteTeachers"));
+    expect(counts.teacherUserAccountsAnonymized).toBe(1);
   });
 });
 
