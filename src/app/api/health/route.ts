@@ -55,6 +55,10 @@ export async function GET(req: Request) {
   const distributedRateLimiting = isDistributedRateLimiterConfigured();
   const storageConfigured = isStorageConfigured();
   const jobWorkerConfigured = isJobWorkerConfigured();
+  // Boolean presence only, never the value — lets an operator confirm the
+  // Vercel Cron routes (src/app/api/internal/cron/*) are authenticatable in
+  // this environment without ever printing the secret itself.
+  const cronSecretConfigured = Boolean(process.env.CRON_SECRET);
   // Email/AI are feature-scoped, never block readiness — reported for
   // operational visibility only (see config-validation.ts). emailProvider is
   // a plain kind label ("resend"/"ses"/"console"/"unavailable") — never a
@@ -87,6 +91,7 @@ export async function GET(req: Request) {
         distributedRateLimiting,
         storageConfigured,
         jobWorkerConfigured,
+        cronSecretConfigured,
         emailConfigured,
         emailProvider,
         aiConfigured,

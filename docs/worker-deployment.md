@@ -2,19 +2,23 @@
 
 The durable job system (`src/lib/jobs.ts`, `job-processor.ts`, `job-handlers.ts`)
 is fully implemented, but **nothing runs it automatically**. A deploy platform
-(Vercel or otherwise) does not run `scripts/worker.ts` for you — you must wire
-one of the two patterns below.
+does not run `scripts/worker.ts` for you — you must wire one of the patterns
+below for your target platform.
 
-**Is job execution currently automatically running in production? → REQUIRES WORKER CONFIGURATION.**
+**Is job execution currently automatically running in production? → On
+Vercel: yes, via the Cron configuration in Option C below. On any other
+platform (ECS, a VM, etc.) without that cron wired: REQUIRES WORKER
+CONFIGURATION (Option A or B).**
 
 ## Required environment
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `JOB_WORKER_SECRET` | Yes | Shared secret the worker sends as `x-worker-secret` to authenticate against `/api/internal/worker`. Must be a dedicated secret — never reuse `NEXTAUTH_SECRET`, a DB credential, or the Founder password. |
-| `WORKER_INTERNAL_URL` | No (default `http://localhost:3000/api/internal/worker`) | The deployed app's internal worker endpoint. Set to the real production URL when the worker runs as a separate process from the web app. |
-| `WORKER_POLL_MS` | No (default `5000`) | Poll interval for the continuous worker. |
-| `WORKER_BATCH` | No (default `10`) | Max jobs claimed per poll/invocation. |
+| `JOB_WORKER_SECRET` | Yes | Shared secret the worker sends as `x-worker-secret` to authenticate against `/api/internal/worker` and `/api/internal/maintenance/*`. Also gates `isJobWorkerConfigured()`, which every job-processing route (including the Vercel Cron routes below) checks before doing anything. Must be a dedicated secret — never reuse `NEXTAUTH_SECRET`, a DB credential, or the Founder password. |
+| `CRON_SECRET` | Yes (Vercel only) | Vercel's own recognized name for authenticating scheduled Cron invocations — Vercel automatically sends `Authorization: Bearer <CRON_SECRET>` to every path listed in `vercel.json`'s `crons`. Verified independently by `src/lib/cron-auth.ts`; never reuse `JOB_WORKER_SECRET`'s value for this even though both are "job auth" in spirit — they protect different transports (custom header vs. Vercel's own bearer convention) and rotating one must not require touching the other. |
+| `WORKER_INTERNAL_URL` | No (default `http://localhost:3000/api/internal/worker`) | Only used by `scripts/worker.ts` (Option A/B, not the Vercel Cron path). Set to the real URL when the worker runs as a separate process from the web app. |
+| `WORKER_POLL_MS` | No (default `5000`) | Poll interval for the continuous worker (Option A). |
+| `WORKER_BATCH` | No (default `10`) | Max jobs claimed per poll/invocation (Option A/B). |
 
 ## Option A — Continuous worker process
 
@@ -40,10 +44,43 @@ exits. Intended for an external scheduler (cron, a platform's scheduled
 functions, etc.) invoking it on a fixed interval — e.g. every 1–5 minutes,
 depending on how quickly large batches need to start processing.
 
-This repository does **not** ship a cron/scheduler config for any specific
-platform — one was deliberately not added since no hosting platform's
-scheduler integration has been selected/wired here. Configure your deploy
-platform's own scheduled-invocation mechanism to run this command.
+Prefer this on any platform other than Vercel — a long-running container/VM
+process, or a scheduler that shells out to `npm run worker:once`.
+
+## Option C — Vercel Cron (this repository's Vercel path)
+
+`vercel.json`'s `crons` array invokes three GET routes on a schedule, each a
+thin CRON_SECRET-authenticated wrapper around the exact same
+claiming/idempotency logic Options A/B use — no duplicated business logic:
+
+| Cron path | Schedule | Calls |
+|---|---|---|
+| `/api/internal/cron/worker` | every 5 minutes | `processNextJob` (job-processor.ts) in a bounded loop — up to 20 jobs or 50s wall-clock, whichever first |
+| `/api/internal/cron/school-purge` | daily, 03:00 UTC | `ensureDueSchoolPurgeJobs()` (school-deletion.ts) — enqueues, never processes |
+| `/api/internal/cron/file-retention` | daily, 04:00 UTC | `ensureFileRetentionCleanupJob()` (file-retention.ts) — enqueues, never processes |
+
+Discovery (school-purge/file-retention) only enqueues; the worker cron's next
+5-minute tick processes whatever was enqueued. Vercel's own cron auth
+(`CRON_SECRET`, see the required-environment table above) gates all three;
+each also independently re-checks `isJobWorkerConfigured()`
+(`JOB_WORKER_SECRET`) before doing anything, so a misconfigured environment
+fails closed (503) rather than silently skipping work.
+
+**Overlap safety:** if a scheduled invocation is still running when the next
+one fires (a slow queue drain overlapping the next 5-minute tick), both
+requests reach the same atomic `claimNextJob` compare-and-swap
+(`src/lib/jobs.ts`) — only one can ever win a given job's claim, so
+overlapping cron ticks cannot double-process a job. This is the same
+guarantee Options A/B already rely on for concurrent worker processes; no
+additional run-level lock is layered on top because none is needed for
+correctness (see `tests/cron-worker-routes.test.ts` for the regression proof).
+
+**Function-limit bounding:** the worker cron route sets
+`export const maxDuration = 60` and internally stops after 20 jobs or 50
+seconds of wall-clock time, leaving headroom under the configured limit
+regardless of plan. Raise `MAX_JOBS_PER_RUN`/`DEADLINE_MS` in
+`src/app/api/internal/cron/worker/route.ts` only alongside a matching
+`maxDuration` increase.
 
 ## Concurrency guidance
 
@@ -52,14 +89,11 @@ platform's own scheduled-invocation mechanism to run this command.
   concurrent claims safe: exactly one worker wins each job, others simply
   move to the next candidate. Running 2+ workers only increases throughput,
   never causes double-processing.
-- **Lease semantics:** a claimed job gets a 2-minute lease
-  (`JOB_LEASE_MS`). The worker does not currently send heartbeats during
-  processing (see `heartbeatJob` in jobs.ts, available but not wired into
-  the processor loop) — a job handler that legitimately runs longer than
-  2 minutes risks a second worker reclaiming it after the lease expires.
-  Report-card/bulk-import handlers are chunked and update progress
-  frequently in practice, but this is a known limitation to watch under
-  pilot load (see risk register).
+- **Lease semantics:** a claimed job gets a 2-minute lease (`JOB_LEASE_MS`).
+  `job-processor.ts`'s `startLeaseHeartbeat` renews it every 30 seconds
+  (`JOB_HEARTBEAT_INTERVAL_MS`) for as long as the handler is still running,
+  independently of whatever progress callbacks that handler makes — a slow
+  first step with no progress reporting yet is still covered.
 - **Crash recovery:** if a worker crashes mid-job, the job stays `RUNNING`
   with an unexpired lease until the lease time passes, then any worker
   (the same one restarted, or a different one) can reclaim it via the same
