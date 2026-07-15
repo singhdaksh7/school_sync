@@ -26,27 +26,35 @@
 #                                                 path (nothing here can
 #                                                 create the validation DNS
 #                                                 records without a zone), so
-#                                                 there is nothing safe to
-#                                                 attach to a listener yet.
+#                                                 Terraform itself cannot
+#                                                 confirm validation.
 #                                                 local.enable_https is false
 #                                                 and NO HTTPS listener is
-#                                                 created in this mode. The
-#                                                 validation CNAME + the ALB
-#                                                 alias target are surfaced in
-#                                                 outputs.tf for manual
-#                                                 creation in whatever system
-#                                                 hosts DNS for that domain.
-#                                                 This is deliberately
-#                                                 two-stage: once the
-#                                                 certificate shows ISSUED in
-#                                                 ACM (after that manual DNS
+#                                                 created yet. The validation
+#                                                 CNAME + the ALB alias target
+#                                                 are surfaced in outputs.tf
+#                                                 for manual creation in
+#                                                 whatever system hosts DNS
+#                                                 for that domain. This is
+#                                                 deliberately two-stage: once
+#                                                 the certificate shows ISSUED
+#                                                 in ACM (after that manual DNS
 #                                                 record propagates and AWS
-#                                                 validates it), re-apply with
-#                                                 var.alb_certificate_arn set
-#                                                 to this same certificate's
-#                                                 ARN to enable HTTPS —
-#                                                 switching to mode 1 above. A
-#                                                 bare re-apply without that
+#                                                 validates it), set
+#                                                 var.manual_acm_certificate_validation_complete
+#                                                 = true and re-apply to
+#                                                 enable HTTPS. Terraform keeps
+#                                                 managing the SAME certificate
+#                                                 resource throughout (it is
+#                                                 never destroyed or recreated
+#                                                 by this transition) — do NOT
+#                                                 instead point
+#                                                 var.alb_certificate_arn at
+#                                                 this certificate's own ARN,
+#                                                 which would flip
+#                                                 create_managed_cert to false
+#                                                 and plan destroying it. A
+#                                                 bare re-apply with neither
 #                                                 variable set will NOT enable
 #                                                 HTTPS on its own.
 
@@ -62,6 +70,17 @@ resource "aws_acm_certificate" "app" {
 
   lifecycle {
     create_before_destroy = true
+
+    # manual_acm_certificate_validation_complete only means anything on the
+    # no-zone manual-DNS path (locals.tf's certificate_arn ignores it
+    # whenever has_zone is true, since the Route53-managed path already
+    # validates automatically) — catch the confusing combination at plan
+    # time rather than silently ignoring a flag the operator thinks is doing
+    # something.
+    precondition {
+      condition     = !var.manual_acm_certificate_validation_complete || !local.has_zone
+      error_message = "manual_acm_certificate_validation_complete has no effect when route53_zone_id is set — that path already auto-validates via aws_acm_certificate_validation. Remove route53_zone_id (manual/external DNS) or unset manual_acm_certificate_validation_complete (managed Route53 DNS), not both."
+    }
   }
 }
 

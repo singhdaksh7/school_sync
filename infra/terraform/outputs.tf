@@ -97,11 +97,17 @@ output "ecs_tasks_security_group_id" {
 # ── Manual DNS actions (only populated when they actually require one) ────
 
 output "acm_certificate_arn" {
-  value = local.certificate_arn != "" ? local.certificate_arn : null
+  description = "The certificate ARN actually in use by the HTTPS listener — null until a certificate is both created AND safely known-validated (existing var.alb_certificate_arn, the Route53-managed path, or the manual path once manual_acm_certificate_validation_complete=true). Use acm_certificate_arn_pending_validation instead to look up a not-yet-validated managed certificate's status in ACM."
+  value       = local.certificate_arn != "" ? local.certificate_arn : null
+}
+
+output "acm_certificate_arn_pending_validation" {
+  description = "Non-null whenever Terraform is managing a certificate for the no-zone manual path (var.domain_name set, route53_zone_id empty, alb_certificate_arn empty), REGARDLESS of validation state — use this ARN to check the certificate's status in the ACM console/CLI. Once it shows ISSUED, set manual_acm_certificate_validation_complete=true and re-apply; acm_certificate_arn above will then equal this same ARN."
+  value       = local.create_managed_cert && !local.has_zone ? aws_acm_certificate.app[0].arn : null
 }
 
 output "manual_acm_validation_records_required" {
-  description = "Non-null only when a certificate was requested (var.domain_name set) but no Route 53 zone was supplied. Create these DNS records wherever domain_name's DNS is actually hosted. This is a two-stage process: re-running terraform apply alone does NOT enable HTTPS, because no aws_acm_certificate_validation resource exists for this path (nothing here can create the validation records without a zone) — local.certificate_arn stays empty and no HTTPS listener is created until the certificate is safely validated. Once ACM shows the certificate as ISSUED (check via the AWS console/CLI after the DNS record propagates), re-apply with var.alb_certificate_arn set to acm_certificate_arn's value to enable HTTPS."
+  description = "Non-null only when a certificate was requested (var.domain_name set) but no Route 53 zone was supplied. Create these DNS records wherever domain_name's DNS is actually hosted. This is a two-stage process: re-running terraform apply alone does NOT enable HTTPS, because no aws_acm_certificate_validation resource exists for this path (nothing here can create the validation records without a zone) — local.certificate_arn stays empty and no HTTPS listener is created until validation is confirmed. Once ACM shows the certificate (acm_certificate_arn_pending_validation) as ISSUED, set manual_acm_certificate_validation_complete=true and re-apply to enable HTTPS. Terraform keeps managing this SAME certificate throughout — never point alb_certificate_arn at it instead, which would plan destroying it."
   value = local.create_managed_cert && !local.has_zone ? [
     for dvo in aws_acm_certificate.app[0].domain_validation_options : {
       name  = dvo.resource_record_name

@@ -31,6 +31,12 @@ redis_multi_az  = true
 # ACM validation may be created safely, but the www alias remains untouched
 # until data migration and origin verification have passed. The final DNS
 # cutover is a separate reviewed plan that changes only this flag to true.
+#
+# route53_zone_id is set below, so ACM validates automatically via
+# aws_acm_certificate_validation — manual_acm_certificate_validation_complete
+# is irrelevant to this example (it only matters for the no-zone/external-DNS
+# path; see variables.tf and infra/terraform/README.md) and is left at its
+# false default.
 domain_name              = "www.zipinnovate.com"
 redirect_domain_name     = "zipinnovate.com"
 route53_zone_id          = "REPLACE_WITH_ZIPINNOVATE_ROUTE53_ZONE_ID"

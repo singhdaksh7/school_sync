@@ -275,9 +275,15 @@ variable "redirect_domain_name" {
 }
 
 variable "alb_certificate_arn" {
-  description = "Existing ACM certificate ARN to use instead of provisioning one. Leave empty to have Terraform create + DNS-validate a certificate for domain_name (requires route53_zone_id, or manual validation via outputs)."
+  description = "Existing, genuinely externally-managed ACM certificate ARN to use instead of provisioning one. Leave empty to have Terraform create + validate its own certificate for domain_name (requires route53_zone_id, or the manual_acm_certificate_validation_complete two-stage flow below). Do NOT set this to Terraform's own managed certificate's ARN after manual validation — that flips create_managed_cert to false and plans destruction of the very certificate the listener is using. Use manual_acm_certificate_validation_complete for that case instead."
   type        = string
   default     = ""
+}
+
+variable "manual_acm_certificate_validation_complete" {
+  description = "Two-stage activation switch for the no-Route53-zone managed-certificate path (domain_name set, route53_zone_id empty, alb_certificate_arn empty). First apply leaves this false: Terraform creates and retains aws_acm_certificate.app but does not enable HTTPS, and surfaces the DNS validation records to create externally (see the manual_acm_validation_records_required output). Once those records propagate and ACM shows the certificate as ISSUED, set this to true and re-apply: Terraform continues managing the SAME certificate resource (never recreates it) and enables the HTTPS listener using its ARN directly. Has no effect when route53_zone_id or alb_certificate_arn is set — those paths validate/supply the certificate through their own mechanism."
+  type        = bool
+  default     = false
 }
 
 # ── Email provider selection ────────────────────────────────────────────

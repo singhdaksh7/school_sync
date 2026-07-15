@@ -63,31 +63,66 @@ describe("AWS production foundation", () => {
 
   // Regression: the HTTPS listener (alb.tf's aws_lb_listener.https certificate_arn
   // = local.certificate_arn) must never attach a certificate ACM is still
-  // validating. The Route53-managed path must derive the listener cert from
-  // the *validation* resource, not the raw, immediately-available-but-
-  // possibly-PENDING_VALIDATION aws_acm_certificate ARN — and the
-  // manual/external-DNS path (no zone) must produce no usable cert at all
-  // rather than attaching an unvalidated one.
-  it("derives the HTTPS listener certificate from the validated ACM resource, not the raw pending certificate", () => {
+  // validating. The Route53-managed branch must derive the listener cert
+  // from the *validation* resource, not the raw, immediately-available-but-
+  // possibly-PENDING_VALIDATION aws_acm_certificate ARN.
+  it("derives the HTTPS listener certificate from the validated ACM resource on the Route53-managed path, not the raw pending certificate", () => {
     expect(locals).toMatch(/local\.has_existing_cert \? var\.alb_certificate_arn/);
     expect(locals).toMatch(/local\.create_managed_cert && local\.has_zone \? aws_acm_certificate_validation\.app\[0\]\.certificate_arn/);
-    // The raw aws_acm_certificate.app[0].arn must never be assigned directly
-    // to certificate_arn (it may legitimately appear elsewhere, e.g. as the
-    // validation resource's own certificate_arn input in acm-dns.tf).
-    const certificateArnLocal = locals.match(/certificate_arn\s*=\s*local\.has_existing_cert[\s\S]*?\r?\n\s*\)\r?\n/);
-    expect(certificateArnLocal, "expected to find the certificate_arn local assignment").not.toBeNull();
-    expect(certificateArnLocal![0]).not.toMatch(/aws_acm_certificate\.app\[0\]\.arn/);
   });
 
-  it("manual/external-DNS certificate path (domain, no zone) never enables HTTPS from an unvalidated certificate", () => {
-    // No aws_acm_certificate_validation resource exists for the no-zone path
-    // (its count is gated on local.has_zone), so certificate_arn correctly
-    // falls through to "" in that branch, and enable_https requires a
-    // non-empty certificate_arn.
+  // Regression (the bug in this fix): pointing var.alb_certificate_arn at
+  // Terraform's own managed certificate after manual validation used to be
+  // the only way to enable HTTPS on the no-zone path, but that flips
+  // create_managed_cert to false and plans DESTROYING the certificate the
+  // listener is using. create_managed_cert must depend only on
+  // has_domain/has_existing_cert — never on the manual validation-complete
+  // flag — so the certificate resource is retained across the whole
+  // two-stage flow.
+  it("create_managed_cert (and therefore the certificate resource) is never affected by manual_acm_certificate_validation_complete — the certificate is retained across both stages", () => {
+    expect(locals).toMatch(/create_managed_cert\s*=\s*local\.has_domain && !local\.has_existing_cert\s*$/m);
+    expect(locals).not.toMatch(/create_managed_cert\s*=[^\n]*manual_acm_certificate_validation_complete/);
+  });
+
+  // Regression: on the no-zone manual path, before the operator has attested
+  // validation completed, certificate_arn must resolve to "" (never the raw
+  // pending certificate ARN) so enable_https stays false and no HTTPS
+  // listener is created — an unvalidated certificate must never be able to
+  // reach the listener.
+  it("manual/external-DNS path: defaults to no usable certificate (HTTPS stays disabled) until manual_acm_certificate_validation_complete is explicitly set", () => {
     expect(dns).toMatch(/count\s*=\s*local\.create_managed_cert && local\.has_zone \? 1 : 0/);
     expect(locals).toMatch(/enable_https\s*=\s*local\.has_domain && local\.certificate_arn\s*!=\s*""/);
+    expect(locals).toMatch(
+      /local\.create_managed_cert && !local\.has_zone && var\.manual_acm_certificate_validation_complete \? aws_acm_certificate\.app\[0\]\.arn : ""/
+    );
     // Documents the two-stage manual flow rather than silently doing nothing.
     expect(dns.toLowerCase()).toMatch(/two-stage/);
+  });
+
+  it("manual_acm_certificate_validation_complete defaults to false and is a plain bool", () => {
+    const varsFile = read("infra", "terraform", "variables.tf");
+    const block = varsFile.match(/variable\s*"manual_acm_certificate_validation_complete"\s*\{[\s\S]*?\n\}/);
+    expect(block, "expected to find the manual_acm_certificate_validation_complete variable block").not.toBeNull();
+    expect(block![0]).toMatch(/type\s*=\s*bool/);
+    expect(block![0]).toMatch(/default\s*=\s*false/);
+  });
+
+  // Regression: setting the manual flag while a Route53 zone is also
+  // supplied is a confusing no-op (the has_zone branch is checked first in
+  // the ternary and always wins) — fail fast at plan time instead of
+  // silently ignoring the flag.
+  it("fails plan with a precondition when manual_acm_certificate_validation_complete is set alongside a Route53 zone (a no-op combination)", () => {
+    const certResource = dns.match(/resource\s*"aws_acm_certificate"\s*"app"\s*\{[\s\S]*?\n\}/);
+    expect(certResource, "expected to find the aws_acm_certificate.app resource").not.toBeNull();
+    expect(certResource![0]).toMatch(/precondition\s*\{/);
+    expect(certResource![0]).toMatch(/!var\.manual_acm_certificate_validation_complete \|\| !local\.has_zone/);
+  });
+
+  it("alb_certificate_arn documents never being pointed at Terraform's own managed certificate", () => {
+    const varsFile = read("infra", "terraform", "variables.tf");
+    const block = varsFile.match(/variable\s*"alb_certificate_arn"\s*\{[\s\S]*?\n\}/);
+    expect(block, "expected to find the alb_certificate_arn variable block").not.toBeNull();
+    expect(block![0]).toMatch(/manual_acm_certificate_validation_complete/);
   });
 });
 

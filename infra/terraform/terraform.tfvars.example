@@ -23,6 +23,16 @@ route53_zone_id     = ""
 alb_certificate_arn = ""
 app_base_url        = ""
 
+# Only relevant if domain_name is set AND route53_zone_id is left blank (DNS
+# hosted outside this AWS account/Route53). First apply leaves this false —
+# Terraform creates and retains the certificate without enabling HTTPS, and
+# outputs.tf's acm_certificate_arn_pending_validation / manual_acm_validation_records_required
+# tell you what to do next. Set to true and re-apply only after ACM shows the
+# certificate as ISSUED. See infra/terraform/README.md and variables.tf for
+# the full two-stage flow — never set alb_certificate_arn to this same
+# certificate's own ARN instead, which would plan destroying it.
+# manual_acm_certificate_validation_complete = false
+
 # Explicit email provider selection — "ses" (default, project policy) or
 # "resend" (backward compatibility only). No "console": ECS tasks always run
 # with NODE_ENV=production, and console is never a valid production path.
