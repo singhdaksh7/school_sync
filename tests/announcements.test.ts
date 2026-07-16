@@ -192,14 +192,22 @@ describe("createAnnouncement — teacher authorization", () => {
     await expect(createAnnouncement(teacherCtx, withTeachers)).rejects.toBeInstanceOf(AnnouncementAuthError);
   });
 
-  it("ignores a client-supplied schoolId/creator claim — always re-derives from ctx", async () => {
+  it("rejects a client-supplied schoolId/creator claim at the real route validation boundary", async () => {
     p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1" } }], mentorSection: null });
     p.section.findMany.mockResolvedValue([{ id: "s1", classId: "c1" }]);
     p.announcement.create.mockResolvedValue({ id: "a1", audience: [], targets: [] });
 
-    // Even if a route accidentally forwarded extra fields, the service only
-    // ever uses ctx.schoolId/ctx.userId for schoolId/createdById.
-    await createAnnouncement(teacherCtx, { ...validInput, /* @ts-expect-error extra client field ignored by schema */ schoolId: "OTHER_SCHOOL" });
+    // Simulate the untyped JSON body an API route receives (req.json() is
+    // `any`/`unknown`, so a malicious client can freely add extra fields).
+    // Route handlers parse it through announcementInputSchema before it ever
+    // reaches createAnnouncement — that parse is the actual security
+    // boundary, so this test drives it instead of hand-widening a typed value.
+    const rawClientBody: unknown = JSON.parse(JSON.stringify({ ...validInput, schoolId: "OTHER_SCHOOL", createdById: "someoneElse" }));
+    const parsed = announcementInputSchema.parse(rawClientBody);
+    expect(parsed).not.toHaveProperty("schoolId");
+    expect(parsed).not.toHaveProperty("createdById");
+
+    await createAnnouncement(teacherCtx, parsed);
     const createCall = p.announcement.create.mock.calls[0][0];
     expect(createCall.data.schoolId).toBe(SCHOOL);
     expect(createCall.data.createdById).toBe("teacherUser1");
