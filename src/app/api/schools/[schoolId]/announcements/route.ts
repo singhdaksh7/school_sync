@@ -10,10 +10,15 @@ import { announcementInputSchema, createAnnouncement, isLeadershipRole, Announce
 /**
  * Leadership-only school announcement management (dashboard UI). Deliberately
  * NOT shared with the RBAC-permissioned teacher fallback that other
- * /api/schools/[schoolId]/* routes use (requireSchoolAccess) — a teacher's
- * announcement authority is always derived from the classes/sections they
- * actually teach (see /api/teacher/announcements), never from a delegated
- * "ANNOUNCEMENTS" module permission that has no class-scoping concept.
+ * /api/schools/[schoolId]/* routes use (requireSchoolAccess) — that fallback
+ * has no class-scoping concept of its own, and this route's
+ * SCHOOL_OWNER/SCHOOL_ADMIN/VICE_PRINCIPAL-only gate must stay independent
+ * of it. A teacher's announcement authority (see /api/teacher/announcements)
+ * is layered from TWO independent checks: the standard ANNOUNCEMENTS module
+ * permission (requireTeacherPermission — same mechanism HOMEWORK/ATTENDANCE
+ * use) AND the classes/sections they actually teach (timetable/mentor
+ * assignment) — a granted ANNOUNCEMENTS permission never by itself expands
+ * which sections a teacher can target.
  */
 async function requireLeadership(schoolId: string, userId: string, role: string | undefined) {
   if (!isLeadershipRole(role)) return null;

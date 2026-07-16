@@ -108,11 +108,23 @@ describe("announcementInputSchema — validation", () => {
 describe("getTeacherAuthorizedSections", () => {
   it("returns the union of timetable-slot sections and mentor section", async () => {
     p.teacher.findFirst.mockResolvedValue({
-      timetableSlots: [{ section: { id: "sec1", classId: "cls1" } }, { section: { id: "sec2", classId: "cls1" } }],
-      mentorSection: { id: "sec3", classId: "cls2" },
+      timetableSlots: [
+        { section: { id: "sec1", classId: "cls1", name: "A", class: { name: "5" } } },
+        { section: { id: "sec2", classId: "cls1", name: "B", class: { name: "5" } } },
+      ],
+      mentorSection: { id: "sec3", classId: "cls2", name: "A", class: { name: "6" } },
     });
     const result = await getTeacherAuthorizedSections("t1", SCHOOL);
     expect(result.map((r) => r.sectionId).sort()).toEqual(["sec1", "sec2", "sec3"]);
+  });
+
+  it("includes className/sectionName purely for display, resolved server-side from the section/class rows — never from client input", async () => {
+    p.teacher.findFirst.mockResolvedValue({
+      timetableSlots: [{ section: { id: "sec1", classId: "cls1", name: "A", class: { name: "5" } } }],
+      mentorSection: null,
+    });
+    const result = await getTeacherAuthorizedSections("t1", SCHOOL);
+    expect(result).toEqual([{ classId: "cls1", sectionId: "sec1", className: "5", sectionName: "A" }]);
   });
 
   it("returns empty when the teacher does not exist / is deleted", async () => {
@@ -162,7 +174,7 @@ const validInput = {
 
 describe("createAnnouncement — teacher authorization", () => {
   it("allows a teacher to target a class/section they are authorized for", async () => {
-    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1" } }], mentorSection: null });
+    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1", name: "A", class: { name: "5" } } }], mentorSection: null });
     p.section.findMany.mockResolvedValue([{ id: "s1", classId: "c1" }]);
     p.announcement.create.mockResolvedValue({ id: "a1", audience: [], targets: [] });
 
@@ -172,7 +184,7 @@ describe("createAnnouncement — teacher authorization", () => {
   });
 
   it("rejects a teacher targeting a class/section they are not authorized for", async () => {
-    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "OTHER", classId: "c9" } }], mentorSection: null });
+    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "OTHER", classId: "c9", name: "Z", class: { name: "9" } } }], mentorSection: null });
     p.section.findMany.mockResolvedValue([{ id: "s1", classId: "c1" }]);
 
     await expect(createAnnouncement(teacherCtx, validInput)).rejects.toBeInstanceOf(AnnouncementAuthError);
@@ -186,7 +198,7 @@ describe("createAnnouncement — teacher authorization", () => {
   });
 
   it("rejects a teacher targeting the TEACHERS audience group", async () => {
-    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1" } }], mentorSection: null });
+    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1", name: "A", class: { name: "5" } } }], mentorSection: null });
     p.section.findMany.mockResolvedValue([{ id: "s1", classId: "c1" }]);
     const withTeachers = { ...validInput, audience: ["TEACHERS" as const] };
     await expect(createAnnouncement(teacherCtx, withTeachers)).rejects.toBeInstanceOf(AnnouncementAuthError);
@@ -214,7 +226,7 @@ describe("createAnnouncement — teacher authorization", () => {
   });
 
   it("still accepts the identical payload once the extra fields are removed (proves the rejection above is about the extra keys, not the rest of the body)", async () => {
-    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1" } }], mentorSection: null });
+    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1", name: "A", class: { name: "5" } } }], mentorSection: null });
     p.section.findMany.mockResolvedValue([{ id: "s1", classId: "c1" }]);
     p.announcement.create.mockResolvedValue({ id: "a1", audience: [], targets: [] });
 

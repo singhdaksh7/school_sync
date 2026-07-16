@@ -8,6 +8,13 @@ vi.mock("@/lib/prisma", () => {
     announcementAudience: { deleteMany: vi.fn() },
     teacher: { findFirst: vi.fn() },
     section: { findMany: vi.fn() },
+    // requireTeacherPermission's dependencies: no TeacherRoleAssignment rows
+    // -> legacy unrestricted access (matches every other pre-existing test's
+    // expectations here — these tests are about strict-schema rejection, not
+    // about ANNOUNCEMENTS permission enforcement, which has its own
+    // dedicated test file).
+    teacherRoleAssignment: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+    school: { findUnique: vi.fn(async () => null) },
   };
   prisma.$transaction = vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
   return { prisma };
@@ -69,7 +76,7 @@ describe("POST /api/teacher/announcements — strict-schema rejection at the rou
   });
 
   it("accepts the identical payload once the extra fields are removed", async () => {
-    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1" } }], mentorSection: null });
+    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1", name: "A", class: { name: "5" } } }], mentorSection: null });
     p.section.findMany.mockResolvedValue([{ id: "s1", classId: "c1" }]);
     p.announcement.create.mockResolvedValue({ id: "a1", audience: [], targets: [] });
     const { POST } = await import("@/app/api/teacher/announcements/route");

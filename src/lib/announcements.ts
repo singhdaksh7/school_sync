@@ -94,26 +94,48 @@ export class AnnouncementAuthError extends Error {
   }
 }
 
-/** Teacher's currently-authorized (classId, sectionId) pairs — from active timetable slots and any mentor section, mirroring the pattern already used for homework (src/lib/homework.ts getTeacherAssignments). */
+/**
+ * Teacher's currently-authorized (classId, sectionId) pairs — from active
+ * timetable slots and any mentor section, mirroring the pattern already used
+ * for homework (src/lib/homework.ts getTeacherAssignments). Includes
+ * className/sectionName purely for UI display — the create/edit-time
+ * authorization check itself only ever uses sectionId (see validateTargets),
+ * so a client can never widen its own access by tampering with the label
+ * fields. This is the ONLY server-authorized source for the teacher
+ * announcements UI's class/section picker — the UI must never let a teacher
+ * type/select an arbitrary classId/sectionId.
+ */
 export async function getTeacherAuthorizedSections(teacherId: string, schoolId: string) {
   const teacher = await prisma.teacher.findFirst({
     where: { id: teacherId, schoolId, isDeleted: false },
     select: {
       timetableSlots: {
         where: { schoolId },
-        select: { section: { select: { id: true, classId: true } } },
+        select: { section: { select: { id: true, classId: true, name: true, class: { select: { name: true } } } } },
       },
-      mentorSection: { select: { id: true, classId: true } },
+      mentorSection: { select: { id: true, classId: true, name: true, class: { select: { name: true } } } },
     },
   });
   if (!teacher) return [];
 
-  const bySection = new Map<string, { classId: string; sectionId: string }>();
+  const bySection = new Map<string, { classId: string; sectionId: string; className: string; sectionName: string }>();
   for (const slot of teacher.timetableSlots) {
-    if (slot.section) bySection.set(slot.section.id, { classId: slot.section.classId, sectionId: slot.section.id });
+    if (slot.section) {
+      bySection.set(slot.section.id, {
+        classId: slot.section.classId,
+        sectionId: slot.section.id,
+        className: slot.section.class.name,
+        sectionName: slot.section.name,
+      });
+    }
   }
   if (teacher.mentorSection) {
-    bySection.set(teacher.mentorSection.id, { classId: teacher.mentorSection.classId, sectionId: teacher.mentorSection.id });
+    bySection.set(teacher.mentorSection.id, {
+      classId: teacher.mentorSection.classId,
+      sectionId: teacher.mentorSection.id,
+      className: teacher.mentorSection.class.name,
+      sectionName: teacher.mentorSection.name,
+    });
   }
   return [...bySection.values()];
 }
@@ -563,6 +585,49 @@ export async function listAnnouncementsForTeacher(schoolId: string, teacherId: s
     total,
     pagination
   );
+}
+
+/**
+ * Announcements a teacher can MANAGE (create/edit/publish/cancel) — their own
+ * created rows, any status, optionally filtered — as opposed to
+ * listAnnouncementsForTeacher above, which is the "as a recipient" inbox
+ * feed (published-only, includes school-wide TEACHERS-audience rows from
+ * other creators). Always scoped to createdById so a teacher can never list
+ * another teacher's drafts, even within the same school.
+ */
+export async function listAnnouncementsManagedByTeacher(
+  schoolId: string,
+  teacherUserId: string,
+  pagination: PaginationParams,
+  filters: { status?: string; search?: string } = {}
+) {
+  const where = {
+    schoolId,
+    createdById: teacherUserId,
+    ...(filters.status ? { status: filters.status as never } : {}),
+    ...(filters.search
+      ? {
+          OR: [
+            { title: { contains: filters.search, mode: "insensitive" as const } },
+            { body: { contains: filters.search, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+  };
+  const [data, total] = await Promise.all([
+    prisma.announcement.findMany({
+      where,
+      include: {
+        audience: true,
+        targets: { include: { class: { select: { name: true } }, section: { select: { name: true } } } },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+    prisma.announcement.count({ where }),
+  ]);
+  return paginated(data, total, pagination);
 }
 
 // ── Read tracking ────────────────────────────────────────────────────────
