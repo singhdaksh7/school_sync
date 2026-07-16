@@ -12,9 +12,14 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     school: { findFirst: vi.fn(), findUnique: vi.fn() },
     teacher: { findFirst: vi.fn(), findUnique: vi.fn() },
-    student: { findFirst: vi.fn() },
+    student: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn() },
     user: { findFirst: vi.fn() },
-    attendance: { findMany: vi.fn(), upsert: vi.fn() },
+    attendance: { findMany: vi.fn(), upsert: vi.fn(), findUnique: vi.fn() },
+    attendanceSession: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+    attendanceHistory: { createMany: vi.fn() },
+    leaveRequest: { findMany: vi.fn() },
+    $transaction: vi.fn(),
+    $executeRaw: vi.fn(),
   },
 }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
@@ -38,7 +43,13 @@ import { GET as attendanceGet, POST as attendancePost } from "@/app/api/teacher/
 const p = prisma as unknown as {
   school: { findFirst: ReturnType<typeof vi.fn> };
   teacher: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
-  attendance: { findMany: ReturnType<typeof vi.fn>; upsert: ReturnType<typeof vi.fn> };
+  student: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
+  attendance: { findMany: ReturnType<typeof vi.fn>; upsert: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
+  attendanceSession: { findUnique: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
+  attendanceHistory: { createMany: ReturnType<typeof vi.fn> };
+  leaveRequest: { findMany: ReturnType<typeof vi.fn> };
+  $transaction: ReturnType<typeof vi.fn>;
+  $executeRaw: ReturnType<typeof vi.fn>;
 };
 const authMock = auth as unknown as ReturnType<typeof vi.fn>;
 const teacherPermMock = requireTeacherPermission as unknown as ReturnType<typeof vi.fn>;
@@ -68,6 +79,15 @@ beforeEach(() => {
   });
   p.attendance.findMany.mockResolvedValue([]);
   p.attendance.upsert.mockResolvedValue({});
+  p.attendance.findUnique.mockResolvedValue(null);
+  p.student.findMany.mockResolvedValue([]);
+  p.student.count.mockResolvedValue(1);
+  p.attendanceSession.findUnique.mockResolvedValue(null);
+  p.attendanceSession.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: "session-1", ...data }));
+  p.attendanceHistory.createMany.mockResolvedValue({ count: 0 });
+  p.leaveRequest.findMany.mockResolvedValue([]);
+  p.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(p));
+  p.$executeRaw.mockResolvedValue(undefined);
   teacherPermMock.mockResolvedValue(null);
   getActiveTeacherByUserIdMock.mockResolvedValue(TEACHER_ROW);
   allStudentsBelongToSchoolMock.mockResolvedValue(true);

@@ -87,6 +87,33 @@ enum AttendanceStatus {
   PRESENT
   ABSENT
   LATE
+  // Attendance v2: derived-suggestion / final status for a student covered by
+  // approved leave on this date. Added via its own migration statement (no
+  // other statement in that migration references this literal), respecting
+  // PostgreSQL's "new enum value unusable in the transaction that added it"
+  // restriction.
+  ON_LEAVE
+}
+
+enum AttendanceSessionStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum AttendanceCorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Distinguishes WHY an AttendanceHistory row exists — never reuses LeaveStatus
+// or AttendanceCorrectionStatus so the audit trail stays unambiguous.
+enum AttendanceHistorySource {
+  DRAFT_MARK
+  SUBMISSION
+  CORRECTION_APPROVED
+  ADMIN_EMERGENCY
+  LEAVE_RECONCILIATION
 }
 
 enum AttendanceType {
@@ -244,6 +271,8 @@ model User {
   admissionReviewEventsCreated      AdmissionReviewEvent[]      @relation("AdmissionReviewEventCreatedBy")
   admissionNotesAuthored            AdmissionNote[]             @relation("AdmissionNoteAuthor")
   admissionStatusHistoryActed       AdmissionStatusHistory[]    @relation("AdmissionStatusHistoryActor")
+  attendanceSessionsSubmitted       AttendanceSession[]         @relation("AttendanceSessionSubmitter")
+  attendanceCorrectionsReviewed     AttendanceCorrectionRequest[] @relation("AttendanceCorrectionReviewer")
   createdAt                         DateTime                    @default(now())
   updatedAt                         DateTime                    @updatedAt
 }
@@ -374,6 +403,9 @@ model School {
   admissionCycles                      AdmissionCycle[]
   admissionApplications                AdmissionApplication[]
   admissionNumberCounter               AdmissionNumberCounter?
+  attendanceSessions                   AttendanceSession[]
+  attendanceCorrectionRequests         AttendanceCorrectionRequest[]
+  attendanceHistory                    AttendanceHistory[]
   createdAt                            DateTime                      @default(now())
   updatedAt                            DateTime                      @updatedAt
 
@@ -442,6 +474,8 @@ model Section {
   timetableSubjectRequirements TimetableSubjectRequirement[]
   timetableDrafts              TimetableDraft[]
   announcementTargets          AnnouncementTarget[]
+  attendanceSessions           AttendanceSession[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[]
   createdAt                    DateTime                      @default(now())
 
   @@unique([name, classId])
@@ -493,6 +527,7 @@ model Teacher {
   timetableDraftSlots        TimetableDraftSlot[]
   operationalRoleAssignments OperationalRoleAssignment[]
   admissionReviewEvents      AdmissionReviewEvent[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[] @relation("AttendanceCorrectionRequester")
   isDeleted                  Boolean                       @default(false)
   deletedAt                  DateTime?
   deletedById                String?
@@ -765,6 +800,8 @@ model Student {
   feePayments          FeePayment[]
   leaveRequests        LeaveRequest[]
   sectionTransfers     SectionTransfer[]
+  attendanceCorrectionItems AttendanceCorrectionItem[]
+  attendanceHistory    AttendanceHistory[]
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
 
@@ -828,6 +865,7 @@ model Attendance {
   markedById String
   markedBy   User             @relation(fields: [markedById], references: [id])
   createdAt  DateTime         @default(now())
+  history    AttendanceHistory[]
 
   @@unique([date, studentId])
   @@unique([date, teacherId])
@@ -835,6 +873,105 @@ model Attendance {
   @@index([schoolId, type])
   @@index([studentId])
   @@index([teacherId])
+}
+
+// ─── Attendance v2: submission lifecycle, corrections, history ──────────────
+// One row per (school, section, date) — governs whether the mentor teacher's
+// STUDENT-attendance marking for that section/date is still editable (DRAFT)
+// or locked (SUBMITTED). Teacher self-attendance (Attendance.type=TEACHER) has
+// no "section" concept and is NOT gated by this model.
+model AttendanceSession {
+  id            String                    @id @default(cuid())
+  schoolId      String
+  school        School                    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sectionId     String
+  section       Section                   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  date          DateTime                  @db.Date
+  status        AttendanceSessionStatus   @default(DRAFT)
+  submittedById String?
+  submittedBy   User?                     @relation("AttendanceSessionSubmitter", fields: [submittedById], references: [id])
+  submittedAt   DateTime?
+  corrections   AttendanceCorrectionRequest[]
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+
+  @@unique([schoolId, sectionId, date])
+  @@index([schoolId, date])
+  @@index([schoolId, status])
+}
+
+// A teacher-initiated request to change one or more students' status on an
+// already-SUBMITTED session. Deliberately separate from LeaveRequest/
+// LeaveStatus — corrections are about attendance rows, not leave, and mixing
+// the two enums would let a correction accidentally satisfy leave-approval
+// checks (or vice versa).
+model AttendanceCorrectionRequest {
+  id              String                       @id @default(cuid())
+  schoolId        String
+  school          School                       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sectionId       String
+  section         Section                      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  date            DateTime                     @db.Date
+  sessionId       String
+  session         AttendanceSession            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  requestedById   String
+  requestedBy     Teacher                      @relation("AttendanceCorrectionRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  reason          String
+  status          AttendanceCorrectionStatus   @default(PENDING)
+  reviewedById    String?
+  reviewedBy      User?                        @relation("AttendanceCorrectionReviewer", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  reviewNote      String?
+  items           AttendanceCorrectionItem[]
+  history         AttendanceHistory[]
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+
+  @@index([schoolId, status])
+  @@index([sessionId])
+  @@index([requestedById])
+}
+
+model AttendanceCorrectionItem {
+  id                  String                       @id @default(cuid())
+  correctionRequestId String
+  correctionRequest   AttendanceCorrectionRequest  @relation(fields: [correctionRequestId], references: [id], onDelete: Cascade)
+  studentId           String
+  student             Student                      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  originalStatus      AttendanceStatus
+  requestedStatus     AttendanceStatus
+  createdAt           DateTime                     @default(now())
+
+  @@unique([correctionRequestId, studentId])
+  @@index([studentId])
+}
+
+// Append-only. Never updated or deleted through application routes — the
+// history endpoint only ever INSERTs (see src/lib/attendance-history.ts).
+model AttendanceHistory {
+  id                  String                        @id @default(cuid())
+  schoolId            String
+  school              School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  attendanceId         String
+  attendance           Attendance                   @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  studentId           String
+  student             Student                       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sectionId           String
+  date                DateTime                      @db.Date
+  oldStatus           AttendanceStatus?
+  newStatus           AttendanceStatus
+  actorId             String
+  actorRole           String?
+  source              AttendanceHistorySource
+  correctionRequestId String?
+  correctionRequest   AttendanceCorrectionRequest?  @relation(fields: [correctionRequestId], references: [id], onDelete: SetNull)
+  reason              String?
+  createdAt           DateTime                      @default(now())
+
+  @@index([schoolId, date])
+  @@index([studentId])
+  @@index([attendanceId])
+  @@index([correctionRequestId])
 }
 
 model ReportCard {

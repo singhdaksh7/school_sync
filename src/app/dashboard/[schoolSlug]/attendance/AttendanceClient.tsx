@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import AttendanceCorrectionsPanel from "@/components/dashboard/AttendanceCorrectionsPanel";
 
 type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE";
 interface Section { id: string; name: string; class: { name: string } }
@@ -291,6 +292,13 @@ export default function AttendanceClient({
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {mode === "STUDENT" && (
+        <div className="pt-4">
+          <h3 className="mb-3 text-lg font-bold text-gray-900">Submitted Attendance, Corrections &amp; History</h3>
+          <AttendanceCorrectionsPanel schoolId={schoolId} />
+        </div>
       )}
     </div>
   );

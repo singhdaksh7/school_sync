@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getTeacherAuth } from "@/lib/mobile-auth";
-import { allStudentsBelongToSchool } from "@/lib/tenant";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { loadAttendanceRosterView, saveAttendanceDraft, ATTENDANCE_STATUS_VALUES } from "@/lib/attendance-sessions";
 
 async function getTeacher(userId: string) {
   return prisma.teacher.findUnique({ where: { userId } });
+}
+
+function parseDateParam(dateParam: string) {
+  return new Date(dateParam + "T00:00:00.000Z");
 }
 
 // getTeacherAuth (src/lib/mobile-auth.ts) accepts EITHER a NextAuth web
@@ -31,14 +36,32 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const dateParam = url.searchParams.get("date") || new Date().toISOString().split("T")[0];
-  const date = new Date(dateParam + "T00:00:00.000Z");
+  const date = parseDateParam(dateParam);
 
-  const records = await prisma.attendance.findMany({
-    where: { schoolId: teacher.schoolId, sectionId: teacher.mentorSectionId, date, type: "STUDENT" },
-  });
-  return NextResponse.json(records);
+  const view = await loadAttendanceRosterView(teacher.schoolId, teacher.mentorSectionId, date);
+  return NextResponse.json(view);
 }
 
+// Client can only ever supply studentId + status per record — schoolId,
+// sectionId, actor, and any session/audit field are always resolved
+// server-side from the authenticated teacher, never trusted from the body.
+const draftSchema = z
+  .object({
+    date: z.string(),
+    records: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            status: z.enum(ATTENDANCE_STATUS_VALUES as [string, ...string[]]),
+          })
+          .strict()
+      )
+      .max(500),
+  })
+  .strict();
+
+/** Saves a DRAFT mark for each given student. Rejected (409) once the session is SUBMITTED — see /submit. */
 export async function POST(req: Request) {
   const teacherAuth = await getTeacherAuth(req);
   if (!teacherAuth?.teacherId || !teacherAuth.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -56,33 +79,27 @@ export async function POST(req: Request) {
   if (denied) return denied;
 
   try {
-    const { date: dateParam, records } = await req.json();
-    const date = new Date(dateParam + "T00:00:00.000Z");
-    const submitted = records as { id: string; status: string }[];
-    if (!(await allStudentsBelongToSchool(submitted.map((r) => r.id), teacher.schoolId, teacher.mentorSectionId))) {
-      return NextResponse.json({ error: "One or more students are not in your mentor section" }, { status: 400 });
+    const body = await req.json();
+    const parsed = draftSchema.parse(body);
+    const date = parseDateParam(parsed.date);
+
+    const result = await saveAttendanceDraft({
+      schoolId: teacher.schoolId,
+      sectionId: teacher.mentorSectionId,
+      date,
+      actorUserId: userId,
+      actorRole: "TEACHER",
+      records: parsed.records.map((r) => ({ studentId: r.id, status: r.status as "PRESENT" | "ABSENT" | "LATE" | "ON_LEAVE" })),
+    });
+
+    if (!result.ok) {
+      const status = result.code === "SESSION_LOCKED" ? 409 : 400;
+      return NextResponse.json({ error: "Attendance draft rejected", reasonCode: result.code }, { status });
     }
 
-    await Promise.all(
-      submitted.map((r) =>
-        prisma.attendance.upsert({
-          where: { date_studentId: { date, studentId: r.id } },
-          create: {
-            date,
-            type: "STUDENT",
-            status: r.status as "PRESENT" | "ABSENT" | "LATE",
-            studentId: r.id,
-            sectionId: teacher.mentorSectionId!,
-            schoolId: teacher.schoolId,
-            markedById: userId,
-          },
-          update: { status: r.status as "PRESENT" | "ABSENT" | "LATE" },
-        })
-      )
-    );
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, sessionStatus: result.sessionStatus, recordCount: result.recordCount });
   } catch (err) {
+    if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
     console.error("Teacher attendance POST error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
