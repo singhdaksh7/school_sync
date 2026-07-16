@@ -80,7 +80,7 @@ export default function StudentHomeworkPage() {
 
   const filtered = useMemo(() => {
     return homework.filter((hw) => {
-      const due = new Date(hw.dueDate);
+      const due = new Date(hw.deadlineAt);
       if (category === "TODAY" && !isToday(due)) return false;
       if (category === "YESTERDAY" && !isYesterday(due)) return false;
       if (category === "LAST_7_DAYS") {
@@ -197,7 +197,7 @@ export default function StudentHomeworkPage() {
                       {hw.submissionStatus === "LATE_SUBMITTED" && <Badge variant="warning">Late</Badge>}
                       {hw.submissionStatus === "REJECTED" && <Badge variant="destructive">{STATUS_LABEL.REJECTED}</Badge>}
                       {hw.submissionStatus === "CHECKED" && <Badge variant="success">Checked</Badge>}
-                      {isToday(new Date(hw.dueDate)) && <Badge variant="warning">Due Today</Badge>}
+                      {isToday(new Date(hw.deadlineAt)) && <Badge variant="warning">Due Today</Badge>}
                       {hw.assessmentMode === "GRADED" && hw.submissionStatus === "CHECKED" && hw.score !== null && hw.maxScore !== null && (
                         <Badge variant="success">{hw.score}/{hw.maxScore}</Badge>
                       )}
@@ -206,7 +206,7 @@ export default function StudentHomeworkPage() {
                     {hw.description && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{hw.description}</p>}
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1"><User className="h-3 w-3" /> {hw.teacher.name}</span>
-                      <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" /> Due {format(new Date(hw.dueDate), "dd MMM yyyy")}</span>
+                      <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" /> Due {format(new Date(hw.deadlineAt), "dd MMM yyyy")}</span>
                       {hw.attachmentUrl && <span className="flex items-center gap-1"><Paperclip className="h-3 w-3" /> Attachment</span>}
                     </div>
                   </div>

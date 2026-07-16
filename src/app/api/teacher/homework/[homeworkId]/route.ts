@@ -133,11 +133,31 @@ export async function PATCH(
     data.subject = nextSubject;
   }
 
+  // GRADED -> CHECKING_ONLY must never leave stale marks behind: checking-only
+  // homework can never show a score (see validateStudentMarks), so any score/
+  // maxScore recorded while this homework was GRADED has to be cleared in the
+  // same transaction as the mode change — not just hidden by shouldShowMaxMarks
+  // at read time, which would leave the raw values sitting in the DB and any
+  // response path that forgets the gate would leak them. Completion/checking
+  // state, submission content, attachments, and feedback are untouched.
+  const clearingMarksOnModeSwitch = data.assessmentMode === "CHECKING_ONLY" && homework.assessmentMode === "GRADED";
+
   const updated = await prisma.$transaction(async (tx) => {
     const nextHomework = await tx.homework.update({
       where: { id: homework.id },
       data,
     });
+
+    if (clearingMarksOnModeSwitch) {
+      await tx.homeworkStudentStatus.updateMany({
+        where: { homeworkId: homework.id },
+        data: { score: null, maxScore: null },
+      });
+      await tx.homeworkSubmission.updateMany({
+        where: { homeworkId: homework.id },
+        data: { score: null, maxScore: null },
+      });
+    }
 
     if (data.sectionId && data.sectionId !== homework.sectionId) {
       const students = await tx.student.findMany({

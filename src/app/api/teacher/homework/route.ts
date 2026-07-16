@@ -69,9 +69,9 @@ export async function POST(req: Request) {
   const subject = normalizeSubject(body.subject);
   const sectionId = body.sectionId;
   const dueDate = parseRequiredDate(body.dueDate);
-  // Backward-compatible default: a caller that never sends deadlineAt gets
-  // deadlineAt === dueDate, exactly like the pre-2.0 endpoint always did.
-  const deadlineAt = body.deadlineAt ? parseRequiredDate(body.deadlineAt) : dueDate;
+  // deadlineAt is required (createHomeworkSchema enforces the field is
+  // present) — no silent default to dueDate. See the schema's doc comment.
+  const deadlineAt = parseRequiredDate(body.deadlineAt);
   const checkingDeadlineAt = body.checkingDeadlineAt ? parseRequiredDate(body.checkingDeadlineAt) : null;
   const description = body.description?.trim() || null;
   const attachmentUrl = body.attachmentUrl?.trim() || null;

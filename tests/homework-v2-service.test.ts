@@ -19,7 +19,7 @@ describe("Homework 2.0 — validateHomeworkDates", () => {
     ).toMatch(/before the submission deadline/);
   });
 
-  it("accepts a start date equal to the deadline — the backward-compatible default for a request that omits deadlineAt, matching every pre-2.0 row", () => {
+  it("accepts a start date equal to the deadline — a degenerate-but-legal case, matching every pre-2.0 row (also still reachable via the edit path)", () => {
     const same = new Date("2026-01-01T10:00:00Z");
     expect(validateHomeworkDates({ dueDate: same, deadlineAt: same })).toBeNull();
   });
@@ -202,6 +202,7 @@ describe("Homework 2.0 — createHomeworkSchema (Zod)", () => {
       subject: "Math",
       title: "HW",
       dueDate: "2026-01-01",
+      deadlineAt: "2026-01-02",
     });
     expect(parsed.assessmentMode).toBe("CHECKING_ONLY");
     expect(parsed.status).toBe("ACTIVE");
@@ -213,6 +214,7 @@ describe("Homework 2.0 — createHomeworkSchema (Zod)", () => {
       subject: "Math",
       title: "HW",
       dueDate: "2026-01-01",
+      deadlineAt: "2026-01-02",
       schoolId: "attacker-school",
       teacherId: "attacker-teacher",
     });
@@ -220,13 +222,34 @@ describe("Homework 2.0 — createHomeworkSchema (Zod)", () => {
   });
 
   it("rejects a missing required field", () => {
-    expect(createHomeworkSchema.safeParse({ subject: "Math", title: "HW", dueDate: "2026-01-01" }).success).toBe(false);
+    expect(createHomeworkSchema.safeParse({ subject: "Math", title: "HW", dueDate: "2026-01-01", deadlineAt: "2026-01-02" }).success).toBe(false);
   });
 
   it("rejects an empty title/subject/sectionId", () => {
     expect(
-      createHomeworkSchema.safeParse({ sectionId: "", subject: "Math", title: "HW", dueDate: "2026-01-01" }).success
+      createHomeworkSchema.safeParse({ sectionId: "", subject: "Math", title: "HW", dueDate: "2026-01-01", deadlineAt: "2026-01-02" }).success
     ).toBe(false);
+  });
+
+  it("no silent default: deadlineAt is required — omitting it fails schema validation rather than defaulting to dueDate", () => {
+    const result = createHomeworkSchema.safeParse({
+      sectionId: "sec1",
+      subject: "Math",
+      title: "HW",
+      dueDate: "2026-01-01",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("no silent default: an empty-string deadlineAt also fails schema validation", () => {
+    const result = createHomeworkSchema.safeParse({
+      sectionId: "sec1",
+      subject: "Math",
+      title: "HW",
+      dueDate: "2026-01-01",
+      deadlineAt: "",
+    });
+    expect(result.success).toBe(false);
   });
 });
 

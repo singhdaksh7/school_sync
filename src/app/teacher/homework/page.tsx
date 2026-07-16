@@ -288,7 +288,7 @@ export default function TeacherHomeworkPage() {
       setMessage(t("teacherHomework.selectSectionAndSubject"));
       return;
     }
-    if (!form.title.trim() || !form.dueDate) {
+    if (!form.title.trim() || !form.dueDate || !form.deadlineAt) {
       setMessage(t("teacherHomework.titleAndDeadlineRequired"));
       return;
     }
@@ -308,7 +308,7 @@ export default function TeacherHomeworkPage() {
         title: form.title,
         description: form.description,
         dueDate: toDeadlineIso(form.dueDate),
-        deadlineAt: form.deadlineAt ? toDeadlineIso(form.deadlineAt) : undefined,
+        deadlineAt: toDeadlineIso(form.deadlineAt),
         checkingDeadlineAt: form.checkingDeadlineAt ? toDeadlineIso(form.checkingDeadlineAt) : undefined,
         attachmentUrl: form.attachmentUrl,
         assessmentMode: form.assessmentMode,
@@ -559,8 +559,8 @@ export default function TeacherHomeworkPage() {
             </SelectContent>
           </Select>
           <Input placeholder={t("teacherHomework.titlePlaceholder")} value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} />
-          <Input aria-label={t("teacherHomework.dueDate")} type="date" value={form.dueDate} onChange={(e) => setForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
-          <Input aria-label={t("teacherHomework.deadlineOptionalLabel")} type="date" placeholder={t("teacherHomework.deadlineOptionalLabel")} value={form.deadlineAt} onChange={(e) => setForm((prev) => ({ ...prev, deadlineAt: e.target.value }))} />
+          <Input aria-label={t("teacherHomework.startDateLabel")} type="date" placeholder={t("teacherHomework.startDateLabel")} value={form.dueDate} onChange={(e) => setForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
+          <Input aria-label={t("teacherHomework.deadlineRequiredLabel")} type="date" placeholder={t("teacherHomework.deadlineRequiredLabel")} value={form.deadlineAt} onChange={(e) => setForm((prev) => ({ ...prev, deadlineAt: e.target.value }))} />
           <Input aria-label={t("teacherHomework.checkingDeadlineLabel")} type="date" placeholder={t("teacherHomework.checkingDeadlineLabel")} value={form.checkingDeadlineAt} onChange={(e) => setForm((prev) => ({ ...prev, checkingDeadlineAt: e.target.value }))} />
 
           <Select value={form.assessmentMode} onValueChange={(value) => setForm((prev) => ({ ...prev, assessmentMode: value as AssessmentMode }))}>

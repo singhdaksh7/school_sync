@@ -379,12 +379,13 @@ export type HomeworkLifecycleStatus = "DRAFT" | "SCHEDULED" | "ACTIVE" | "CLOSED
 /**
  * Validates the three homework dates together. Deliberately matches the
  * migration's DB CHECK constraints exactly (permissive "<=", not strict
- * "<"): the create endpoint's own backward-compatible default (a request
- * that omits deadlineAt gets deadlineAt === dueDate, exactly like the
- * pre-2.0 endpoint always did) must remain valid, both for legacy callers
- * AND for already-persisted legacy rows. What this rejects is dueDate
- * strictly AFTER deadlineAt — an unambiguous ordering error, not the
- * degenerate-but-harmless "starts and is due at the same instant" case.
+ * "<"): a homework whose start date and submission deadline are the same
+ * instant is a degenerate-but-legal case (also how every pre-2.0 row was
+ * backfilled), not an ordering error. This permissive comparison also
+ * remains needed for the teacher PATCH/edit path, where dates are
+ * updated independently and a caller may legitimately leave them equal.
+ * What this rejects is dueDate strictly AFTER deadlineAt — an unambiguous
+ * ordering error.
  */
 export function validateHomeworkDates(input: {
   dueDate: Date;
@@ -518,6 +519,19 @@ const dateInput = z.string().trim().min(1);
  * silently becoming gradeable. `status` defaults to ACTIVE, preserving the
  * pre-2.0 endpoint's exact behavior for callers that don't opt into
  * draft/scheduled.
+ *
+ * `deadlineAt` is REQUIRED — deliberately not defaulted to `dueDate`. A
+ * homework record with no genuine submission deadline is a data-quality
+ * trap (students see no deadline, or a fabricated one), so every new
+ * Homework 2.0 record must carry an explicit, teacher-chosen deadline. This
+ * is a Homework-2.0-era API-contract change, not a schema/migration change
+ * — `deadlineAt` was already NOT NULL. The teacher web UI (the only
+ * first-party caller of this endpoint) always sends both dates; there is no
+ * external legacy caller of this specific endpoint to preserve compatibility
+ * for. The separate admin-created-homework endpoint
+ * (/api/schools/[schoolId]/homework) predates Homework 2.0 entirely, never
+ * adopted assessmentMode/checkingDeadlineAt, and is intentionally left as
+ * the one legacy exception (see its own route file).
  */
 export const createHomeworkSchema = z
   .object({
@@ -526,10 +540,7 @@ export const createHomeworkSchema = z
     title: z.string().trim().min(1, "Title is required"),
     description: z.string().trim().min(1).optional().nullable(),
     dueDate: dateInput,
-    // Optional for backward compatibility: an old client that only ever
-    // sent dueDate keeps getting deadlineAt === dueDate, exactly like
-    // before.
-    deadlineAt: dateInput.optional(),
+    deadlineAt: dateInput,
     checkingDeadlineAt: dateInput.optional().nullable(),
     attachmentUrl: z.string().trim().url().optional().nullable(),
     assessmentMode: z.enum(["CHECKING_ONLY", "GRADED"]).default("CHECKING_ONLY"),

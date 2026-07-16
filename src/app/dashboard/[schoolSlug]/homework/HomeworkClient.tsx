@@ -38,6 +38,7 @@ interface Homework {
   title: string;
   description: string | null;
   dueDate: string;
+  deadlineAt: string;
   status: HomeworkStatus;
   subject: string;
   teacher: { id: string; name: string };
@@ -371,7 +372,7 @@ export default function HomeworkClient({
                         <span>·</span>
                         <span>{item.teacher.name}</span>
                         <span>·</span>
-                        <span>Due {formatDate(item.dueDate)}</span>
+                        <span>Due {formatDate(item.deadlineAt)}</span>
                         
                         {/* Render attachment badge or info */}
                         {item.attachmentUrl ? (
