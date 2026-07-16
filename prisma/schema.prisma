@@ -325,6 +325,8 @@ model School {
   timetableSlots                       TimetableSlot[]
   examSchemes                          ExamScheme[]
   announcements                        Announcement[]
+  announcementTargets                  AnnouncementTarget[]
+  announcementReads                    AnnouncementRead[]
   holidays                             Holiday[]
   feeStructures                        FeeStructure[]
   feePayments                          FeePayment[]
@@ -402,6 +404,7 @@ model Class {
   subjects                     Subject[]
   timetableSubjectRequirements TimetableSubjectRequirement[]
   timetableDrafts              TimetableDraft[]
+  announcementTargets          AnnouncementTarget[]
   createdAt                    DateTime                      @default(now())
 
   @@unique([name, schoolId])
@@ -424,6 +427,7 @@ model Section {
   transfersTo                  SectionTransfer[]             @relation("TransferTo")
   timetableSubjectRequirements TimetableSubjectRequirement[]
   timetableDrafts              TimetableDraft[]
+  announcementTargets          AnnouncementTarget[]
   createdAt                    DateTime                      @default(now())
 
   @@unique([name, classId])
@@ -914,19 +918,166 @@ model ReportCardSubject {
   @@unique([reportCardId, subject])
 }
 
+// Targeted announcements (see docs/ or PR description for the full design).
+//
+// scope: SCHOOL_WIDE announcements have no AnnouncementTarget rows.
+// CLASS_SECTION announcements require >=1 AnnouncementTarget row (validated
+// server-side against real, currently-existing Class/Section rows — and for
+// teacher creators, only sections they are currently authorized to teach).
+//
+// audience (AnnouncementAudience rows) is stored explicitly rather than
+// inferred from scope at read time, so a school-wide announcement can still
+// be teacher-only, parent-only, etc.
+//
+// Legacy compatibility: every Announcement created before this feature was
+// implicitly school-wide and visible to both students and parents (see the
+// pre-existing /api/student/announcements and /api/parent/announcements
+// handlers, which queried `schoolId` with no further filtering). The
+// migration that introduces these columns backfills every existing row with
+// scope=SCHOOL_WIDE, status=PUBLISHED and audience={STUDENTS, GUARDIANS} —
+// i.e. exactly the population that could already see them — so no legacy
+// announcement becomes visible to a broader audience than before.
+enum AnnouncementScope {
+  SCHOOL_WIDE
+  CLASS_SECTION
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+  CANCELLED
+}
+
+enum AnnouncementAudienceGroup {
+  TEACHERS
+  GUARDIANS
+  STUDENTS
+}
+
+// Distinct from UserRole: STUDENT/GUARDIAN read-tracking actors are never
+// User rows (Guardian and Student are separate identity models — see
+// StudentGuardian/Guardian/Student above), so read tracking needs its own
+// small actor-type enum rather than reusing UserRole.
+enum AnnouncementReadActorType {
+  STUDENT
+  GUARDIAN
+  TEACHER
+}
+
 model Announcement {
-  id          String   @id @default(cuid())
-  title       String
-  body        String
-  schoolId    String
-  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  id       String            @id @default(cuid())
+  title    String
+  body     String
+  schoolId String
+  school   School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  scope    AnnouncementScope @default(SCHOOL_WIDE)
+  status   AnnouncementStatus @default(PUBLISHED)
+
   createdById String
-  createdBy   User     @relation(fields: [createdById], references: [id])
-  publishedAt DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdBy   User   @relation(fields: [createdById], references: [id])
+  // Snapshot of the creator's UserRole at creation time (SCHOOL_OWNER,
+  // SCHOOL_ADMIN, VICE_PRINCIPAL or TEACHER) — used for UI badges/filters and
+  // so a later role change never rewrites history. Null only for legacy rows
+  // predating this column (role at creation time was never recorded).
+  createdByRole String?
+
+  // Lightweight "who/when" metadata for lifecycle transitions. The
+  // authoritative, tamper-evident audit trail is the existing AuditLog
+  // convention (see src/lib/audit.ts) — every transition below also writes
+  // an AuditLog row (ANNOUNCEMENT_*). These columns exist only so the UI can
+  // show "last edited by X" etc. without joining AuditLog.
+  lastEditedById String?
+  lastEditedAt   DateTime?
+
+  scheduledAt DateTime?
+  // Set the instant the announcement actually becomes PUBLISHED — for an
+  // immediate publish this equals createdAt/updatedAt at that moment; for a
+  // SCHEDULED -> PUBLISHED transition it is stamped by whatever process
+  // performs that transition. Nullable: null for DRAFT/SCHEDULED rows that
+  // have never been published.
+  publishedAt   DateTime?
+  publishedById String?
+  expiresAt     DateTime?
+
+  // Published-correction workflow: editing a PUBLISHED announcement bumps
+  // this counter and stamps lastEditedById/lastEditedAt (an AuditLog
+  // ANNOUNCEMENT_CORRECTED entry captures the before/after title+body for
+  // each correction) rather than silently overwriting publication history.
+  correctionCount Int @default(0)
+
+  cancelledAt   DateTime?
+  cancelledById String?
+  archivedAt    DateTime?
+  archivedById  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  targets   AnnouncementTarget[]
+  audience  AnnouncementAudience[]
+  reads     AnnouncementRead[]
 
   @@index([schoolId, publishedAt])
+  @@index([schoolId, status])
+  @@index([schoolId, status, scheduledAt])
+  @@index([schoolId, createdById])
+  @@index([schoolId, scope, status])
+}
+
+// One row per (announcement, section) it targets. Only present for
+// scope=CLASS_SECTION announcements — a SCHOOL_WIDE announcement has zero
+// rows here (enforced server-side, see src/lib/announcements.ts).
+model AnnouncementTarget {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId        String
+  class          Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId      String
+  section        Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([announcementId, sectionId])
+  @@index([schoolId, sectionId])
+  @@index([schoolId, classId])
+}
+
+// Explicit audience groups selected for an announcement (stored, not
+// inferred at read time — see the block comment above Announcement).
+model AnnouncementAudience {
+  id             String                    @id @default(cuid())
+  announcementId String
+  announcement   Announcement              @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  group          AnnouncementAudienceGroup
+
+  @@unique([announcementId, group])
+  @@index([announcementId])
+}
+
+// Per-recipient read tracking. actorType+actorId is used instead of a single
+// FK because the three actor identity models (Teacher via User, Guardian,
+// Student) do not share one table — see the FileUploaderActorType enum above
+// for the same pattern already used elsewhere in this schema. Idempotent via
+// the unique constraint (mark-read is an upsert on this key). schoolId is
+// denormalized here purely so tenant-safety can be verified/indexed without
+// an extra join back through announcementId.
+model AnnouncementRead {
+  id             String                    @id @default(cuid())
+  announcementId String
+  announcement   Announcement              @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  schoolId       String
+  school         School                    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  actorType      AnnouncementReadActorType
+  actorId        String
+  readAt         DateTime                  @default(now())
+
+  @@unique([announcementId, actorType, actorId])
+  @@index([schoolId, actorType, actorId])
+  @@index([announcementId])
 }
 
 model Holiday {
