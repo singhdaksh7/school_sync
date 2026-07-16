@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedGuardian, guardianCanAccessStudent } from "@/lib/parent-auth";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { resolveManagedOrLegacyUrl } from "@/lib/file-service";
+import { omitPrivateRemark } from "@/lib/homework";
 
 export async function POST(
   req: NextRequest,
@@ -165,7 +166,10 @@ export async function POST(
     });
 
     const attachmentUrl = await resolveManagedOrLegacyUrl(submission);
-    return NextResponse.json({ submission: { ...submission, attachmentUrl } }, { status: 201 });
+    // teacherRemark is PRIVATE and must never reach a guardian, regardless of
+    // what the upsert above preserves/sets — omitPrivateRemark is the only
+    // sanctioned way to shape this response (see src/lib/homework.ts).
+    return NextResponse.json({ submission: { ...omitPrivateRemark(submission), attachmentUrl } }, { status: 201 });
   } catch (error) {
     console.error("Error submitting homework:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

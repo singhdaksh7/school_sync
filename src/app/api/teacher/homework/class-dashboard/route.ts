@@ -45,9 +45,9 @@ export async function GET(req: Request) {
     },
     include: {
       student: { select: { id: true, name: true, rollNo: true } },
-      homework: { select: { id: true, title: true, subject: true, dueDate: true, deadlineAt: true } },
+      homework: { select: { id: true, title: true, subject: true, deadlineAt: true } },
     },
-    orderBy: [{ student: { rollNo: "asc" } }, { homework: { dueDate: "desc" } }],
+    orderBy: [{ student: { rollNo: "asc" } }, { homework: { deadlineAt: "desc" } }],
   });
 
   const studentAccumulators = new Map<string, { name: string; rollNo: string; acc: HomeworkStatsAccumulator }>();
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
     rollNo: string;
     subject: string;
     title: string;
-    dueDate: Date;
+    deadlineAt: Date;
     completed: boolean;
   }[] = [];
 
@@ -80,7 +80,7 @@ export async function GET(req: Request) {
       rollNo: record.student.rollNo,
       subject: record.homework.subject,
       title: record.homework.title,
-      dueDate: record.homework.dueDate,
+      deadlineAt: record.homework.deadlineAt,
       completed: isCompleted(record.submissionStatus),
     });
   }
