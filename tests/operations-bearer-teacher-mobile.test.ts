@@ -20,7 +20,12 @@ vi.mock("@/lib/tenant", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     teacher: { findFirst: vi.fn() },
-    leaveRequest: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
+    leaveRequest: { findFirst: vi.fn(), findMany: vi.fn(async () => []), count: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
+    notification: { create: vi.fn() },
+    studentGuardian: { findMany: vi.fn(async () => []) },
+    user: { findMany: vi.fn(async () => []) },
+    attendanceSession: { findMany: vi.fn(async () => []) },
+    attendance: { findMany: vi.fn(async () => []) },
   },
 }));
 vi.mock("@/lib/school-access", () => ({ schoolLifecycleGate: vi.fn(async () => null) }));

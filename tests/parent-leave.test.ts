@@ -5,8 +5,10 @@ vi.mock("@/lib/feature-flags", () => ({ requireSchoolFeature: vi.fn(async () => 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     student: { findMany: vi.fn() },
-    studentGuardian: { findFirst: vi.fn() },
+    studentGuardian: { findFirst: vi.fn(), findMany: vi.fn() },
     leaveRequest: { findMany: vi.fn(), create: vi.fn() },
+    notification: { create: vi.fn() },
+    user: { findMany: vi.fn() },
   },
 }));
 vi.mock("@/lib/parent-auth", async () => {
@@ -19,8 +21,10 @@ import { getAuthenticatedGuardian } from "@/lib/parent-auth";
 
 const p = prisma as unknown as {
   student: { findMany: ReturnType<typeof vi.fn> };
-  studentGuardian: { findFirst: ReturnType<typeof vi.fn> };
+  studentGuardian: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
   leaveRequest: { findMany: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
+  notification: { create: ReturnType<typeof vi.fn> };
+  user: { findMany: ReturnType<typeof vi.fn> };
 };
 const getAuthMock = getAuthenticatedGuardian as unknown as ReturnType<typeof vi.fn>;
 
@@ -38,6 +42,8 @@ beforeEach(() => {
   getAuthMock.mockResolvedValue(GUARDIAN_AUTH);
   p.leaveRequest.findMany.mockResolvedValue([]);
   p.leaveRequest.create.mockResolvedValue({ id: "leave-1", status: "PENDING" });
+  p.studentGuardian.findMany.mockResolvedValue([]);
+  p.user.findMany.mockResolvedValue([]);
 });
 
 describe("GET /api/parent/leave — multi-child access", () => {

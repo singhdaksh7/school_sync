@@ -5,6 +5,7 @@
  * validation, the same-day cutoff, or how a LeaveRequest row gets created.
  */
 import { prisma } from "@/lib/prisma";
+import { createNotificationsBounded, leadershipRecipientsForSchool } from "@/lib/notifications";
 
 const SAME_DAY_CUTOFF_HOUR = 7;
 const SAME_DAY_CUTOFF_MINUTE = 30;
@@ -52,7 +53,7 @@ export interface CreateStudentLeaveInput {
 
 /** Creates the STUDENT LeaveRequest row — identical shape regardless of whether the caller is the student or a linked guardian. */
 export async function createStudentLeaveRequest(input: CreateStudentLeaveInput) {
-  return prisma.leaveRequest.create({
+  const leave = await prisma.leaveRequest.create({
     data: {
       type: "STUDENT",
       reason: `${input.leaveType}: ${input.reason}`,
@@ -63,4 +64,16 @@ export async function createStudentLeaveRequest(input: CreateStudentLeaveInput) 
     },
     include: { reviewedBy: { select: { name: true } } },
   });
+
+  const reviewers = await leadershipRecipientsForSchool(input.schoolId);
+  await createNotificationsBounded(prisma, {
+    schoolId: input.schoolId,
+    eventType: "LEAVE_PENDING_REVIEW",
+    entityType: "LeaveRequest",
+    entityId: leave.id,
+    recipients: reviewers,
+    metadata: { leaveType: input.leaveType, requestType: "STUDENT" },
+  });
+
+  return leave;
 }

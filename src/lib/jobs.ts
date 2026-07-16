@@ -98,6 +98,33 @@ export const inviteEmailDeliveryPayloadSchema = z.object({
 });
 export type InviteEmailDeliveryPayload = z.infer<typeof inviteEmailDeliveryPayloadSchema>;
 
+// Unified Notification Center v1 — durable outbox for potentially unbounded
+// in-app notification fan-out (a whole section/school of students, guardians
+// and/or teachers). See src/lib/notifications.ts (enqueueNotificationFanout,
+// created in the SAME transaction as the triggering business write — e.g.
+// attendance submission, homework publish, announcement publish/correction)
+// and the handler in src/lib/job-handlers.ts. Only stable identifiers/enum
+// values are ever carried in the payload — never free-form translated copy,
+// raw request bodies, or unnecessary student PII (display copy is rendered
+// client-side from eventType + metadata through locale keys).
+export const notificationRecipientRefSchema = z.object({
+  recipientType: z.enum(["STUDENT", "GUARDIAN", "TEACHER", "ADMIN_STAFF"]),
+  recipientId: z.string().min(1),
+});
+export const notificationFanoutPayloadSchema = z.object({
+  schoolId: z.string().min(1),
+  eventType: z.string().min(1),
+  entityType: z.string().min(1),
+  entityId: z.string().min(1),
+  recipients: z.array(notificationRecipientRefSchema).min(1),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  // Stable "what changed" signal used to build each recipient's idempotency
+  // key (e.g. an AttendanceSession id, an Announcement's correctionCount) —
+  // see buildNotificationIdempotencyKey in src/lib/notifications.ts.
+  versionKey: z.string().default(""),
+});
+export type NotificationFanoutPayload = z.infer<typeof notificationFanoutPayloadSchema>;
+
 export const JOB_PAYLOAD_SCHEMAS = {
   REPORT_CARD_BATCH_GENERATION: reportCardBatchPayloadSchema,
   STUDENT_BULK_IMPORT: studentBulkImportPayloadSchema,
@@ -105,6 +132,7 @@ export const JOB_PAYLOAD_SCHEMAS = {
   FILE_RETENTION_CLEANUP: fileRetentionCleanupPayloadSchema,
   SCHOOL_DATA_PURGE: schoolDataPurgePayloadSchema,
   INVITE_EMAIL_DELIVERY: inviteEmailDeliveryPayloadSchema,
+  NOTIFICATION_FANOUT: notificationFanoutPayloadSchema,
 } satisfies Record<JobType, z.ZodTypeAny>;
 
 /** Feature entitlement required to CREATE each job type (null = no catalog gate). */
@@ -115,6 +143,7 @@ export const JOB_TYPE_FEATURE: Record<JobType, FeatureFlagKeyValue | null> = {
   FILE_RETENTION_CLEANUP: null, // internal maintenance job, no catalog feature key
   SCHOOL_DATA_PURGE: null, // Founder platform-admin job, no catalog feature key
   INVITE_EMAIL_DELIVERY: null, // Founder platform-admin job, no catalog feature key
+  NOTIFICATION_FANOUT: "NOTIFICATIONS",
 };
 
 // ── Creation ─────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { recordAttendanceHistory } from "@/lib/attendance-history";
 import { logAudit } from "@/lib/audit";
 import type { AttendanceStatusValue } from "@/lib/attendance-sessions";
+import { createNotificationsBounded, guardianRecipientsForStudents, type RecipientRef } from "@/lib/notifications";
 
 function sessionLockKey(schoolId: string, sectionId: string, date: Date): string {
   return `attendance-session:${schoolId}:${sectionId}:${date.toISOString().slice(0, 10)}`;
@@ -58,10 +59,13 @@ export async function applyAdminAttendanceCorrection(args: {
     }
 
     const historyEntries = [];
+    const changedStudentIds: string[] = [];
+    const changeSignature: string[] = [];
     for (const item of args.items) {
       const current = await tx.attendance.findUnique({ where: { date_studentId: { date: args.date, studentId: item.studentId } } });
       if (!current) return { ok: false, code: "MISSING_ATTENDANCE_ROW" } as const;
 
+      const oldStatus = current.status as AttendanceStatusValue;
       await tx.attendance.update({ where: { id: current.id }, data: { status: item.requestedStatus } });
       historyEntries.push({
         schoolId: args.schoolId,
@@ -69,13 +73,19 @@ export async function applyAdminAttendanceCorrection(args: {
         studentId: item.studentId,
         sectionId: args.sectionId,
         date: args.date,
-        oldStatus: current.status as AttendanceStatusValue,
+        oldStatus,
         newStatus: item.requestedStatus,
         actorId: args.actorUserId,
         actorRole: args.actorRole ?? null,
         source: args.source,
         reason: args.reason,
       });
+      // Notify only when the final status actually changed — a no-op
+      // re-application (e.g. a retried request) must not re-notify.
+      if (oldStatus !== item.requestedStatus) {
+        changedStudentIds.push(item.studentId);
+        changeSignature.push(`${item.studentId}:${oldStatus}>${item.requestedStatus}`);
+      }
     }
 
     await recordAttendanceHistory(tx, historyEntries);
@@ -89,6 +99,25 @@ export async function applyAdminAttendanceCorrection(args: {
       schoolId: args.schoolId,
       actorRole: args.actorRole ?? null,
     });
+
+    if (changedStudentIds.length > 0) {
+      const studentRecipients: RecipientRef[] = changedStudentIds.map((studentId) => ({ recipientType: "STUDENT", recipientId: studentId }));
+      const guardianRecipients = await guardianRecipientsForStudents(changedStudentIds);
+      // Deterministic versionKey: a byte-identical retry (same session, same
+      // resulting old->new transitions) collapses onto the same
+      // idempotencyKey; a genuinely different correction on the same
+      // session gets a different signature and so a fresh notification.
+      const versionKey = changeSignature.sort().join(",");
+      await createNotificationsBounded(tx, {
+        schoolId: args.schoolId,
+        eventType: "ATTENDANCE_CORRECTED",
+        entityType: "AttendanceSession",
+        entityId: session.id,
+        recipients: [...studentRecipients, ...guardianRecipients],
+        metadata: { sectionId: args.sectionId, date: args.date.toISOString().slice(0, 10), source: args.source },
+        versionKey,
+      });
+    }
 
     return { ok: true, updatedCount: args.items.length };
   });

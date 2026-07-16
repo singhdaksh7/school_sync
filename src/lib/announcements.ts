@@ -2,6 +2,38 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { parsePagination, paginated, type PaginationParams } from "@/lib/pagination";
+import { enqueueNotificationFanout, type RecipientRef } from "@/lib/notifications";
+import type { Prisma } from "@/generated/prisma/client";
+
+/** Builds the fan-out recipient list from getAnnouncementForDelivery's already-resolved groups — never re-derives eligibility. */
+function announcementRecipients(recipients: { studentIds: string[]; guardianIds: string[]; teacherIds: string[] }): RecipientRef[] {
+  return [
+    ...recipients.studentIds.map((id) => ({ recipientType: "STUDENT" as const, recipientId: id })),
+    ...recipients.guardianIds.map((id) => ({ recipientType: "GUARDIAN" as const, recipientId: id })),
+    ...recipients.teacherIds.map((id) => ({ recipientType: "TEACHER" as const, recipientId: id })),
+  ];
+}
+
+/** Resolves an announcement's recipients using the SAME query shape as getAnnouncementForDelivery, but against an arbitrary Prisma client (tx-safe) — used so publish/correction can enqueue fan-out in the SAME transaction as the status write. */
+async function resolveAnnouncementRecipients(
+  db: Prisma.TransactionClient | typeof prisma,
+  announcement: { id: string; schoolId: string; scope: string },
+  audienceGroups: string[],
+  sectionIds: string[]
+): Promise<{ studentIds: string[]; guardianIds: string[]; teacherIds: string[] }> {
+  const scopedSection = announcement.scope === "CLASS_SECTION" ? { sectionId: { in: sectionIds } } : {};
+  const [studentIds, guardianIds, teacherIds] = await Promise.all([
+    audienceGroups.includes("STUDENTS") ? db.student.findMany({ where: { schoolId: announcement.schoolId, ...scopedSection }, select: { id: true } }) : Promise.resolve([]),
+    audienceGroups.includes("GUARDIANS")
+      ? db.guardian.findMany({
+          where: { schoolId: announcement.schoolId, studentLinks: announcement.scope === "CLASS_SECTION" ? { some: { student: { sectionId: { in: sectionIds } } } } : { some: {} } },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+    audienceGroups.includes("TEACHERS") ? db.teacher.findMany({ where: { schoolId: announcement.schoolId, isDeleted: false }, select: { id: true } }) : Promise.resolve([]),
+  ]);
+  return { studentIds: studentIds.map((s) => s.id), guardianIds: guardianIds.map((g) => g.id), teacherIds: teacherIds.map((t) => t.id) };
+}
 
 /**
  * Targeted announcements — shared service layer.
@@ -322,10 +354,24 @@ export async function publishAnnouncement(ctx: ActorContext, announcementId: str
     throw new AnnouncementAuthError("Only draft or scheduled announcements can be published", 409);
   }
   const now = new Date();
-  const updated = await prisma.announcement.update({
-    where: { id: announcementId },
-    data: { status: "PUBLISHED", publishedAt: now, publishedById: ctx.userId },
-    include: { audience: true, targets: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.announcement.update({
+      where: { id: announcementId },
+      data: { status: "PUBLISHED", publishedAt: now, publishedById: ctx.userId },
+      include: { audience: true, targets: true },
+    });
+    const groups = row.audience.map((a) => a.group);
+    const sectionIds = row.targets.map((t) => t.sectionId);
+    const recipients = await resolveAnnouncementRecipients(tx, row, groups, sectionIds);
+    await enqueueNotificationFanout(tx, {
+      schoolId: ctx.schoolId,
+      eventType: "ANNOUNCEMENT_PUBLISHED",
+      entityType: "Announcement",
+      entityId: announcementId,
+      recipients: announcementRecipients(recipients),
+      metadata: { title: row.title },
+    });
+    return row;
   });
   await logAudit({
     action: "ANNOUNCEMENT_PUBLISHED",
@@ -356,12 +402,25 @@ export async function transitionDueScheduledAnnouncements(schoolId?: string) {
   const now = new Date();
   const due = await prisma.announcement.findMany({
     where: { status: "SCHEDULED", scheduledAt: { lte: now }, ...(schoolId ? { schoolId } : {}) },
-    select: { id: true, schoolId: true, createdById: true, createdByRole: true, title: true },
+    include: { audience: true, targets: true },
   });
   for (const row of due) {
-    await prisma.announcement.update({
-      where: { id: row.id },
-      data: { status: "PUBLISHED", publishedAt: now, publishedById: row.createdById },
+    await prisma.$transaction(async (tx) => {
+      await tx.announcement.update({
+        where: { id: row.id },
+        data: { status: "PUBLISHED", publishedAt: now, publishedById: row.createdById },
+      });
+      const groups = row.audience.map((a) => a.group);
+      const sectionIds = row.targets.map((t) => t.sectionId);
+      const recipients = await resolveAnnouncementRecipients(tx, row, groups, sectionIds);
+      await enqueueNotificationFanout(tx, {
+        schoolId: row.schoolId,
+        eventType: "ANNOUNCEMENT_PUBLISHED",
+        entityType: "Announcement",
+        entityId: row.id,
+        recipients: announcementRecipients(recipients),
+        metadata: { title: row.title },
+      });
     });
     await logAudit({
       action: "ANNOUNCEMENT_PUBLISHED",
@@ -399,17 +458,37 @@ export async function correctPublishedAnnouncement(ctx: ActorContext, announceme
   }
   const now = new Date();
   const before = { title: existing.title, body: existing.body, expiresAt: existing.expiresAt };
-  const updated = await prisma.announcement.update({
-    where: { id: announcementId },
-    data: {
-      title: input.title,
-      body: input.body,
-      expiresAt: input.expiresAt === undefined ? existing.expiresAt : input.expiresAt ? new Date(input.expiresAt) : null,
-      lastEditedById: ctx.userId,
-      lastEditedAt: now,
-      correctionCount: { increment: 1 },
-    },
-    include: { audience: true, targets: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.announcement.update({
+      where: { id: announcementId },
+      data: {
+        title: input.title,
+        body: input.body,
+        expiresAt: input.expiresAt === undefined ? existing.expiresAt : input.expiresAt ? new Date(input.expiresAt) : null,
+        lastEditedById: ctx.userId,
+        lastEditedAt: now,
+        correctionCount: { increment: 1 },
+      },
+      include: { audience: true, targets: true },
+    });
+    const groups = row.audience.map((a) => a.group);
+    const sectionIds = row.targets.map((t) => t.sectionId);
+    const recipients = await resolveAnnouncementRecipients(tx, row, groups, sectionIds);
+    await enqueueNotificationFanout(tx, {
+      schoolId: ctx.schoolId,
+      eventType: "ANNOUNCEMENT_CORRECTED",
+      entityType: "Announcement",
+      entityId: announcementId,
+      recipients: announcementRecipients(recipients),
+      metadata: { title: row.title },
+      // correctionCount is the "genuinely new version" signal the spec calls
+      // for: this guards against the SAME correction being notified twice
+      // (e.g. a re-delivered fan-out job for correctionCount=3 always
+      // resolves to the same key), while a later, distinct correction bumps
+      // the count and so always gets its own fresh notification.
+      versionKey: String(row.correctionCount),
+    });
+    return row;
   });
   await logAudit({
     action: "ANNOUNCEMENT_CORRECTED",

@@ -4,10 +4,11 @@ import { signOut } from "next-auth/react";
 import { LogOut, User, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import NotificationBell from "@/components/notifications/NotificationBell";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface HeaderProps {
-  school: { name: string };
+  school: { id: string; slug: string; name: string };
   user: { name?: string | null; email?: string | null };
   onMenuClick?: () => void;
 }
@@ -32,6 +33,7 @@ export default function Header({ school, user, onMenuClick }: HeaderProps) {
       <LanguageSwitcher className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 sm:flex" />
 
       <div className="flex flex-shrink-0 items-center gap-2">
+        <NotificationBell role="admin" basePath={`/api/schools/${school.id}/notifications`} rolePrefix={`/dashboard/${school.slug}`} viewAllHref={`/dashboard/${school.slug}/notifications`} />
         <div className="flex items-center gap-2 text-sm text-foreground">
           <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <User className="h-4 w-4" />
