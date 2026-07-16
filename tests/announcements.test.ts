@@ -192,21 +192,33 @@ describe("createAnnouncement — teacher authorization", () => {
     await expect(createAnnouncement(teacherCtx, withTeachers)).rejects.toBeInstanceOf(AnnouncementAuthError);
   });
 
-  it("rejects a client-supplied schoolId/creator claim at the real route validation boundary", async () => {
-    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1" } }], mentorSection: null });
-    p.section.findMany.mockResolvedValue([{ id: "s1", classId: "c1" }]);
-    p.announcement.create.mockResolvedValue({ id: "a1", audience: [], targets: [] });
-
+  it("rejects a client-supplied schoolId/creator claim outright at the real route validation boundary (.strict() — never silently stripped)", async () => {
     // Simulate the untyped JSON body an API route receives (req.json() is
     // `any`/`unknown`, so a malicious client can freely add extra fields).
     // Route handlers parse it through announcementInputSchema before it ever
     // reaches createAnnouncement — that parse is the actual security
-    // boundary, so this test drives it instead of hand-widening a typed value.
+    // boundary. announcementInputSchema is `.strict()`, so an extra
+    // schoolId/createdById must be REJECTED (400 at the route), not silently
+    // stripped-and-ignored — a silent strip would still be safe today (every
+    // route resolves identity from teacherAuth/session, never from `data`),
+    // but it hides a malformed/malicious payload instead of surfacing it.
     const rawClientBody: unknown = JSON.parse(JSON.stringify({ ...validInput, schoolId: "OTHER_SCHOOL", createdById: "someoneElse" }));
-    const parsed = announcementInputSchema.parse(rawClientBody);
-    expect(parsed).not.toHaveProperty("schoolId");
-    expect(parsed).not.toHaveProperty("createdById");
+    const result = announcementInputSchema.safeParse(rawClientBody);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].code).toBe("unrecognized_keys");
+      expect(result.error.issues[0].message).toContain("schoolId");
+      expect(result.error.issues[0].message).toContain("createdById");
+    }
+    expect(p.announcement.create).not.toHaveBeenCalled();
+  });
 
+  it("still accepts the identical payload once the extra fields are removed (proves the rejection above is about the extra keys, not the rest of the body)", async () => {
+    p.teacher.findFirst.mockResolvedValue({ timetableSlots: [{ section: { id: "s1", classId: "c1" } }], mentorSection: null });
+    p.section.findMany.mockResolvedValue([{ id: "s1", classId: "c1" }]);
+    p.announcement.create.mockResolvedValue({ id: "a1", audience: [], targets: [] });
+
+    const parsed = announcementInputSchema.parse(validInput);
     await createAnnouncement(teacherCtx, parsed);
     const createCall = p.announcement.create.mock.calls[0][0];
     expect(createCall.data.schoolId).toBe(SCHOOL);

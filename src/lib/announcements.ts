@@ -58,6 +58,7 @@ export const announcementInputSchema = z
     expiresAt: z.string().datetime().nullish(),
     publishNow: z.boolean().default(false),
   })
+  .strict()
   .superRefine((data, ctx) => {
     if (data.scope === "CLASS_SECTION" && data.targets.length === 0) {
       ctx.addIssue({ code: "custom", message: "At least one class/section is required for a targeted announcement", path: ["targets"] });
