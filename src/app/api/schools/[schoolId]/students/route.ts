@@ -6,7 +6,7 @@ import { logAudit } from "@/lib/audit";
 import { canAccessSchool, hasPrismaErrorCode, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
 import { requireSchoolAccess } from "@/lib/teacher-authorization";
 import { getClientIp } from "@/lib/request-ip";
-import { buildStudentPasswordHashes } from "@/lib/student-credentials";
+import { createStudentRecord } from "@/lib/student-creation";
 import { backfillHomeworkStatusForStudent } from "@/lib/homework";
 import { getStudentLimitInfo, withinStudentLimit, STUDENT_LIMIT_MESSAGE } from "@/lib/plan-limits";
 import { parsePagination, paginated } from "@/lib/pagination";
@@ -93,26 +93,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       return NextResponse.json({ error: STUDENT_LIMIT_MESSAGE }, { status: 403 });
     }
 
-    const { fatherPhoneHash, motherPhoneHash } = await buildStudentPasswordHashes(data.fatherPhone, data.motherPhone);
-
-    const student = await prisma.student.create({
-      data: {
+    const student = await createStudentRecord(
+      prisma,
+      {
         name: data.name,
         admissionNo: data.admissionNo,
         rollNo: data.rollNo,
-        email: data.email || null,
-        phone: data.phone || null,
-        fatherName: data.fatherName || null,
-        fatherPhone: data.fatherPhone || null,
-        fatherPhoneHash,
-        motherName: data.motherName || null,
-        motherPhone: data.motherPhone || null,
-        motherPhoneHash,
+        email: data.email,
+        phone: data.phone,
+        fatherName: data.fatherName,
+        fatherPhone: data.fatherPhone,
+        motherName: data.motherName,
+        motherPhone: data.motherPhone,
         sectionId: data.sectionId,
         schoolId,
       },
-      include: { section: { include: { class: true } } },
-    });
+      { include: { section: { include: { class: true } } } }
+    );
     await logAudit({ action: "STUDENT_CREATED", entityType: "Student", entityId: student.id, metadata: { name: student.name, rollNo: student.rollNo, admissionNo: student.admissionNo }, userId: session.user.id, schoolId, actorRole: sessionRole(session.user), ipAddress: getClientIp(req) });
     await backfillHomeworkStatusForStudent(student.id, schoolId, student.sectionId);
     return NextResponse.json(student, { status: 201 });
