@@ -8,7 +8,6 @@ import { requireSchoolFeature } from "@/lib/feature-flags";
 import { requireAdmissionRead, requireAdmissionReviewWrite } from "@/lib/admissions/authorization";
 import { serializeDocument } from "@/lib/admissions/serializers";
 import { generateStorageKey, getStorageProvider, safeFilename } from "@/lib/storage";
-import { readUploadedFile } from "@/lib/file-service";
 import { ADMISSION_DOCUMENT_LIMITS } from "@/lib/admissions/validation";
 import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 
@@ -50,8 +49,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
   const application = await prisma.admissionApplication.findFirst({ where: { id: applicationId, schoolId }, select: { id: true } });
   if (!application) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const upload = await readUploadedFile(req);
-  if (!upload) return NextResponse.json({ error: "A file is required" }, { status: 400 });
+  // A Request body stream can only be consumed once, so this route parses
+  // formData() a single time and pulls both the file and documentType from
+  // it, rather than calling the shared readUploadedFile() helper (which
+  // consumes the body itself) and then re-reading req.formData() again.
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "A file is required" }, { status: 400 });
+  }
+
+  const fileEntry = form.get("file");
+  if (!(fileEntry instanceof File)) return NextResponse.json({ error: "A file is required" }, { status: 400 });
+  const bytes = new Uint8Array(await fileEntry.arrayBuffer());
+  const upload = { bytes, filename: fileEntry.name || "file", declaredContentType: fileEntry.type || "" };
 
   if (upload.bytes.byteLength > ADMISSION_DOCUMENT_LIMITS.maxBytes) {
     return NextResponse.json({ error: `File exceeds the ${ADMISSION_DOCUMENT_LIMITS.maxBytes / (1024 * 1024)}MB limit` }, { status: 400 });
@@ -60,8 +72,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
     return NextResponse.json({ error: "Unsupported file type" }, { status: 400 });
   }
 
-  const form = await req.formData().catch(() => null);
-  const documentType = typeof form?.get("documentType") === "string" ? String(form.get("documentType")).trim() : "";
+  const documentType = typeof form.get("documentType") === "string" ? String(form.get("documentType")).trim() : "";
   if (!documentType) return NextResponse.json({ error: "documentType is required" }, { status: 400 });
 
   const key = generateStorageKey({ category: "admission_document", schoolId, originalFilename: upload.filename });

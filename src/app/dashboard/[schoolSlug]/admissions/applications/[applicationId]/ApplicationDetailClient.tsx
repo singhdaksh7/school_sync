@@ -83,6 +83,16 @@ export default function ApplicationDetailClient({
   const [duplicateCandidates, setDuplicateCandidates] = useState<{ studentId: string; name: string }[] | null>(null);
   const [enrolledStudentId, setEnrolledStudentId] = useState<string | null>(app.enrolledStudentId);
 
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadDocType, setUploadDocType] = useState("");
+  const [rejectReasonByDoc, setRejectReasonByDoc] = useState<Record<string, string>>({});
+
+  const [eventType, setEventType] = useState("INTERVIEW");
+  const [eventScheduledAt, setEventScheduledAt] = useState("");
+  const [eventEvaluatorId, setEventEvaluatorId] = useState("");
+  const [eventLocation, setEventLocation] = useState("");
+  const [eventInstructions, setEventInstructions] = useState("");
+
   const base = `/api/schools/${schoolId}/admissions/applications/${applicationId}`;
 
   const refreshAll = useCallback(async () => {
@@ -187,6 +197,85 @@ export default function ApplicationDetailClient({
       await refreshAll();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Enrollment failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function uploadDocument() {
+    if (!uploadFile || !uploadDocType.trim()) {
+      setError("Select a file and a document type.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", uploadFile);
+      form.append("documentType", uploadDocType.trim());
+      const res = await fetch(`${base}/documents`, { method: "POST", body: form });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+      setUploadFile(null);
+      setUploadDocType("");
+      await refreshAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyDocument(documentId: string, verificationStatus: "VERIFIED" | "REJECTED") {
+    const reviewReason = rejectReasonByDoc[documentId]?.trim();
+    if (verificationStatus === "REJECTED" && !reviewReason) {
+      setError("A reason is required to reject a document.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${base}/documents/${documentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verificationStatus, reviewReason: reviewReason || undefined }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Document review failed");
+      setRejectReasonByDoc((prev) => ({ ...prev, [documentId]: "" }));
+      await refreshAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Document review failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function scheduleEvent() {
+    if (!eventScheduledAt) {
+      setError("Select a date/time to schedule.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${base}/review-events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: eventType,
+          scheduledAt: new Date(eventScheduledAt).toISOString(),
+          evaluatorTeacherId: eventEvaluatorId || undefined,
+          location: eventLocation || undefined,
+          instructions: eventInstructions || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Scheduling failed");
+      setEventScheduledAt("");
+      setEventEvaluatorId("");
+      setEventLocation("");
+      setEventInstructions("");
+      await refreshAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Scheduling failed");
     } finally {
       setBusy(false);
     }
@@ -378,18 +467,56 @@ export default function ApplicationDetailClient({
         <CardHeader>
           <CardTitle>Documents</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-3">
           {documents.length === 0 && <p className="text-sm text-muted-foreground">No documents uploaded.</p>}
           {documents.map((d) => (
-            <div key={d.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-0">
-              <span>
-                {d.documentType} — {d.originalFilename}
-              </span>
-              <Badge variant={d.verificationStatus === "VERIFIED" ? "success" : d.verificationStatus === "REJECTED" ? "destructive" : "secondary"}>
-                {d.verificationStatus}
-              </Badge>
+            <div key={d.id} className="text-sm border-b pb-2 last:border-0 space-y-2">
+              <div className="flex items-center justify-between">
+                <span>
+                  {d.documentType} — {d.originalFilename}
+                </span>
+                <Badge variant={d.verificationStatus === "VERIFIED" ? "success" : d.verificationStatus === "REJECTED" ? "destructive" : "secondary"}>
+                  {d.verificationStatus}
+                </Badge>
+              </div>
+              {d.verificationStatus === "PENDING" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => verifyDocument(d.id, "VERIFIED")}>
+                    Verify
+                  </Button>
+                  <Input
+                    className="h-9 w-48"
+                    placeholder="Rejection reason"
+                    value={rejectReasonByDoc[d.id] ?? ""}
+                    onChange={(e) => setRejectReasonByDoc((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                  />
+                  <Button size="sm" variant="destructive" disabled={busy} onClick={() => verifyDocument(d.id, "REJECTED")}>
+                    Reject
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
+          <div className="border-t pt-3 space-y-2">
+            <Label>Upload document</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="h-9 w-48"
+                placeholder="Document type (e.g. Birth certificate)"
+                value={uploadDocType}
+                onChange={(e) => setUploadDocType(e.target.value)}
+              />
+              <input
+                type="file"
+                aria-label="Document file"
+                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                className="text-sm"
+              />
+              <Button size="sm" disabled={busy || !uploadFile || !uploadDocType.trim()} onClick={uploadDocument}>
+                Upload
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -397,7 +524,7 @@ export default function ApplicationDetailClient({
         <CardHeader>
           <CardTitle>Interviews & assessments</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-3">
           {events.length === 0 && <p className="text-sm text-muted-foreground">None scheduled.</p>}
           {events.map((ev) => (
             <div key={ev.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-0">
@@ -408,6 +535,53 @@ export default function ApplicationDetailClient({
               <Badge variant="outline">{ev.status}</Badge>
             </div>
           ))}
+          <div className="border-t pt-3 space-y-2">
+            <Label>Schedule new interview/assessment</Label>
+            <div className="flex flex-wrap items-end gap-2">
+              <select
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={eventType}
+                onChange={(e) => setEventType(e.target.value)}
+              >
+                <option value="INTERVIEW">Interview</option>
+                <option value="ASSESSMENT">Assessment</option>
+              </select>
+              <Input
+                className="h-9"
+                type="datetime-local"
+                aria-label="Scheduled at"
+                value={eventScheduledAt}
+                onChange={(e) => setEventScheduledAt(e.target.value)}
+              />
+              <select
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={eventEvaluatorId}
+                onChange={(e) => setEventEvaluatorId(e.target.value)}
+              >
+                <option value="">No evaluator assigned</option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <Input
+                className="h-9 w-40"
+                placeholder="Location (optional)"
+                value={eventLocation}
+                onChange={(e) => setEventLocation(e.target.value)}
+              />
+              <Input
+                className="h-9 w-48"
+                placeholder="Instructions (optional)"
+                value={eventInstructions}
+                onChange={(e) => setEventInstructions(e.target.value)}
+              />
+              <Button size="sm" disabled={busy} onClick={scheduleEvent}>
+                Schedule
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
