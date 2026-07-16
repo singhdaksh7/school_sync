@@ -58,6 +58,7 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
       title: t("nav.groupPeople"),
       items: [
         { href: `${base}/students`, label: t("nav.students"), icon: GraduationCap, show: true },
+        { href: `${base}/admissions`, label: t("nav.admissions"), icon: UserPlus, show: flagEnabled("ADMISSIONS") },
         { href: `${base}/teachers`, label: t("nav.teachers"), icon: Users, show: true },
         { href: `${base}/teachers/deleted`, label: t("nav.deletedTeachers"), icon: UserMinus, show: isOwnerOrAdmin },
         { href: `${base}/teacher-roles`, label: t("nav.teacherRoles"), icon: ShieldCheck, show: isOwnerOrAdmin && flagEnabled("TEACHER_PERMISSIONS") },

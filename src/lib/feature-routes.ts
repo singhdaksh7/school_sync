@@ -29,6 +29,7 @@ export const MODULE_FEATURE_KEYS = [
   "AI_FEATURES",
   "NOTEBOOK_CHECKING",
   "WHITE_LABEL",
+  "ADMISSIONS",
 ] as const satisfies readonly FeatureFlagKeyValue[];
 
 /**
@@ -121,6 +122,10 @@ export const FEATURE_ROUTE_RULES: RouteRule[] = [
   //    resolver is intentionally NOT gated) ────────────────────────────────────
   { pattern: /^schools\/\[schoolId\]\/branding(\/|$)/, feature: "WHITE_LABEL" },
   { pattern: /^schools\/\[schoolId\]\/custom-domain(\/|$)/, feature: "WHITE_LABEL" },
+
+  // ── ADMISSIONS (staff admissions workflow — cycles/offerings/applications/
+  //    documents/review-events/dashboard, all nested under this one prefix) ────
+  { pattern: /^schools\/\[schoolId\]\/admissions(\/|$)/, feature: "ADMISSIONS" },
 ];
 
 /**
