@@ -13,7 +13,8 @@ export type UploadCategory =
   | "HOMEWORK_ATTACHMENT"
   | "HOMEWORK_SUBMISSION"
   | "PAYMENT_PROOF"
-  | "REPORT_CARD_ASSET";
+  | "REPORT_CARD_ASSET"
+  | "LIBRARY_BOOK_COVER";
 
 export type UploadPolicy = {
   allowedContentTypes: readonly string[];
@@ -43,6 +44,7 @@ export const UPLOAD_POLICIES: Record<UploadCategory, UploadPolicy> = {
     visibility: "BILLING_PRIVATE",
   },
   REPORT_CARD_ASSET: { allowedContentTypes: IMAGE_TYPES, maxBytes: 3 * MB, visibility: "TENANT_PRIVATE" },
+  LIBRARY_BOOK_COVER: { allowedContentTypes: IMAGE_TYPES, maxBytes: 3 * MB, visibility: "TENANT_PRIVATE" },
 };
 
 /** Content types this app will NEVER accept as an upload, regardless of category. */

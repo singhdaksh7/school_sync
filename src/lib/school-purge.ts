@@ -215,6 +215,47 @@ export async function purgeSchoolData(schoolId: string, progress: PurgeProgress)
     counts[label] = (counts[label] ?? 0) + n;
   };
 
+  // ── Library circulation (must go before Student/Teacher AND before the
+  //    LibraryBookCopy/LibraryBook parents — LibraryLoan/Reservation carry
+  //    RESTRICT FKs to copy/book, and Cascade FKs to student/teacher). Order:
+  //    history/loans/reservations -> copies -> books -> policy. ────────────────
+  record("libraryHistory", await batchDelete(
+    "libraryHistory",
+    (take) => prisma.libraryHistory.findMany({ where: { schoolId }, select: { id: true }, take }),
+    (ids) => prisma.libraryHistory.deleteMany({ where: { id: { in: ids } } }),
+    progress
+  ));
+  record("libraryLoans", await batchDelete(
+    "libraryLoans",
+    (take) => prisma.libraryLoan.findMany({ where: { schoolId }, select: { id: true }, take }),
+    (ids) => prisma.libraryLoan.deleteMany({ where: { id: { in: ids } } }),
+    progress
+  ));
+  record("libraryReservations", await batchDelete(
+    "libraryReservations",
+    (take) => prisma.libraryReservation.findMany({ where: { schoolId }, select: { id: true }, take }),
+    (ids) => prisma.libraryReservation.deleteMany({ where: { id: { in: ids } } }),
+    progress
+  ));
+  record("libraryBookCopies", await batchDelete(
+    "libraryBookCopies",
+    (take) => prisma.libraryBookCopy.findMany({ where: { schoolId }, select: { id: true }, take }),
+    (ids) => prisma.libraryBookCopy.deleteMany({ where: { id: { in: ids } } }),
+    progress
+  ));
+  record("libraryBooks", await batchDelete(
+    "libraryBooks",
+    (take) => prisma.libraryBook.findMany({ where: { schoolId }, select: { id: true }, take }),
+    (ids) => prisma.libraryBook.deleteMany({ where: { id: { in: ids } } }),
+    progress
+  ));
+  record("libraryPolicy", await batchDelete(
+    "libraryPolicy",
+    (take) => prisma.libraryPolicy.findMany({ where: { schoolId }, select: { id: true }, take }),
+    (ids) => prisma.libraryPolicy.deleteMany({ where: { id: { in: ids } } }),
+    progress
+  ));
+
   // ── Children of Student (must go before Student) ──────────────────────────
   record("homeworkSubmissions", await batchDelete(
     "homeworkSubmissions",

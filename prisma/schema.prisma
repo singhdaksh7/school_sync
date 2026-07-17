@@ -60,6 +60,7 @@ enum FeatureFlagKey {
   AI_FEATURES
   NOTEBOOK_CHECKING
   ADMISSIONS
+  LIBRARY
 }
 
 enum PaymentProofStatus {
@@ -202,6 +203,7 @@ enum StoredFileCategory {
   PAYMENT_PROOF
   REPORT_CARD_ASSET
   STUDENT_IMPORT_SOURCE
+  LIBRARY_BOOK_COVER
 }
 
 // Uploader may be a User (staff), a Guardian (parent) or a Student — none of
@@ -418,6 +420,12 @@ model School {
   attendanceCorrectionRequests         AttendanceCorrectionRequest[]
   attendanceHistory                    AttendanceHistory[]
   inAppNotifications                   Notification[]
+  libraryBooks                         LibraryBook[]
+  libraryBookCopies                    LibraryBookCopy[]
+  libraryLoans                         LibraryLoan[]
+  libraryReservations                  LibraryReservation[]
+  libraryPolicy                        LibraryPolicy?
+  libraryHistory                       LibraryHistory[]
   createdAt                            DateTime                      @default(now())
   updatedAt                            DateTime                      @updatedAt
 
@@ -541,6 +549,8 @@ model Teacher {
   admissionReviewEvents        AdmissionReviewEvent[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[] @relation("AttendanceCorrectionRequester")
   notificationsReceived        Notification[]                @relation("NotificationTeacher")
+  libraryLoans                 LibraryLoan[]
+  libraryReservations          LibraryReservation[]
   isDeleted                    Boolean                       @default(false)
   deletedAt                    DateTime?
   deletedById                  String?
@@ -816,6 +826,8 @@ model Student {
   attendanceCorrectionItems AttendanceCorrectionItem[]
   attendanceHistory         AttendanceHistory[]
   notificationsReceived     Notification[]             @relation("NotificationStudent")
+  libraryLoans              LibraryLoan[]
+  libraryReservations       LibraryReservation[]
   createdAt                 DateTime                   @default(now())
   updatedAt                 DateTime                   @updatedAt
 
@@ -1970,6 +1982,7 @@ model StoredFile {
   homeworkAttachmentFor           Homework?               @relation("HomeworkAttachmentFile")
   homeworkSubmissionAttachmentFor HomeworkSubmission?     @relation("HomeworkSubmissionAttachmentFile")
   paymentProofReceiptFor          PaymentProofSubmission? @relation("PaymentProofReceiptFile")
+  libraryBookCoverFor             LibraryBook?            @relation("LibraryBookCoverFile")
 
   @@index([schoolId, category, createdAt])
   @@index([schoolId, createdAt])
@@ -2436,4 +2449,268 @@ model AdmissionStatusHistory {
 
   @@index([applicationId])
   @@index([schoolId])
+}
+
+// ─── Library Management v1 ───────────────────────────────────────────────────
+// Multi-tenant book catalogue, physical copies, circulation (issue/return/
+// renew), FIFO reservations, deterministic Decimal fines with authorized full
+// waiver, and an append-only domain history. Every model is school-scoped and
+// indexed on [schoolId, hotField]. Books/copies with any loan history are never
+// hard-deleted — they are archived (LibraryBook.status) or withdrawn
+// (LibraryBookCopy.status). See src/lib/library/*.
+
+/**
+ * Physical status of a single tracked copy (accession/barcode identified).
+ */
+enum LibraryCopyStatus {
+  AVAILABLE
+  ISSUED
+  RESERVED
+  LOST
+  DAMAGED
+  UNDER_REPAIR
+  WITHDRAWN
+}
+
+/**
+ * Catalogue (title-level) lifecycle state.
+ */
+enum LibraryBookStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/**
+ * Lifecycle of a single loan. Only ACTIVE participates in the "one active
+ * loan per copy" partial unique index.
+ */
+enum LibraryLoanStatus {
+  ACTIVE
+  RETURNED
+  LOST
+  WRITTEN_OFF
+}
+
+/**
+ * FIFO reservation lifecycle. Only PENDING participates in the "one active
+ * reservation per (borrower, title)" partial unique indexes.
+ */
+enum LibraryReservationStatus {
+  PENDING
+  FULFILLED
+  CANCELLED
+  EXPIRED
+}
+
+/**
+ * The XOR borrower kind stored on the domain history rows (privacy-safe:
+ * history never stores the borrower's name, only kind + id).
+ */
+enum LibraryBorrowerType {
+  STUDENT
+  TEACHER
+}
+
+/**
+ * Append-only domain event types recorded in LibraryHistory (mirrors the
+ * generic AuditLog actions but as typed, queryable columns).
+ */
+enum LibraryHistoryEvent {
+  BOOK_CREATED
+  BOOK_UPDATED
+  BOOK_ARCHIVED
+  BOOK_RESTORED
+  COPY_ADDED
+  COPY_STATUS_CHANGED
+  BOOK_ISSUED
+  BOOK_RETURNED
+  LOAN_RENEWED
+  RESERVATION_CREATED
+  RESERVATION_CANCELLED
+  RESERVATION_FULFILLED
+  RESERVATION_EXPIRED
+  FINE_ASSESSED
+  FINE_WAIVED
+  POLICY_CHANGED
+}
+
+model LibraryBook {
+  id              String               @id @default(cuid())
+  schoolId        String
+  school          School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  title           String
+  subtitle        String?
+  // Display string of author(s), e.g. "A. Author, B. Writer". The schema has no
+  // scalar-array precedent (list-like fields use Json or delimited strings), so
+  // authors is a single searchable String rather than String[].
+  authors         String?
+  // ISBN-10 / ISBN-13 are catalogue metadata, NOT a copy identifier — many
+  // copies can share one ISBN, so these are NOT unique.
+  isbn10          String?
+  isbn13          String?
+  publisher       String?
+  edition         String?
+  publicationYear Int?
+  language        String?
+  category        String?
+  subject         String?
+  description     String?
+  coverFileId     String?              @unique
+  coverFile       StoredFile?          @relation("LibraryBookCoverFile", fields: [coverFileId], references: [id], onDelete: SetNull)
+  status          LibraryBookStatus    @default(ACTIVE)
+  archivedAt      DateTime?
+  createdById     String?
+  updatedById     String?
+  copies          LibraryBookCopy[]
+  reservations    LibraryReservation[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId, title])
+  @@index([schoolId, category])
+  @@index([schoolId, isbn13])
+}
+
+model LibraryBookCopy {
+  id                String               @id @default(cuid())
+  schoolId          String
+  school            School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  bookId            String
+  // Restrict: a copy that carries loan history can never be hard-deleted — the
+  // school-purge path removes loans/copies in explicit child-first order.
+  book              LibraryBook          @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  accessionNumber   String
+  barcode           String
+  shelfLocation     String?
+  acquisitionDate   DateTime?
+  acquisitionCost   Decimal?             @db.Decimal(10, 2)
+  condition         String?
+  status            LibraryCopyStatus    @default(AVAILABLE)
+  // Optional metadata for a WITHDRAWN/LOST/DAMAGED transition.
+  statusReason      String?
+  statusChangedAt   DateTime?
+  statusChangedById String?
+  loans             LibraryLoan[]
+  reservations      LibraryReservation[] @relation("LibraryReservationAllocatedCopy")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([schoolId, accessionNumber])
+  @@unique([schoolId, barcode])
+  @@index([schoolId, status])
+  @@index([bookId])
+}
+
+model LibraryLoan {
+  id               String            @id @default(cuid())
+  schoolId         String
+  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  bookCopyId       String
+  // Restrict: preserve loan history — a copy with loans is archived, never deleted.
+  bookCopy         LibraryBookCopy   @relation(fields: [bookCopyId], references: [id], onDelete: Restrict)
+  // Exactly one borrower — enforced by a raw-SQL CHECK in the migration
+  // ((student_id IS NOT NULL)::int + (teacher_id IS NOT NULL)::int = 1).
+  studentId        String?
+  student          Student?          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId        String?
+  teacher          Teacher?          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  status           LibraryLoanStatus @default(ACTIVE)
+  issuedById       String?
+  issuedAt         DateTime          @default(now())
+  dueAt            DateTime
+  returnedAt       DateTime?
+  receivedById     String?
+  renewalCount     Int               @default(0)
+  finalCondition   String?
+  fineAssessed     Decimal           @default(0) @db.Decimal(10, 2)
+  fineWaived       Decimal           @default(0) @db.Decimal(10, 2)
+  fineWaivedReason String?
+  fineWaivedById   String?
+  fineWaivedAt     DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId, dueAt])
+  @@index([bookCopyId])
+  @@index([studentId])
+  @@index([teacherId])
+}
+
+model LibraryReservation {
+  id              String                   @id @default(cuid())
+  schoolId        String
+  school          School                   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  bookId          String
+  book            LibraryBook              @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  studentId       String?
+  student         Student?                 @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId       String?
+  teacher         Teacher?                 @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  status          LibraryReservationStatus @default(PENDING)
+  requestedAt     DateTime                 @default(now())
+  fulfilledAt     DateTime?
+  cancelledAt     DateTime?
+  cancelledById   String?
+  cancelReason    String?
+  expiresAt       DateTime?
+  allocatedCopyId String?
+  allocatedCopy   LibraryBookCopy?         @relation("LibraryReservationAllocatedCopy", fields: [allocatedCopyId], references: [id], onDelete: SetNull)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId, bookId, requestedAt])
+  @@index([studentId])
+  @@index([teacherId])
+}
+
+model LibraryPolicy {
+  id                          String   @id @default(cuid())
+  schoolId                    String   @unique
+  school                      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentBorrowLimit          Int      @default(3)
+  teacherBorrowLimit          Int      @default(5)
+  studentLoanDurationDays     Int      @default(14)
+  teacherLoanDurationDays     Int      @default(30)
+  maxRenewals                 Int      @default(2)
+  graceDays                   Int      @default(1)
+  finePerOverdueDay           Decimal  @default(2.00) @db.Decimal(10, 2)
+  reservationsEnabled         Boolean  @default(true)
+  reservationHoldDurationDays Int      @default(2)
+  blockBorrowingIfOverdue     Boolean  @default(true)
+  updatedById                 String?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+}
+
+model LibraryHistory {
+  id             String               @id @default(cuid())
+  schoolId       String
+  school         School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  event          LibraryHistoryEvent
+  // Typed, queryable references (plain scalars, no FK — matches the AuditLog /
+  // School.deletionRequestedById actor-id convention; keeps history immutable
+  // and decoupled from the referenced rows' lifecycle).
+  bookId         String?
+  copyId         String?
+  loanId         String?
+  reservationId  String?
+  borrowerType   LibraryBorrowerType?
+  borrowerId     String?
+  previousStatus String?
+  newStatus      String?
+  fineAmount     Decimal?             @db.Decimal(10, 2)
+  dueAtBefore    DateTime?
+  dueAtAfter     DateTime?
+  reason         String?
+  actorId        String?
+  actorRole      String?
+  createdAt      DateTime             @default(now())
+
+  @@index([schoolId, createdAt])
+  @@index([schoolId, event])
+  @@index([schoolId, bookId])
+  @@index([schoolId, loanId])
 }
