@@ -7,7 +7,12 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+vi.mock("@/lib/operational-role-resolver", () => ({
+  resolveEffectiveOperationalRole: vi.fn(),
+}));
+
 import { prisma } from "@/lib/prisma";
+import { resolveEffectiveOperationalRole } from "@/lib/operational-role-resolver";
 import {
   buildNotificationIdempotencyKey,
   createNotificationsBounded,
@@ -21,8 +26,23 @@ const p = prisma as unknown as {
   user: { findMany: ReturnType<typeof vi.fn> };
 };
 
+const mockResolveEffectiveOperationalRole = resolveEffectiveOperationalRole as unknown as ReturnType<typeof vi.fn>;
+
+const NO_EFFECTIVE_ROLE = {
+  roleType: "TEACHER_OPERATIONS",
+  dateKey: "2026-07-17",
+  effectiveTeacher: null,
+  effectiveAssignmentId: null,
+  effectivePriority: null,
+  assignmentType: null,
+  primaryTeacher: null,
+  reasonCode: "NO_ASSIGNMENTS_CONFIGURED",
+  chain: [],
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
+  mockResolveEffectiveOperationalRole.mockResolvedValue(NO_EFFECTIVE_ROLE);
 });
 
 function fakeTx(overrides: Record<string, unknown> = {}) {
@@ -173,5 +193,35 @@ describe("leadershipRecipientsForSchool", () => {
     expect(p.user.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { schoolId: "school-a", role: { in: ["SCHOOL_OWNER", "SCHOOL_ADMIN", "VICE_PRINCIPAL"] } } })
     );
+  });
+
+  it("also includes the currently-effective TEACHER_OPERATIONS delegate as a TEACHER recipient", async () => {
+    p.user.findMany.mockResolvedValue([{ id: "owner1" }]);
+    mockResolveEffectiveOperationalRole.mockResolvedValue({
+      ...NO_EFFECTIVE_ROLE,
+      effectiveTeacher: { id: "delegate-teacher-1", name: "Delegated Teacher" },
+      effectiveAssignmentId: "assign-1",
+      effectivePriority: 1,
+      assignmentType: "ALTERNATE",
+      reasonCode: "AVAILABLE",
+    });
+
+    const result = await leadershipRecipientsForSchool("school-a");
+
+    expect(result).toEqual([
+      { recipientType: "ADMIN_STAFF", recipientId: "owner1" },
+      { recipientType: "TEACHER", recipientId: "delegate-teacher-1" },
+    ]);
+    expect(mockResolveEffectiveOperationalRole).toHaveBeenCalledWith({ schoolId: "school-a", roleType: "TEACHER_OPERATIONS" });
+  });
+
+  it("does NOT add a TEACHER recipient when no teacher currently holds the delegation", async () => {
+    p.user.findMany.mockResolvedValue([{ id: "owner1" }]);
+    mockResolveEffectiveOperationalRole.mockResolvedValue(NO_EFFECTIVE_ROLE);
+
+    const result = await leadershipRecipientsForSchool("school-a");
+
+    expect(result).toEqual([{ recipientType: "ADMIN_STAFF", recipientId: "owner1" }]);
+    expect(result.some((r) => r.recipientType === "TEACHER")).toBe(false);
   });
 });

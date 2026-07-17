@@ -9,6 +9,19 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 vi.mock("@/lib/audit", () => ({ logAudit: vi.fn() }));
+vi.mock("@/lib/operational-role-resolver", () => ({
+  resolveEffectiveOperationalRole: vi.fn().mockResolvedValue({
+    roleType: "TEACHER_OPERATIONS",
+    dateKey: "2026-07-17",
+    effectiveTeacher: null,
+    effectiveAssignmentId: null,
+    effectivePriority: null,
+    assignmentType: null,
+    primaryTeacher: null,
+    reasonCode: "NO_ASSIGNMENTS_CONFIGURED",
+    chain: [],
+  }),
+}));
 
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";

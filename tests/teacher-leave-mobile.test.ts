@@ -9,9 +9,23 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 vi.mock("@/lib/mobile-auth", () => ({ getTeacherAuth: vi.fn() }));
+vi.mock("@/lib/operational-role-resolver", () => ({
+  resolveEffectiveOperationalRole: vi.fn().mockResolvedValue({
+    roleType: "TEACHER_OPERATIONS",
+    dateKey: "2026-07-17",
+    effectiveTeacher: null,
+    effectiveAssignmentId: null,
+    effectivePriority: null,
+    assignmentType: null,
+    primaryTeacher: null,
+    reasonCode: "NO_ASSIGNMENTS_CONFIGURED",
+    chain: [],
+  }),
+}));
 
 import { prisma } from "@/lib/prisma";
 import { getTeacherAuth } from "@/lib/mobile-auth";
+import { resolveEffectiveOperationalRole } from "@/lib/operational-role-resolver";
 
 const p = prisma as unknown as {
   teacher: { findUnique: ReturnType<typeof vi.fn> };
@@ -20,6 +34,7 @@ const p = prisma as unknown as {
   user: { findMany: ReturnType<typeof vi.fn> };
 };
 const getTeacherAuthMock = getTeacherAuth as unknown as ReturnType<typeof vi.fn>;
+const resolveEffectiveOperationalRoleMock = resolveEffectiveOperationalRole as unknown as ReturnType<typeof vi.fn>;
 
 const TEACHER_AUTH = { userId: "user-1", teacherId: "teacher-1", schoolId: "school-a" };
 const TEACHER_ROW = { id: "teacher-1", schoolId: "school-a" };
@@ -34,6 +49,17 @@ beforeEach(() => {
   p.teacher.findUnique.mockResolvedValue(TEACHER_ROW);
   p.leaveRequest.findMany.mockResolvedValue([]);
   p.user.findMany.mockResolvedValue([]);
+  resolveEffectiveOperationalRoleMock.mockResolvedValue({
+    roleType: "TEACHER_OPERATIONS",
+    dateKey: "2026-07-17",
+    effectiveTeacher: null,
+    effectiveAssignmentId: null,
+    effectivePriority: null,
+    assignmentType: null,
+    primaryTeacher: null,
+    reasonCode: "NO_ASSIGNMENTS_CONFIGURED",
+    chain: [],
+  });
 });
 
 describe("Teacher personal leave — self-only", () => {

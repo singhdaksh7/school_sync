@@ -40,6 +40,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma, NotificationEventType, NotificationRecipientType } from "@/generated/prisma/client";
 import { hasPrismaErrorCode } from "@/lib/tenant";
 import { notificationFanoutPayloadSchema, type NotificationFanoutPayload } from "@/lib/jobs";
+import { resolveEffectiveOperationalRole } from "@/lib/operational-role-resolver";
 
 export type { NotificationEventType, NotificationRecipientType };
 
@@ -201,20 +202,34 @@ export async function guardianRecipientsForStudents(studentIds: string[]): Promi
 /**
  * The always-authorized reviewer set for LEAVE/ATTENDANCE_CORRECTION
  * pending-review and reconciliation notifications: every School Owner,
- * School Admin and Vice Principal User of the school. Deliberately does NOT
- * attempt to resolve a currently-delegated Teacher Operations Head (see
- * src/lib/operational-role-resolver.ts) — that delegation is dynamic and
- * request-time-computed, and including it here would require re-deriving
- * per-notification which teacher currently holds it; deferred to a future
- * iteration (see PR description's Known Limitations). Owner/Admin/VP are
- * always authorized to review these requests regardless of delegation
- * (see requireSchoolAccessOrOperationalCapability's base-access check), so
- * this is always a correct, if not maximal, recipient set.
+ * School Admin and Vice Principal User of the school, PLUS (if one is
+ * currently effective) the Teacher who holds the TEACHER_OPERATIONS
+ * delegation — that bundle includes TEACHER_LEAVE_APPROVE/REJECT and
+ * ATTENDANCE_CORRECTION_APPROVE/REJECT (see operational-capabilities.ts),
+ * so a delegated teacher is a genuine reviewer of these requests and must
+ * see them in their own inbox (GET /api/teacher/notifications), not only
+ * via the admin-facing surface.
+ *
+ * The delegate is re-resolved from CURRENT facts on every call (via
+ * resolveEffectiveOperationalRole — the same live resolver the
+ * authorization guard in operational-authorization.ts uses), never cached
+ * or trusted from a prior computation, so the recipient always matches
+ * whoever is actually authorized to act at the moment the notification is
+ * created. This is additive only — Owner/Admin/VP are always included
+ * regardless of delegation (see requireSchoolAccessOrOperationalCapability's
+ * base-access check).
  */
 export async function leadershipRecipientsForSchool(schoolId: string): Promise<RecipientRef[]> {
-  const users = await prisma.user.findMany({
-    where: { schoolId, role: { in: ["SCHOOL_OWNER", "SCHOOL_ADMIN", "VICE_PRINCIPAL"] } },
-    select: { id: true },
-  });
-  return users.map((u) => ({ recipientType: "ADMIN_STAFF" as const, recipientId: u.id }));
+  const [users, operationalRole] = await Promise.all([
+    prisma.user.findMany({
+      where: { schoolId, role: { in: ["SCHOOL_OWNER", "SCHOOL_ADMIN", "VICE_PRINCIPAL"] } },
+      select: { id: true },
+    }),
+    resolveEffectiveOperationalRole({ schoolId, roleType: "TEACHER_OPERATIONS" }),
+  ]);
+  const recipients: RecipientRef[] = users.map((u) => ({ recipientType: "ADMIN_STAFF" as const, recipientId: u.id }));
+  if (operationalRole.effectiveTeacher) {
+    recipients.push({ recipientType: "TEACHER" as const, recipientId: operationalRole.effectiveTeacher.id });
+  }
+  return recipients;
 }

@@ -15,9 +15,23 @@ vi.mock("@/lib/parent-auth", async () => {
   const actual = await vi.importActual<typeof import("@/lib/parent-auth")>("@/lib/parent-auth");
   return { ...actual, getAuthenticatedGuardian: vi.fn() };
 });
+vi.mock("@/lib/operational-role-resolver", () => ({
+  resolveEffectiveOperationalRole: vi.fn().mockResolvedValue({
+    roleType: "TEACHER_OPERATIONS",
+    dateKey: "2026-07-17",
+    effectiveTeacher: null,
+    effectiveAssignmentId: null,
+    effectivePriority: null,
+    assignmentType: null,
+    primaryTeacher: null,
+    reasonCode: "NO_ASSIGNMENTS_CONFIGURED",
+    chain: [],
+  }),
+}));
 
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedGuardian } from "@/lib/parent-auth";
+import { resolveEffectiveOperationalRole } from "@/lib/operational-role-resolver";
 
 const p = prisma as unknown as {
   student: { findMany: ReturnType<typeof vi.fn> };
@@ -27,6 +41,7 @@ const p = prisma as unknown as {
   user: { findMany: ReturnType<typeof vi.fn> };
 };
 const getAuthMock = getAuthenticatedGuardian as unknown as ReturnType<typeof vi.fn>;
+const resolveEffectiveOperationalRoleMock = resolveEffectiveOperationalRole as unknown as ReturnType<typeof vi.fn>;
 
 const GUARDIAN_AUTH = { decoded: { guardianId: "g1", schoolId: "school-a" }, guardian: { id: "g1", schoolId: "school-a" } };
 
@@ -44,6 +59,17 @@ beforeEach(() => {
   p.leaveRequest.create.mockResolvedValue({ id: "leave-1", status: "PENDING" });
   p.studentGuardian.findMany.mockResolvedValue([]);
   p.user.findMany.mockResolvedValue([]);
+  resolveEffectiveOperationalRoleMock.mockResolvedValue({
+    roleType: "TEACHER_OPERATIONS",
+    dateKey: "2026-07-17",
+    effectiveTeacher: null,
+    effectiveAssignmentId: null,
+    effectivePriority: null,
+    assignmentType: null,
+    primaryTeacher: null,
+    reasonCode: "NO_ASSIGNMENTS_CONFIGURED",
+    chain: [],
+  });
 });
 
 describe("GET /api/parent/leave — multi-child access", () => {
