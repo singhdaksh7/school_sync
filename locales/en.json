@@ -1131,5 +1131,14 @@
       "COPY_ON_LOAN": "Resolve the active loan before changing this copy status",
       "generic": "The action could not be completed"
     }
+  },
+  "smartTimetableRequirements": {
+    "subjectPlaceholder": "Select a subject",
+    "loadingSubjects": "Loading Master Subjects...",
+    "noMasterSubjectsTitle": "No Master Subjects configured",
+    "noMasterSubjectsBody": "Configure Master Subjects for this class and section before adding weekly period requirements.",
+    "goToSubjectMaster": "Go to Subject Master",
+    "legacyBadge": "Legacy — no Master Subject match",
+    "legacyNote": "This requirement predates Master Subject enforcement and is kept for reference only; it cannot be edited here."
   }
 }

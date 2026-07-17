@@ -50,6 +50,8 @@ export async function draftBelongsToSchool(draftId: string, schoolId: string): P
 
 // ── Subject requirements ──────────────────────────────────────────────────────
 export interface SubjectRequirementInput {
+  /** Canonical Master Subject id — the API layer has already validated this belongs to the school/class/section before calling here. */
+  subjectId: string;
   subjectName: string;
   requiredPeriodsPerWeek: number;
   minPeriodsPerDay?: number | null;
@@ -58,7 +60,14 @@ export interface SubjectRequirementInput {
   preferredTeacherId?: string | null;
 }
 
-/** Replaces the full requirement set for a section (idempotent upsert per subjectName, deletes any not present in the new list). */
+/**
+ * Replaces the full canonical (subjectId-linked) requirement set for a
+ * section: idempotent upsert per subjectId, deletes any canonical row not
+ * present in the new list. Legacy rows (subjectId IS NULL, predating Master
+ * Subject enforcement) are never touched here — they can only ever be
+ * matched/deleted by subjectId, so a NULL subjectId row never satisfies the
+ * `notIn` filter below and is left untouched, preserved for viewing.
+ */
 export async function setSubjectRequirements(args: {
   schoolId: string;
   classId: string;
@@ -66,17 +75,20 @@ export async function setSubjectRequirements(args: {
   requirements: SubjectRequirementInput[];
 }) {
   const { schoolId, classId, sectionId, requirements } = args;
-  const names = requirements.map((r) => r.subjectName);
+  const subjectIds = requirements.map((r) => r.subjectId);
 
   await prisma.$transaction([
-    prisma.timetableSubjectRequirement.deleteMany({ where: { sectionId, subjectName: { notIn: names.length ? names : ["__none__"] } } }),
+    prisma.timetableSubjectRequirement.deleteMany({
+      where: { sectionId, subjectId: { notIn: subjectIds.length ? subjectIds : ["__none__"] } },
+    }),
     ...requirements.map((r) =>
       prisma.timetableSubjectRequirement.upsert({
-        where: { sectionId_subjectName: { sectionId, subjectName: r.subjectName } },
+        where: { sectionId_subjectId: { sectionId, subjectId: r.subjectId } },
         create: {
           schoolId,
           classId,
           sectionId,
+          subjectId: r.subjectId,
           subjectName: r.subjectName,
           requiredPeriodsPerWeek: r.requiredPeriodsPerWeek,
           minPeriodsPerDay: r.minPeriodsPerDay ?? null,
@@ -85,6 +97,7 @@ export async function setSubjectRequirements(args: {
           preferredTeacherId: r.preferredTeacherId ?? null,
         },
         update: {
+          subjectName: r.subjectName,
           requiredPeriodsPerWeek: r.requiredPeriodsPerWeek,
           minPeriodsPerDay: r.minPeriodsPerDay ?? null,
           maxPeriodsPerDay: r.maxPeriodsPerDay ?? null,
