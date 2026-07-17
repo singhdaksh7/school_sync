@@ -150,6 +150,27 @@ export async function upsertDraftSlot(args: {
     };
   }
 
+  // A slot's subject may only ever be one this section actually has a
+  // canonical (subjectId-linked) requirement for — closes the manual-builder
+  // path that would otherwise let an arbitrary or legacy/unmapped subject
+  // name reach a draft slot (and, on publish, a live TimetableSlot) without
+  // ever going through Master Subject validation.
+  if (subjectName) {
+    const canonicalRequirements = await prisma.timetableSubjectRequirement.findMany({
+      where: { sectionId, subjectId: { not: null } },
+      select: { subjectName: true },
+    });
+    const wanted = normalizeSubjectName(subjectName);
+    const isApplicable = canonicalRequirements.some((r) => normalizeSubjectName(r.subjectName) === wanted);
+    if (!isApplicable) {
+      return {
+        ok: false,
+        code: "SUBJECT_NOT_APPLICABLE",
+        error: `"${subjectName}" is not a Master-Subject-linked requirement configured for this section.`,
+      };
+    }
+  }
+
   if (teacherId && subjectName) {
     const ctx = await loadGenerationContext({ schoolId, targetSectionIds: [sectionId], batchDraftIds: [draftId] });
     const teacher = ctx.teachers.get(teacherId);

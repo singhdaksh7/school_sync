@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { resolveManagedOrLegacyUrl } from "@/lib/file-service";
+import { sortStudentsByRollNumber } from "@/lib/student-ordering";
 
 const DEFAULT_EXAM_MILESTONES = ["UT-1", "UT-2", "Half Yearly", "UT-3", "UT-4", "Final Exam"];
 
@@ -181,8 +182,10 @@ export async function getTeacherByUserId(userId: string) {
   });
 }
 
+// Universal roll-number ordering (canonical comparator — see /lib/student-ordering)
+// is applied in JS below after fetch; a plain-string Prisma `orderBy: { rollNo: "asc" }`
+// would sort "10" before "2", so none is set here.
 const STUDENT_SELECT = {
-  orderBy: { rollNo: "asc" as const },
   select: { id: true, name: true, rollNo: true },
 };
 
@@ -230,7 +233,7 @@ export async function getTeacherAssignments(teacherId: string, schoolId: string)
         sectionName: slot.section.name,
         className: slot.section.class.name,
         subject,
-        students: slot.section.students,
+        students: sortStudentsByRollNumber(slot.section.students),
       });
     }
   }
@@ -248,7 +251,7 @@ export async function getTeacherAssignments(teacherId: string, schoolId: string)
         sectionName: teacher.mentorSection.name,
         className: teacher.mentorSection.class.name,
         subject,
-        students: teacher.mentorSection.students,
+        students: sortStudentsByRollNumber(teacher.mentorSection.students),
       });
     }
   }

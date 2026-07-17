@@ -11,6 +11,7 @@ import {
   teacherCanTeachSubjectSection,
   type HomeworkStatsAccumulator,
 } from "@/lib/homework";
+import { compareStudentsByRollNumber } from "@/lib/student-ordering";
 
 type AcademicStatus = "PENDING" | "SUBMITTED" | "LATE_SUBMITTED" | "NOT_SUBMITTED" | "CHECKED" | "REJECTED";
 
@@ -97,6 +98,9 @@ export async function GET(req: Request) {
     }
   }
 
+  // Universal roll-number ordering (canonical comparator — see /lib/student-ordering)
+  // replaces the previous one-off `localeCompare(..., { numeric: true })`, which didn't
+  // implement the full rule set (stable leading-zero tiebreak, null/empty-last, etc).
   const students = Array.from(studentAccumulators.entries())
     .map(([studentId, entry]) => ({
       studentId,
@@ -104,7 +108,7 @@ export async function GET(req: Request) {
       rollNo: entry.rollNo,
       ...homeworkStatsToResponse(entry.acc),
     }))
-    .sort((a, b) => a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true }));
+    .sort((a, b) => compareStudentsByRollNumber({ ...a, id: a.studentId }, { ...b, id: b.studentId }));
 
   const withPercentage = students.filter((s) => s.completionPercentage !== null);
   const averagePercentage = withPercentage.length > 0
