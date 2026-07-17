@@ -18,6 +18,7 @@ export const FEATURE_FLAG_KEYS = [
   "AI_FEATURES",
   "NOTEBOOK_CHECKING",
   "ADMISSIONS",
+  "CERTIFICATES",
 ] as const;
 
 export type FeatureFlagKeyValue = (typeof FEATURE_FLAG_KEYS)[number];
@@ -38,12 +39,13 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKeyValue, string> = {
   AI_FEATURES: "AI Features",
   NOTEBOOK_CHECKING: "Notebook Checking",
   ADMISSIONS: "Admissions",
+  CERTIFICATES: "Certificates & Documents",
 };
 
 export const FEATURE_FLAG_GROUPS: { label: string; keys: FeatureFlagKeyValue[] }[] = [
   {
     label: "Core Academic",
-    keys: ["ATTENDANCE", "HOMEWORK", "NOTEBOOK_CHECKING", "FEES", "REPORT_CARDS", "REPORT_CARD_BUILDER", "ADMISSIONS"],
+    keys: ["ATTENDANCE", "HOMEWORK", "NOTEBOOK_CHECKING", "FEES", "REPORT_CARDS", "REPORT_CARD_BUILDER", "ADMISSIONS", "CERTIFICATES"],
   },
   {
     label: "Access Channels",

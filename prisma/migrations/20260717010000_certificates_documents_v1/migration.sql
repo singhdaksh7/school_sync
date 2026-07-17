@@ -171,9 +171,15 @@ ALTER TABLE "CertificateRequest" ADD CONSTRAINT "CertificateRequest_review_note_
   "status" != 'REJECTED' OR ("reviewNote" IS NOT NULL AND length(btrim("reviewNote")) > 0)
 );
 
--- A cancellation always records who cancelled it and when, together.
-ALTER TABLE "CertificateRequest" ADD CONSTRAINT "CertificateRequest_cancelled_pair_check" CHECK (
-  ("cancelledAt" IS NULL) = ("cancelledById" IS NULL)
+-- cancelledById is only ever set for a STAFF-initiated cancellation
+-- (it is a real FK to User, and a student/guardian requester canceling
+-- their own request has no User row — see actions.ts cancelCertificateRequest).
+-- A student/guardian self-cancel therefore has cancelledAt set with
+-- cancelledById left null; the requester identity in that case is already
+-- recorded on the row itself (requesterType/requesterGuardianId/studentId).
+-- cancelledById can never be set without cancelledAt also being set.
+ALTER TABLE "CertificateRequest" ADD CONSTRAINT "CertificateRequest_cancelled_by_requires_at_check" CHECK (
+  "cancelledById" IS NULL OR "cancelledAt" IS NOT NULL
 );
 
 -- CUSTOM certificate requests must carry a school-facing label; non-CUSTOM

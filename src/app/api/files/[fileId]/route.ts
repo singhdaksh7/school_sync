@@ -113,6 +113,25 @@ async function isAuthorizedForFile(req: NextRequest, file: NonNullable<FileRow>)
       if (teacher) return true;
     }
 
+    if (file.category === "CERTIFICATE_DOCUMENT") {
+      const issued = await prisma.issuedCertificate.findFirst({
+        where: { fileId: file.id, schoolId: file.schoolId },
+        select: { studentId: true },
+      });
+      if (!issued) return false;
+      const guardian = await getAuthenticatedGuardian(req);
+      if (guardian) {
+        const link = await prisma.studentGuardian.findFirst({
+          where: { guardianId: guardian.guardian.id, studentId: issued.studentId, schoolId: file.schoolId },
+          select: { id: true },
+        });
+        if (link) return true;
+      }
+      const student = await getStudentAuth(req);
+      if (student && student.studentId === issued.studentId) return true;
+      return false;
+    }
+
     if (file.category === "HOMEWORK_SUBMISSION") {
       const submission = await prisma.homeworkSubmission.findFirst({
         where: { attachmentFileId: file.id, schoolId: file.schoolId },
