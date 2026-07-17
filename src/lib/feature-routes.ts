@@ -30,6 +30,7 @@ export const MODULE_FEATURE_KEYS = [
   "NOTEBOOK_CHECKING",
   "WHITE_LABEL",
   "ADMISSIONS",
+  "LIBRARY",
 ] as const satisfies readonly FeatureFlagKeyValue[];
 
 /**
@@ -126,6 +127,14 @@ export const FEATURE_ROUTE_RULES: RouteRule[] = [
   // ── ADMISSIONS (staff admissions workflow — cycles/offerings/applications/
   //    documents/review-events/dashboard, all nested under this one prefix) ────
   { pattern: /^schools\/\[schoolId\]\/admissions(\/|$)/, feature: "ADMISSIONS" },
+
+  // ── LIBRARY (staff catalogue/copies/circulation/reservations/fines/policy/
+  //    reports/history, plus role-scoped self-service reads for teacher/student/
+  //    parent — all gated by the same LIBRARY module flag) ────────────────────
+  { pattern: /^schools\/\[schoolId\]\/library(\/|$)/, feature: "LIBRARY" },
+  { pattern: /^teacher\/library(\/|$)/, feature: "LIBRARY" },
+  { pattern: /^student\/library(\/|$)/, feature: "LIBRARY" },
+  { pattern: /^parent\/library(\/|$)/, feature: "LIBRARY" },
 ];
 
 /**

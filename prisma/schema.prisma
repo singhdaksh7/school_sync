@@ -60,6 +60,7 @@ enum FeatureFlagKey {
   AI_FEATURES
   NOTEBOOK_CHECKING
   ADMISSIONS
+  LIBRARY
 }
 
 enum PaymentProofStatus {
@@ -202,6 +203,7 @@ enum StoredFileCategory {
   PAYMENT_PROOF
   REPORT_CARD_ASSET
   STUDENT_IMPORT_SOURCE
+  LIBRARY_BOOK_COVER
 }
 
 // Uploader may be a User (staff), a Guardian (parent) or a Student — none of
@@ -237,44 +239,44 @@ enum JobStatus {
 }
 
 model User {
-  id                                String                      @id @default(cuid())
+  id                                String                        @id @default(cuid())
   name                              String
-  email                             String                      @unique
+  email                             String                        @unique
   password                          String
-  role                              UserRole                    @default(SCHOOL_OWNER)
+  role                              UserRole                      @default(SCHOOL_OWNER)
   schoolId                          String?
-  school                            School?                     @relation("SchoolAdmins", fields: [schoolId], references: [id])
-  ownedSchool                       School?                     @relation("SchoolOwner")
-  invitesSent                       SchoolInvite[]              @relation("InviteSender")
+  school                            School?                       @relation("SchoolAdmins", fields: [schoolId], references: [id])
+  ownedSchool                       School?                       @relation("SchoolOwner")
+  invitesSent                       SchoolInvite[]                @relation("InviteSender")
   attendancesMarked                 Attendance[]
-  teacherProfile                    Teacher?                    @relation("TeacherUser")
-  examResultsSubmitted              ExamResult[]                @relation("ResultSubmitter")
+  teacherProfile                    Teacher?                      @relation("TeacherUser")
+  examResultsSubmitted              ExamResult[]                  @relation("ResultSubmitter")
   announcements                     Announcement[]
-  feePaymentsRecorded               FeePayment[]                @relation("FeeRecorder")
-  leavesReviewed                    LeaveRequest[]              @relation("LeaveReviewer")
-  earlyLeavesReviewed               TeacherEarlyLeaveRequest[]  @relation("EarlyLeaveApprover")
-  transfersBy                       SectionTransfer[]           @relation("TransferBy")
-  auditLogs                         AuditLog[]                  @relation("AuditUser")
-  paymentProofsSubmitted            PaymentProofSubmission[]    @relation("PaymentProofSubmitter")
-  paymentProofsReviewed             PaymentProofSubmission[]    @relation("PaymentProofReviewer")
-  invoicesCreated                   Invoice[]                   @relation("InvoiceCreator")
-  teachersDeleted                   Teacher[]                   @relation("TeacherDeletedBy")
-  operationalRoleAssignmentsCreated OperationalRoleAssignment[] @relation("OperationalRoleAssignmentCreatedBy")
+  feePaymentsRecorded               FeePayment[]                  @relation("FeeRecorder")
+  leavesReviewed                    LeaveRequest[]                @relation("LeaveReviewer")
+  earlyLeavesReviewed               TeacherEarlyLeaveRequest[]    @relation("EarlyLeaveApprover")
+  transfersBy                       SectionTransfer[]             @relation("TransferBy")
+  auditLogs                         AuditLog[]                    @relation("AuditUser")
+  paymentProofsSubmitted            PaymentProofSubmission[]      @relation("PaymentProofSubmitter")
+  paymentProofsReviewed             PaymentProofSubmission[]      @relation("PaymentProofReviewer")
+  invoicesCreated                   Invoice[]                     @relation("InvoiceCreator")
+  teachersDeleted                   Teacher[]                     @relation("TeacherDeletedBy")
+  operationalRoleAssignmentsCreated OperationalRoleAssignment[]   @relation("OperationalRoleAssignmentCreatedBy")
   passwordResetTokens               PasswordResetToken[]
-  timetableDraftsCreated            TimetableDraft[]            @relation("TimetableDraftCreatedBy")
-  admissionCyclesCreated            AdmissionCycle[]            @relation("AdmissionCycleCreatedBy")
-  admissionApplicationsCreated      AdmissionApplication[]      @relation("AdmissionApplicationCreatedBy")
-  admissionApplicationsDecided      AdmissionApplication[]      @relation("AdmissionApplicationDecidedBy")
-  admissionApplicationsOverridden   AdmissionApplication[]      @relation("AdmissionApplicationOverriddenBy")
-  admissionDocumentsUploaded        AdmissionDocument[]         @relation("AdmissionDocumentUploadedBy")
-  admissionDocumentsVerified        AdmissionDocument[]         @relation("AdmissionDocumentVerifiedBy")
-  admissionReviewEventsCreated      AdmissionReviewEvent[]      @relation("AdmissionReviewEventCreatedBy")
-  admissionNotesAuthored            AdmissionNote[]             @relation("AdmissionNoteAuthor")
-  admissionStatusHistoryActed       AdmissionStatusHistory[]    @relation("AdmissionStatusHistoryActor")
-  attendanceSessionsSubmitted       AttendanceSession[]         @relation("AttendanceSessionSubmitter")
+  timetableDraftsCreated            TimetableDraft[]              @relation("TimetableDraftCreatedBy")
+  admissionCyclesCreated            AdmissionCycle[]              @relation("AdmissionCycleCreatedBy")
+  admissionApplicationsCreated      AdmissionApplication[]        @relation("AdmissionApplicationCreatedBy")
+  admissionApplicationsDecided      AdmissionApplication[]        @relation("AdmissionApplicationDecidedBy")
+  admissionApplicationsOverridden   AdmissionApplication[]        @relation("AdmissionApplicationOverriddenBy")
+  admissionDocumentsUploaded        AdmissionDocument[]           @relation("AdmissionDocumentUploadedBy")
+  admissionDocumentsVerified        AdmissionDocument[]           @relation("AdmissionDocumentVerifiedBy")
+  admissionReviewEventsCreated      AdmissionReviewEvent[]        @relation("AdmissionReviewEventCreatedBy")
+  admissionNotesAuthored            AdmissionNote[]               @relation("AdmissionNoteAuthor")
+  admissionStatusHistoryActed       AdmissionStatusHistory[]      @relation("AdmissionStatusHistoryActor")
+  attendanceSessionsSubmitted       AttendanceSession[]           @relation("AttendanceSessionSubmitter")
   attendanceCorrectionsReviewed     AttendanceCorrectionRequest[] @relation("AttendanceCorrectionReviewer")
-  createdAt                         DateTime                    @default(now())
-  updatedAt                         DateTime                    @updatedAt
+  createdAt                         DateTime                      @default(now())
+  updatedAt                         DateTime                      @updatedAt
 }
 
 model PasswordResetToken {
@@ -406,6 +408,12 @@ model School {
   attendanceSessions                   AttendanceSession[]
   attendanceCorrectionRequests         AttendanceCorrectionRequest[]
   attendanceHistory                    AttendanceHistory[]
+  libraryBooks                         LibraryBook[]
+  libraryBookCopies                    LibraryBookCopy[]
+  libraryLoans                         LibraryLoan[]
+  libraryReservations                  LibraryReservation[]
+  libraryPolicy                        LibraryPolicy?
+  libraryHistory                       LibraryHistory[]
   createdAt                            DateTime                      @default(now())
   updatedAt                            DateTime                      @updatedAt
 
@@ -498,42 +506,44 @@ model Subject {
 }
 
 model Teacher {
-  id                         String                        @id @default(cuid())
-  name                       String
-  email                      String?
-  phone                      String?
-  subject                    String?
-  schoolId                   String
-  school                     School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  userId                     String?                       @unique
-  user                       User?                         @relation("TeacherUser", fields: [userId], references: [id])
-  mentorSectionId            String?                       @unique
-  mentorSection              Section?                      @relation("SectionMentor", fields: [mentorSectionId], references: [id])
-  invites                    TeacherInvite[]
-  attendances                Attendance[]
-  timetableSlots             TimetableSlot[]               @relation("TeacherSlots")
-  leaveRequests              LeaveRequest[]
-  homework                   Homework[]
-  generatedReportCards       ReportCard[]                  @relation("ReportCardGenerator")
-  arrangmentsAsAbsent        Arrangement[]                 @relation("ArrangementAbsent")
-  arrangmentsAsSubstitute    Arrangement[]                 @relation("ArrangementSubstitute")
-  earlyLeaveRequests         TeacherEarlyLeaveRequest[]
-  roleAssignments            TeacherRoleAssignment[]
-  homeworkCompletionsMarked  HomeworkStudentStatus[]       @relation("HomeworkCompletionMarker")
-  notebookChecks             NotebookCheck[]
-  workloadOverride           TeacherWorkloadOverride?
-  subjectEligibilities       TeacherSubjectEligibility[]
-  preferredForRequirements   TimetableSubjectRequirement[] @relation("PreferredTeacher")
-  timetableDraftSlots        TimetableDraftSlot[]
-  operationalRoleAssignments OperationalRoleAssignment[]
-  admissionReviewEvents      AdmissionReviewEvent[]
+  id                           String                        @id @default(cuid())
+  name                         String
+  email                        String?
+  phone                        String?
+  subject                      String?
+  schoolId                     String
+  school                       School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  userId                       String?                       @unique
+  user                         User?                         @relation("TeacherUser", fields: [userId], references: [id])
+  mentorSectionId              String?                       @unique
+  mentorSection                Section?                      @relation("SectionMentor", fields: [mentorSectionId], references: [id])
+  invites                      TeacherInvite[]
+  attendances                  Attendance[]
+  timetableSlots               TimetableSlot[]               @relation("TeacherSlots")
+  leaveRequests                LeaveRequest[]
+  homework                     Homework[]
+  generatedReportCards         ReportCard[]                  @relation("ReportCardGenerator")
+  arrangmentsAsAbsent          Arrangement[]                 @relation("ArrangementAbsent")
+  arrangmentsAsSubstitute      Arrangement[]                 @relation("ArrangementSubstitute")
+  earlyLeaveRequests           TeacherEarlyLeaveRequest[]
+  roleAssignments              TeacherRoleAssignment[]
+  homeworkCompletionsMarked    HomeworkStudentStatus[]       @relation("HomeworkCompletionMarker")
+  notebookChecks               NotebookCheck[]
+  workloadOverride             TeacherWorkloadOverride?
+  subjectEligibilities         TeacherSubjectEligibility[]
+  preferredForRequirements     TimetableSubjectRequirement[] @relation("PreferredTeacher")
+  timetableDraftSlots          TimetableDraftSlot[]
+  operationalRoleAssignments   OperationalRoleAssignment[]
+  admissionReviewEvents        AdmissionReviewEvent[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[] @relation("AttendanceCorrectionRequester")
-  isDeleted                  Boolean                       @default(false)
-  deletedAt                  DateTime?
-  deletedById                String?
-  deletedBy                  User?                         @relation("TeacherDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
-  createdAt                  DateTime                      @default(now())
-  updatedAt                  DateTime                      @updatedAt
+  libraryLoans                 LibraryLoan[]
+  libraryReservations          LibraryReservation[]
+  isDeleted                    Boolean                       @default(false)
+  deletedAt                    DateTime?
+  deletedById                  String?
+  deletedBy                    User?                         @relation("TeacherDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
 
   @@index([schoolId])
   @@index([schoolId, isDeleted])
@@ -770,40 +780,42 @@ model ExamResult {
 }
 
 model Student {
-  id                   String                  @id @default(cuid())
-  name                 String
-  rollNo               String
-  admissionNo          String?
-  email                String?
-  phone                String?
-  passwordHash         String?
-  parentName           String?
-  parentPhone          String?
-  fatherName           String?
-  fatherPhone          String?
-  fatherPhoneHash      String?
-  motherName           String?
-  motherPhone          String?
-  motherPhoneHash      String?
-  sectionId            String
-  section              Section                 @relation(fields: [sectionId], references: [id])
-  schoolId             String
-  school               School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  attendances          Attendance[]
-  examResults          ExamResult[]
-  reportCards          ReportCard[]
-  homeworkStatuses     HomeworkStudentStatus[]
-  homeworkSubmissions  HomeworkSubmission[]
-  notebookChecks       NotebookCheck[]
-  guardianLinks        StudentGuardian[]
-  admissionApplication AdmissionApplication?
-  feePayments          FeePayment[]
-  leaveRequests        LeaveRequest[]
-  sectionTransfers     SectionTransfer[]
+  id                        String                     @id @default(cuid())
+  name                      String
+  rollNo                    String
+  admissionNo               String?
+  email                     String?
+  phone                     String?
+  passwordHash              String?
+  parentName                String?
+  parentPhone               String?
+  fatherName                String?
+  fatherPhone               String?
+  fatherPhoneHash           String?
+  motherName                String?
+  motherPhone               String?
+  motherPhoneHash           String?
+  sectionId                 String
+  section                   Section                    @relation(fields: [sectionId], references: [id])
+  schoolId                  String
+  school                    School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  attendances               Attendance[]
+  examResults               ExamResult[]
+  reportCards               ReportCard[]
+  homeworkStatuses          HomeworkStudentStatus[]
+  homeworkSubmissions       HomeworkSubmission[]
+  notebookChecks            NotebookCheck[]
+  guardianLinks             StudentGuardian[]
+  admissionApplication      AdmissionApplication?
+  feePayments               FeePayment[]
+  leaveRequests             LeaveRequest[]
+  sectionTransfers          SectionTransfer[]
   attendanceCorrectionItems AttendanceCorrectionItem[]
-  attendanceHistory    AttendanceHistory[]
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
+  attendanceHistory         AttendanceHistory[]
+  libraryLoans              LibraryLoan[]
+  libraryReservations       LibraryReservation[]
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
 
   @@unique([rollNo, schoolId])
   @@unique([schoolId, admissionNo])
@@ -850,21 +862,21 @@ model StudentGuardian {
 }
 
 model Attendance {
-  id         String           @id @default(cuid())
-  date       DateTime         @db.Date
+  id         String              @id @default(cuid())
+  date       DateTime            @db.Date
   type       AttendanceType
   status     AttendanceStatus
   studentId  String?
-  student    Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student    Student?            @relation(fields: [studentId], references: [id], onDelete: Cascade)
   teacherId  String?
-  teacher    Teacher?         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacher    Teacher?            @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   sectionId  String?
-  section    Section?         @relation(fields: [sectionId], references: [id])
+  section    Section?            @relation(fields: [sectionId], references: [id])
   schoolId   String
-  school     School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school     School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   markedById String
-  markedBy   User             @relation(fields: [markedById], references: [id])
-  createdAt  DateTime         @default(now())
+  markedBy   User                @relation(fields: [markedById], references: [id])
+  createdAt  DateTime            @default(now())
   history    AttendanceHistory[]
 
   @@unique([date, studentId])
@@ -881,19 +893,19 @@ model Attendance {
 // or locked (SUBMITTED). Teacher self-attendance (Attendance.type=TEACHER) has
 // no "section" concept and is NOT gated by this model.
 model AttendanceSession {
-  id            String                    @id @default(cuid())
+  id            String                        @id @default(cuid())
   schoolId      String
-  school        School                    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school        School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sectionId     String
-  section       Section                   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  date          DateTime                  @db.Date
-  status        AttendanceSessionStatus   @default(DRAFT)
+  section       Section                       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  date          DateTime                      @db.Date
+  status        AttendanceSessionStatus       @default(DRAFT)
   submittedById String?
-  submittedBy   User?                     @relation("AttendanceSessionSubmitter", fields: [submittedById], references: [id])
+  submittedBy   User?                         @relation("AttendanceSessionSubmitter", fields: [submittedById], references: [id])
   submittedAt   DateTime?
   corrections   AttendanceCorrectionRequest[]
-  createdAt     DateTime                  @default(now())
-  updatedAt     DateTime                  @updatedAt
+  createdAt     DateTime                      @default(now())
+  updatedAt     DateTime                      @updatedAt
 
   @@unique([schoolId, sectionId, date])
   @@index([schoolId, date])
@@ -906,26 +918,26 @@ model AttendanceSession {
 // the two enums would let a correction accidentally satisfy leave-approval
 // checks (or vice versa).
 model AttendanceCorrectionRequest {
-  id              String                       @id @default(cuid())
-  schoolId        String
-  school          School                       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sectionId       String
-  section         Section                      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  date            DateTime                     @db.Date
-  sessionId       String
-  session         AttendanceSession            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  requestedById   String
-  requestedBy     Teacher                      @relation("AttendanceCorrectionRequester", fields: [requestedById], references: [id], onDelete: Cascade)
-  reason          String
-  status          AttendanceCorrectionStatus   @default(PENDING)
-  reviewedById    String?
-  reviewedBy      User?                        @relation("AttendanceCorrectionReviewer", fields: [reviewedById], references: [id])
-  reviewedAt      DateTime?
-  reviewNote      String?
-  items           AttendanceCorrectionItem[]
-  history         AttendanceHistory[]
-  createdAt       DateTime                     @default(now())
-  updatedAt       DateTime                     @updatedAt
+  id            String                     @id @default(cuid())
+  schoolId      String
+  school        School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sectionId     String
+  section       Section                    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  date          DateTime                   @db.Date
+  sessionId     String
+  session       AttendanceSession          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  requestedById String
+  requestedBy   Teacher                    @relation("AttendanceCorrectionRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  reason        String
+  status        AttendanceCorrectionStatus @default(PENDING)
+  reviewedById  String?
+  reviewedBy    User?                      @relation("AttendanceCorrectionReviewer", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  reviewNote    String?
+  items         AttendanceCorrectionItem[]
+  history       AttendanceHistory[]
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
 
   @@index([schoolId, status])
   @@index([sessionId])
@@ -933,14 +945,14 @@ model AttendanceCorrectionRequest {
 }
 
 model AttendanceCorrectionItem {
-  id                  String                       @id @default(cuid())
+  id                  String                      @id @default(cuid())
   correctionRequestId String
-  correctionRequest   AttendanceCorrectionRequest  @relation(fields: [correctionRequestId], references: [id], onDelete: Cascade)
+  correctionRequest   AttendanceCorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Cascade)
   studentId           String
-  student             Student                      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student             Student                     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   originalStatus      AttendanceStatus
   requestedStatus     AttendanceStatus
-  createdAt           DateTime                     @default(now())
+  createdAt           DateTime                    @default(now())
 
   @@unique([correctionRequestId, studentId])
   @@index([studentId])
@@ -949,24 +961,24 @@ model AttendanceCorrectionItem {
 // Append-only. Never updated or deleted through application routes — the
 // history endpoint only ever INSERTs (see src/lib/attendance-history.ts).
 model AttendanceHistory {
-  id                  String                        @id @default(cuid())
+  id                  String                       @id @default(cuid())
   schoolId            String
-  school              School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  attendanceId         String
-  attendance           Attendance                   @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  school              School                       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  attendanceId        String
+  attendance          Attendance                   @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
   studentId           String
-  student             Student                       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student             Student                      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   sectionId           String
-  date                DateTime                      @db.Date
+  date                DateTime                     @db.Date
   oldStatus           AttendanceStatus?
   newStatus           AttendanceStatus
   actorId             String
   actorRole           String?
   source              AttendanceHistorySource
   correctionRequestId String?
-  correctionRequest   AttendanceCorrectionRequest?  @relation(fields: [correctionRequestId], references: [id], onDelete: SetNull)
+  correctionRequest   AttendanceCorrectionRequest? @relation(fields: [correctionRequestId], references: [id], onDelete: SetNull)
   reason              String?
-  createdAt           DateTime                      @default(now())
+  createdAt           DateTime                     @default(now())
 
   @@index([schoolId, date])
   @@index([studentId])
@@ -1120,16 +1132,16 @@ enum AnnouncementReadActorType {
 }
 
 model Announcement {
-  id       String            @id @default(cuid())
+  id       String             @id @default(cuid())
   title    String
   body     String
   schoolId String
-  school   School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  scope    AnnouncementScope @default(SCHOOL_WIDE)
+  school   School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  scope    AnnouncementScope  @default(SCHOOL_WIDE)
   status   AnnouncementStatus @default(PUBLISHED)
 
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
+  createdById   String
+  createdBy     User    @relation(fields: [createdById], references: [id])
   // Snapshot of the creator's UserRole at creation time (SCHOOL_OWNER,
   // SCHOOL_ADMIN, VICE_PRINCIPAL or TEACHER) — used for UI badges/filters and
   // so a later role change never rewrites history. Null only for legacy rows
@@ -1144,7 +1156,7 @@ model Announcement {
   lastEditedById String?
   lastEditedAt   DateTime?
 
-  scheduledAt DateTime?
+  scheduledAt   DateTime?
   // Set the instant the announcement actually becomes PUBLISHED — for an
   // immediate publish this equals createdAt/updatedAt at that moment; for a
   // SCHEDULED -> PUBLISHED transition it is stamped by whatever process
@@ -1168,9 +1180,9 @@ model Announcement {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  targets   AnnouncementTarget[]
-  audience  AnnouncementAudience[]
-  reads     AnnouncementRead[]
+  targets  AnnouncementTarget[]
+  audience AnnouncementAudience[]
+  reads    AnnouncementRead[]
 
   @@index([schoolId, publishedAt])
   @@index([schoolId, status])
@@ -1860,6 +1872,7 @@ model StoredFile {
   homeworkAttachmentFor           Homework?               @relation("HomeworkAttachmentFile")
   homeworkSubmissionAttachmentFor HomeworkSubmission?     @relation("HomeworkSubmissionAttachmentFile")
   paymentProofReceiptFor          PaymentProofSubmission? @relation("PaymentProofReceiptFile")
+  libraryBookCoverFor             LibraryBook?            @relation("LibraryBookCoverFile")
 
   @@index([schoolId, category, createdAt])
   @@index([schoolId, createdAt])
@@ -2326,4 +2339,268 @@ model AdmissionStatusHistory {
 
   @@index([applicationId])
   @@index([schoolId])
+}
+
+// ─── Library Management v1 ───────────────────────────────────────────────────
+// Multi-tenant book catalogue, physical copies, circulation (issue/return/
+// renew), FIFO reservations, deterministic Decimal fines with authorized full
+// waiver, and an append-only domain history. Every model is school-scoped and
+// indexed on [schoolId, hotField]. Books/copies with any loan history are never
+// hard-deleted — they are archived (LibraryBook.status) or withdrawn
+// (LibraryBookCopy.status). See src/lib/library/*.
+
+/**
+ * Physical status of a single tracked copy (accession/barcode identified).
+ */
+enum LibraryCopyStatus {
+  AVAILABLE
+  ISSUED
+  RESERVED
+  LOST
+  DAMAGED
+  UNDER_REPAIR
+  WITHDRAWN
+}
+
+/**
+ * Catalogue (title-level) lifecycle state.
+ */
+enum LibraryBookStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/**
+ * Lifecycle of a single loan. Only ACTIVE participates in the "one active
+ * loan per copy" partial unique index.
+ */
+enum LibraryLoanStatus {
+  ACTIVE
+  RETURNED
+  LOST
+  WRITTEN_OFF
+}
+
+/**
+ * FIFO reservation lifecycle. Only PENDING participates in the "one active
+ * reservation per (borrower, title)" partial unique indexes.
+ */
+enum LibraryReservationStatus {
+  PENDING
+  FULFILLED
+  CANCELLED
+  EXPIRED
+}
+
+/**
+ * The XOR borrower kind stored on the domain history rows (privacy-safe:
+ * history never stores the borrower's name, only kind + id).
+ */
+enum LibraryBorrowerType {
+  STUDENT
+  TEACHER
+}
+
+/**
+ * Append-only domain event types recorded in LibraryHistory (mirrors the
+ * generic AuditLog actions but as typed, queryable columns).
+ */
+enum LibraryHistoryEvent {
+  BOOK_CREATED
+  BOOK_UPDATED
+  BOOK_ARCHIVED
+  BOOK_RESTORED
+  COPY_ADDED
+  COPY_STATUS_CHANGED
+  BOOK_ISSUED
+  BOOK_RETURNED
+  LOAN_RENEWED
+  RESERVATION_CREATED
+  RESERVATION_CANCELLED
+  RESERVATION_FULFILLED
+  RESERVATION_EXPIRED
+  FINE_ASSESSED
+  FINE_WAIVED
+  POLICY_CHANGED
+}
+
+model LibraryBook {
+  id              String               @id @default(cuid())
+  schoolId        String
+  school          School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  title           String
+  subtitle        String?
+  // Display string of author(s), e.g. "A. Author, B. Writer". The schema has no
+  // scalar-array precedent (list-like fields use Json or delimited strings), so
+  // authors is a single searchable String rather than String[].
+  authors         String?
+  // ISBN-10 / ISBN-13 are catalogue metadata, NOT a copy identifier — many
+  // copies can share one ISBN, so these are NOT unique.
+  isbn10          String?
+  isbn13          String?
+  publisher       String?
+  edition         String?
+  publicationYear Int?
+  language        String?
+  category        String?
+  subject         String?
+  description     String?
+  coverFileId     String?              @unique
+  coverFile       StoredFile?          @relation("LibraryBookCoverFile", fields: [coverFileId], references: [id], onDelete: SetNull)
+  status          LibraryBookStatus    @default(ACTIVE)
+  archivedAt      DateTime?
+  createdById     String?
+  updatedById     String?
+  copies          LibraryBookCopy[]
+  reservations    LibraryReservation[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId, title])
+  @@index([schoolId, category])
+  @@index([schoolId, isbn13])
+}
+
+model LibraryBookCopy {
+  id                String               @id @default(cuid())
+  schoolId          String
+  school            School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  bookId            String
+  // Restrict: a copy that carries loan history can never be hard-deleted — the
+  // school-purge path removes loans/copies in explicit child-first order.
+  book              LibraryBook          @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  accessionNumber   String
+  barcode           String
+  shelfLocation     String?
+  acquisitionDate   DateTime?
+  acquisitionCost   Decimal?             @db.Decimal(10, 2)
+  condition         String?
+  status            LibraryCopyStatus    @default(AVAILABLE)
+  // Optional metadata for a WITHDRAWN/LOST/DAMAGED transition.
+  statusReason      String?
+  statusChangedAt   DateTime?
+  statusChangedById String?
+  loans             LibraryLoan[]
+  reservations      LibraryReservation[] @relation("LibraryReservationAllocatedCopy")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([schoolId, accessionNumber])
+  @@unique([schoolId, barcode])
+  @@index([schoolId, status])
+  @@index([bookId])
+}
+
+model LibraryLoan {
+  id               String            @id @default(cuid())
+  schoolId         String
+  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  bookCopyId       String
+  // Restrict: preserve loan history — a copy with loans is archived, never deleted.
+  bookCopy         LibraryBookCopy   @relation(fields: [bookCopyId], references: [id], onDelete: Restrict)
+  // Exactly one borrower — enforced by a raw-SQL CHECK in the migration
+  // ((student_id IS NOT NULL)::int + (teacher_id IS NOT NULL)::int = 1).
+  studentId        String?
+  student          Student?          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId        String?
+  teacher          Teacher?          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  status           LibraryLoanStatus @default(ACTIVE)
+  issuedById       String?
+  issuedAt         DateTime          @default(now())
+  dueAt            DateTime
+  returnedAt       DateTime?
+  receivedById     String?
+  renewalCount     Int               @default(0)
+  finalCondition   String?
+  fineAssessed     Decimal           @default(0) @db.Decimal(10, 2)
+  fineWaived       Decimal           @default(0) @db.Decimal(10, 2)
+  fineWaivedReason String?
+  fineWaivedById   String?
+  fineWaivedAt     DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId, dueAt])
+  @@index([bookCopyId])
+  @@index([studentId])
+  @@index([teacherId])
+}
+
+model LibraryReservation {
+  id              String                   @id @default(cuid())
+  schoolId        String
+  school          School                   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  bookId          String
+  book            LibraryBook              @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  studentId       String?
+  student         Student?                 @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId       String?
+  teacher         Teacher?                 @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  status          LibraryReservationStatus @default(PENDING)
+  requestedAt     DateTime                 @default(now())
+  fulfilledAt     DateTime?
+  cancelledAt     DateTime?
+  cancelledById   String?
+  cancelReason    String?
+  expiresAt       DateTime?
+  allocatedCopyId String?
+  allocatedCopy   LibraryBookCopy?         @relation("LibraryReservationAllocatedCopy", fields: [allocatedCopyId], references: [id], onDelete: SetNull)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId, bookId, requestedAt])
+  @@index([studentId])
+  @@index([teacherId])
+}
+
+model LibraryPolicy {
+  id                          String   @id @default(cuid())
+  schoolId                    String   @unique
+  school                      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentBorrowLimit          Int      @default(3)
+  teacherBorrowLimit          Int      @default(5)
+  studentLoanDurationDays     Int      @default(14)
+  teacherLoanDurationDays     Int      @default(30)
+  maxRenewals                 Int      @default(2)
+  graceDays                   Int      @default(1)
+  finePerOverdueDay           Decimal  @default(2.00) @db.Decimal(10, 2)
+  reservationsEnabled         Boolean  @default(true)
+  reservationHoldDurationDays Int      @default(2)
+  blockBorrowingIfOverdue     Boolean  @default(true)
+  updatedById                 String?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+}
+
+model LibraryHistory {
+  id             String               @id @default(cuid())
+  schoolId       String
+  school         School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  event          LibraryHistoryEvent
+  // Typed, queryable references (plain scalars, no FK — matches the AuditLog /
+  // School.deletionRequestedById actor-id convention; keeps history immutable
+  // and decoupled from the referenced rows' lifecycle).
+  bookId         String?
+  copyId         String?
+  loanId         String?
+  reservationId  String?
+  borrowerType   LibraryBorrowerType?
+  borrowerId     String?
+  previousStatus String?
+  newStatus      String?
+  fineAmount     Decimal?             @db.Decimal(10, 2)
+  dueAtBefore    DateTime?
+  dueAtAfter     DateTime?
+  reason         String?
+  actorId        String?
+  actorRole      String?
+  createdAt      DateTime             @default(now())
+
+  @@index([schoolId, createdAt])
+  @@index([schoolId, event])
+  @@index([schoolId, bookId])
+  @@index([schoolId, loanId])
 }

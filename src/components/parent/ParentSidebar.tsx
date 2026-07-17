@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { GraduationCap, ClipboardList, LogOut, Sparkles } from "lucide-react";
+import { GraduationCap, ClipboardList, LogOut, Sparkles, Library } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
 import { useParentAuth } from "@/lib/parent-web-auth";
 
-const PARENT_NAV_ITEMS = [{ href: "/parent/leave", labelKey: "nav.leaveRequests", icon: ClipboardList }];
+const PARENT_NAV_ITEMS = [
+  { href: "/parent/leave", labelKey: "nav.leaveRequests", icon: ClipboardList },
+  { href: "/parent/library", labelKey: "nav.library", icon: Library },
+];
 
 export default function ParentSidebar({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname();
