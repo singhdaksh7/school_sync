@@ -19,10 +19,13 @@ vi.mock("@/lib/prisma", () => {
     announcementTarget: { deleteMany: vi.fn() },
     announcementAudience: { deleteMany: vi.fn() },
     announcementRead: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
-    teacher: { findFirst: vi.fn() },
+    teacher: { findFirst: vi.fn(), findMany: vi.fn(async () => []) },
     section: { findMany: vi.fn() },
     teacherRoleAssignment: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn() },
     school: { findUnique: vi.fn(async () => null) },
+    student: { findMany: vi.fn(async () => []) },
+    guardian: { findMany: vi.fn(async () => []) },
+    backgroundJob: { create: vi.fn(async () => ({ id: "job1" })) },
   };
   prisma.$transaction = vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
   return { prisma };
@@ -276,7 +279,7 @@ describe("Teacher UI flows — create/schedule/publish/cancel, exercised at the 
 
   it("PATCH action=publish transitions a DRAFT owned by this teacher to PUBLISHED", async () => {
     p.announcement.findFirst.mockResolvedValue({ id: "a1", schoolId: "school-a", status: "DRAFT", createdById: "user-1" });
-    p.announcement.update.mockResolvedValue({ id: "a1", title: "t" });
+    p.announcement.update.mockResolvedValue({ id: "a1", title: "t", schoolId: "school-a", audience: [], targets: [] });
     const { PATCH } = await import("@/app/api/teacher/announcements/[announcementId]/route");
     const res = await PATCH(patchReq("http://localhost/api/teacher/announcements/a1", { action: "publish" }), {
       params: Promise.resolve({ announcementId: "a1" }),

@@ -4,6 +4,7 @@ import { getTeacherAuth } from "@/lib/mobile-auth";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { logAudit } from "@/lib/audit";
+import { enqueueNotificationFanout, guardianRecipientsForStudents, type RecipientRef } from "@/lib/notifications";
 import {
   createHomeworkSchema,
   getTeacherAssignments,
@@ -130,6 +131,20 @@ export async function POST(req: Request) {
           studentId: student.id,
           status: "PENDING",
         })),
+      });
+    }
+
+    if (homework.status === "ACTIVE" && students.length > 0) {
+      const studentIds = students.map((s) => s.id);
+      const studentRecipients: RecipientRef[] = studentIds.map((studentId) => ({ recipientType: "STUDENT", recipientId: studentId }));
+      const guardianRecipients = await guardianRecipientsForStudents(studentIds);
+      await enqueueNotificationFanout(tx, {
+        schoolId: teacher.schoolId,
+        eventType: "HOMEWORK_PUBLISHED",
+        entityType: "Homework",
+        entityId: homework.id,
+        recipients: [...studentRecipients, ...guardianRecipients],
+        metadata: { subject: homework.subject, sectionId },
       });
     }
 

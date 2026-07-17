@@ -226,6 +226,16 @@ enum JobType {
   // before the email is sent can never leave the invite permanently
   // unsent — the standalone worker will still find and process this row.
   INVITE_EMAIL_DELIVERY
+  // Durable outbox record for potentially unbounded in-app notification
+  // fan-out (a whole section/school of students+guardians+teachers) — see
+  // src/lib/notifications.ts (enqueueNotificationFanout, created in the SAME
+  // transaction as the triggering business write) and the handler in
+  // src/lib/job-handlers.ts. Bounded, small-recipient-count notifications
+  // (a leave decision, an attendance correction naming specific students)
+  // are created synchronously instead — this job type exists only for the
+  // class/school-wide cases (attendance submission, homework publish,
+  // announcement publish/correction).
+  NOTIFICATION_FANOUT
 }
 
 enum JobStatus {
@@ -237,44 +247,45 @@ enum JobStatus {
 }
 
 model User {
-  id                                String                      @id @default(cuid())
+  id                                String                        @id @default(cuid())
   name                              String
-  email                             String                      @unique
+  email                             String                        @unique
   password                          String
-  role                              UserRole                    @default(SCHOOL_OWNER)
+  role                              UserRole                      @default(SCHOOL_OWNER)
   schoolId                          String?
-  school                            School?                     @relation("SchoolAdmins", fields: [schoolId], references: [id])
-  ownedSchool                       School?                     @relation("SchoolOwner")
-  invitesSent                       SchoolInvite[]              @relation("InviteSender")
+  school                            School?                       @relation("SchoolAdmins", fields: [schoolId], references: [id])
+  ownedSchool                       School?                       @relation("SchoolOwner")
+  invitesSent                       SchoolInvite[]                @relation("InviteSender")
   attendancesMarked                 Attendance[]
-  teacherProfile                    Teacher?                    @relation("TeacherUser")
-  examResultsSubmitted              ExamResult[]                @relation("ResultSubmitter")
+  teacherProfile                    Teacher?                      @relation("TeacherUser")
+  examResultsSubmitted              ExamResult[]                  @relation("ResultSubmitter")
   announcements                     Announcement[]
-  feePaymentsRecorded               FeePayment[]                @relation("FeeRecorder")
-  leavesReviewed                    LeaveRequest[]              @relation("LeaveReviewer")
-  earlyLeavesReviewed               TeacherEarlyLeaveRequest[]  @relation("EarlyLeaveApprover")
-  transfersBy                       SectionTransfer[]           @relation("TransferBy")
-  auditLogs                         AuditLog[]                  @relation("AuditUser")
-  paymentProofsSubmitted            PaymentProofSubmission[]    @relation("PaymentProofSubmitter")
-  paymentProofsReviewed             PaymentProofSubmission[]    @relation("PaymentProofReviewer")
-  invoicesCreated                   Invoice[]                   @relation("InvoiceCreator")
-  teachersDeleted                   Teacher[]                   @relation("TeacherDeletedBy")
-  operationalRoleAssignmentsCreated OperationalRoleAssignment[] @relation("OperationalRoleAssignmentCreatedBy")
+  feePaymentsRecorded               FeePayment[]                  @relation("FeeRecorder")
+  leavesReviewed                    LeaveRequest[]                @relation("LeaveReviewer")
+  earlyLeavesReviewed               TeacherEarlyLeaveRequest[]    @relation("EarlyLeaveApprover")
+  transfersBy                       SectionTransfer[]             @relation("TransferBy")
+  auditLogs                         AuditLog[]                    @relation("AuditUser")
+  paymentProofsSubmitted            PaymentProofSubmission[]      @relation("PaymentProofSubmitter")
+  paymentProofsReviewed             PaymentProofSubmission[]      @relation("PaymentProofReviewer")
+  invoicesCreated                   Invoice[]                     @relation("InvoiceCreator")
+  teachersDeleted                   Teacher[]                     @relation("TeacherDeletedBy")
+  operationalRoleAssignmentsCreated OperationalRoleAssignment[]   @relation("OperationalRoleAssignmentCreatedBy")
   passwordResetTokens               PasswordResetToken[]
-  timetableDraftsCreated            TimetableDraft[]            @relation("TimetableDraftCreatedBy")
-  admissionCyclesCreated            AdmissionCycle[]            @relation("AdmissionCycleCreatedBy")
-  admissionApplicationsCreated      AdmissionApplication[]      @relation("AdmissionApplicationCreatedBy")
-  admissionApplicationsDecided      AdmissionApplication[]      @relation("AdmissionApplicationDecidedBy")
-  admissionApplicationsOverridden   AdmissionApplication[]      @relation("AdmissionApplicationOverriddenBy")
-  admissionDocumentsUploaded        AdmissionDocument[]         @relation("AdmissionDocumentUploadedBy")
-  admissionDocumentsVerified        AdmissionDocument[]         @relation("AdmissionDocumentVerifiedBy")
-  admissionReviewEventsCreated      AdmissionReviewEvent[]      @relation("AdmissionReviewEventCreatedBy")
-  admissionNotesAuthored            AdmissionNote[]             @relation("AdmissionNoteAuthor")
-  admissionStatusHistoryActed       AdmissionStatusHistory[]    @relation("AdmissionStatusHistoryActor")
-  attendanceSessionsSubmitted       AttendanceSession[]         @relation("AttendanceSessionSubmitter")
+  timetableDraftsCreated            TimetableDraft[]              @relation("TimetableDraftCreatedBy")
+  admissionCyclesCreated            AdmissionCycle[]              @relation("AdmissionCycleCreatedBy")
+  admissionApplicationsCreated      AdmissionApplication[]        @relation("AdmissionApplicationCreatedBy")
+  admissionApplicationsDecided      AdmissionApplication[]        @relation("AdmissionApplicationDecidedBy")
+  admissionApplicationsOverridden   AdmissionApplication[]        @relation("AdmissionApplicationOverriddenBy")
+  admissionDocumentsUploaded        AdmissionDocument[]           @relation("AdmissionDocumentUploadedBy")
+  admissionDocumentsVerified        AdmissionDocument[]           @relation("AdmissionDocumentVerifiedBy")
+  admissionReviewEventsCreated      AdmissionReviewEvent[]        @relation("AdmissionReviewEventCreatedBy")
+  admissionNotesAuthored            AdmissionNote[]               @relation("AdmissionNoteAuthor")
+  admissionStatusHistoryActed       AdmissionStatusHistory[]      @relation("AdmissionStatusHistoryActor")
+  attendanceSessionsSubmitted       AttendanceSession[]           @relation("AttendanceSessionSubmitter")
   attendanceCorrectionsReviewed     AttendanceCorrectionRequest[] @relation("AttendanceCorrectionReviewer")
-  createdAt                         DateTime                    @default(now())
-  updatedAt                         DateTime                    @updatedAt
+  notificationsReceived             Notification[]                @relation("NotificationUser")
+  createdAt                         DateTime                      @default(now())
+  updatedAt                         DateTime                      @updatedAt
 }
 
 model PasswordResetToken {
@@ -406,6 +417,7 @@ model School {
   attendanceSessions                   AttendanceSession[]
   attendanceCorrectionRequests         AttendanceCorrectionRequest[]
   attendanceHistory                    AttendanceHistory[]
+  inAppNotifications                   Notification[]
   createdAt                            DateTime                      @default(now())
   updatedAt                            DateTime                      @updatedAt
 
@@ -498,42 +510,43 @@ model Subject {
 }
 
 model Teacher {
-  id                         String                        @id @default(cuid())
-  name                       String
-  email                      String?
-  phone                      String?
-  subject                    String?
-  schoolId                   String
-  school                     School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  userId                     String?                       @unique
-  user                       User?                         @relation("TeacherUser", fields: [userId], references: [id])
-  mentorSectionId            String?                       @unique
-  mentorSection              Section?                      @relation("SectionMentor", fields: [mentorSectionId], references: [id])
-  invites                    TeacherInvite[]
-  attendances                Attendance[]
-  timetableSlots             TimetableSlot[]               @relation("TeacherSlots")
-  leaveRequests              LeaveRequest[]
-  homework                   Homework[]
-  generatedReportCards       ReportCard[]                  @relation("ReportCardGenerator")
-  arrangmentsAsAbsent        Arrangement[]                 @relation("ArrangementAbsent")
-  arrangmentsAsSubstitute    Arrangement[]                 @relation("ArrangementSubstitute")
-  earlyLeaveRequests         TeacherEarlyLeaveRequest[]
-  roleAssignments            TeacherRoleAssignment[]
-  homeworkCompletionsMarked  HomeworkStudentStatus[]       @relation("HomeworkCompletionMarker")
-  notebookChecks             NotebookCheck[]
-  workloadOverride           TeacherWorkloadOverride?
-  subjectEligibilities       TeacherSubjectEligibility[]
-  preferredForRequirements   TimetableSubjectRequirement[] @relation("PreferredTeacher")
-  timetableDraftSlots        TimetableDraftSlot[]
-  operationalRoleAssignments OperationalRoleAssignment[]
-  admissionReviewEvents      AdmissionReviewEvent[]
+  id                           String                        @id @default(cuid())
+  name                         String
+  email                        String?
+  phone                        String?
+  subject                      String?
+  schoolId                     String
+  school                       School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  userId                       String?                       @unique
+  user                         User?                         @relation("TeacherUser", fields: [userId], references: [id])
+  mentorSectionId              String?                       @unique
+  mentorSection                Section?                      @relation("SectionMentor", fields: [mentorSectionId], references: [id])
+  invites                      TeacherInvite[]
+  attendances                  Attendance[]
+  timetableSlots               TimetableSlot[]               @relation("TeacherSlots")
+  leaveRequests                LeaveRequest[]
+  homework                     Homework[]
+  generatedReportCards         ReportCard[]                  @relation("ReportCardGenerator")
+  arrangmentsAsAbsent          Arrangement[]                 @relation("ArrangementAbsent")
+  arrangmentsAsSubstitute      Arrangement[]                 @relation("ArrangementSubstitute")
+  earlyLeaveRequests           TeacherEarlyLeaveRequest[]
+  roleAssignments              TeacherRoleAssignment[]
+  homeworkCompletionsMarked    HomeworkStudentStatus[]       @relation("HomeworkCompletionMarker")
+  notebookChecks               NotebookCheck[]
+  workloadOverride             TeacherWorkloadOverride?
+  subjectEligibilities         TeacherSubjectEligibility[]
+  preferredForRequirements     TimetableSubjectRequirement[] @relation("PreferredTeacher")
+  timetableDraftSlots          TimetableDraftSlot[]
+  operationalRoleAssignments   OperationalRoleAssignment[]
+  admissionReviewEvents        AdmissionReviewEvent[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[] @relation("AttendanceCorrectionRequester")
-  isDeleted                  Boolean                       @default(false)
-  deletedAt                  DateTime?
-  deletedById                String?
-  deletedBy                  User?                         @relation("TeacherDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
-  createdAt                  DateTime                      @default(now())
-  updatedAt                  DateTime                      @updatedAt
+  notificationsReceived        Notification[]                @relation("NotificationTeacher")
+  isDeleted                    Boolean                       @default(false)
+  deletedAt                    DateTime?
+  deletedById                  String?
+  deletedBy                    User?                         @relation("TeacherDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
 
   @@index([schoolId])
   @@index([schoolId, isDeleted])
@@ -770,40 +783,41 @@ model ExamResult {
 }
 
 model Student {
-  id                   String                  @id @default(cuid())
-  name                 String
-  rollNo               String
-  admissionNo          String?
-  email                String?
-  phone                String?
-  passwordHash         String?
-  parentName           String?
-  parentPhone          String?
-  fatherName           String?
-  fatherPhone          String?
-  fatherPhoneHash      String?
-  motherName           String?
-  motherPhone          String?
-  motherPhoneHash      String?
-  sectionId            String
-  section              Section                 @relation(fields: [sectionId], references: [id])
-  schoolId             String
-  school               School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  attendances          Attendance[]
-  examResults          ExamResult[]
-  reportCards          ReportCard[]
-  homeworkStatuses     HomeworkStudentStatus[]
-  homeworkSubmissions  HomeworkSubmission[]
-  notebookChecks       NotebookCheck[]
-  guardianLinks        StudentGuardian[]
-  admissionApplication AdmissionApplication?
-  feePayments          FeePayment[]
-  leaveRequests        LeaveRequest[]
-  sectionTransfers     SectionTransfer[]
+  id                        String                     @id @default(cuid())
+  name                      String
+  rollNo                    String
+  admissionNo               String?
+  email                     String?
+  phone                     String?
+  passwordHash              String?
+  parentName                String?
+  parentPhone               String?
+  fatherName                String?
+  fatherPhone               String?
+  fatherPhoneHash           String?
+  motherName                String?
+  motherPhone               String?
+  motherPhoneHash           String?
+  sectionId                 String
+  section                   Section                    @relation(fields: [sectionId], references: [id])
+  schoolId                  String
+  school                    School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  attendances               Attendance[]
+  examResults               ExamResult[]
+  reportCards               ReportCard[]
+  homeworkStatuses          HomeworkStudentStatus[]
+  homeworkSubmissions       HomeworkSubmission[]
+  notebookChecks            NotebookCheck[]
+  guardianLinks             StudentGuardian[]
+  admissionApplication      AdmissionApplication?
+  feePayments               FeePayment[]
+  leaveRequests             LeaveRequest[]
+  sectionTransfers          SectionTransfer[]
   attendanceCorrectionItems AttendanceCorrectionItem[]
-  attendanceHistory    AttendanceHistory[]
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
+  attendanceHistory         AttendanceHistory[]
+  notificationsReceived     Notification[]             @relation("NotificationStudent")
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
 
   @@unique([rollNo, schoolId])
   @@unique([schoolId, admissionNo])
@@ -813,17 +827,18 @@ model Student {
 }
 
 model Guardian {
-  id                  String               @id @default(cuid())
-  name                String
-  phone               String
-  email               String?
-  passwordHash        String?
-  schoolId            String
-  school              School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  studentLinks        StudentGuardian[]
-  homeworkSubmissions HomeworkSubmission[]
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  id                    String               @id @default(cuid())
+  name                  String
+  phone                 String
+  email                 String?
+  passwordHash          String?
+  schoolId              String
+  school                School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentLinks          StudentGuardian[]
+  homeworkSubmissions   HomeworkSubmission[]
+  notificationsReceived Notification[]       @relation("NotificationGuardian")
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
 
   @@unique([schoolId, phone])
   @@index([schoolId])
@@ -850,21 +865,21 @@ model StudentGuardian {
 }
 
 model Attendance {
-  id         String           @id @default(cuid())
-  date       DateTime         @db.Date
+  id         String              @id @default(cuid())
+  date       DateTime            @db.Date
   type       AttendanceType
   status     AttendanceStatus
   studentId  String?
-  student    Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student    Student?            @relation(fields: [studentId], references: [id], onDelete: Cascade)
   teacherId  String?
-  teacher    Teacher?         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacher    Teacher?            @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   sectionId  String?
-  section    Section?         @relation(fields: [sectionId], references: [id])
+  section    Section?            @relation(fields: [sectionId], references: [id])
   schoolId   String
-  school     School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school     School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   markedById String
-  markedBy   User             @relation(fields: [markedById], references: [id])
-  createdAt  DateTime         @default(now())
+  markedBy   User                @relation(fields: [markedById], references: [id])
+  createdAt  DateTime            @default(now())
   history    AttendanceHistory[]
 
   @@unique([date, studentId])
@@ -881,19 +896,19 @@ model Attendance {
 // or locked (SUBMITTED). Teacher self-attendance (Attendance.type=TEACHER) has
 // no "section" concept and is NOT gated by this model.
 model AttendanceSession {
-  id            String                    @id @default(cuid())
+  id            String                        @id @default(cuid())
   schoolId      String
-  school        School                    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school        School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sectionId     String
-  section       Section                   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  date          DateTime                  @db.Date
-  status        AttendanceSessionStatus   @default(DRAFT)
+  section       Section                       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  date          DateTime                      @db.Date
+  status        AttendanceSessionStatus       @default(DRAFT)
   submittedById String?
-  submittedBy   User?                     @relation("AttendanceSessionSubmitter", fields: [submittedById], references: [id])
+  submittedBy   User?                         @relation("AttendanceSessionSubmitter", fields: [submittedById], references: [id])
   submittedAt   DateTime?
   corrections   AttendanceCorrectionRequest[]
-  createdAt     DateTime                  @default(now())
-  updatedAt     DateTime                  @updatedAt
+  createdAt     DateTime                      @default(now())
+  updatedAt     DateTime                      @updatedAt
 
   @@unique([schoolId, sectionId, date])
   @@index([schoolId, date])
@@ -906,26 +921,26 @@ model AttendanceSession {
 // the two enums would let a correction accidentally satisfy leave-approval
 // checks (or vice versa).
 model AttendanceCorrectionRequest {
-  id              String                       @id @default(cuid())
-  schoolId        String
-  school          School                       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sectionId       String
-  section         Section                      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  date            DateTime                     @db.Date
-  sessionId       String
-  session         AttendanceSession            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  requestedById   String
-  requestedBy     Teacher                      @relation("AttendanceCorrectionRequester", fields: [requestedById], references: [id], onDelete: Cascade)
-  reason          String
-  status          AttendanceCorrectionStatus   @default(PENDING)
-  reviewedById    String?
-  reviewedBy      User?                        @relation("AttendanceCorrectionReviewer", fields: [reviewedById], references: [id])
-  reviewedAt      DateTime?
-  reviewNote      String?
-  items           AttendanceCorrectionItem[]
-  history         AttendanceHistory[]
-  createdAt       DateTime                     @default(now())
-  updatedAt       DateTime                     @updatedAt
+  id            String                     @id @default(cuid())
+  schoolId      String
+  school        School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sectionId     String
+  section       Section                    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  date          DateTime                   @db.Date
+  sessionId     String
+  session       AttendanceSession          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  requestedById String
+  requestedBy   Teacher                    @relation("AttendanceCorrectionRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  reason        String
+  status        AttendanceCorrectionStatus @default(PENDING)
+  reviewedById  String?
+  reviewedBy    User?                      @relation("AttendanceCorrectionReviewer", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  reviewNote    String?
+  items         AttendanceCorrectionItem[]
+  history       AttendanceHistory[]
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
 
   @@index([schoolId, status])
   @@index([sessionId])
@@ -933,14 +948,14 @@ model AttendanceCorrectionRequest {
 }
 
 model AttendanceCorrectionItem {
-  id                  String                       @id @default(cuid())
+  id                  String                      @id @default(cuid())
   correctionRequestId String
-  correctionRequest   AttendanceCorrectionRequest  @relation(fields: [correctionRequestId], references: [id], onDelete: Cascade)
+  correctionRequest   AttendanceCorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Cascade)
   studentId           String
-  student             Student                      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student             Student                     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   originalStatus      AttendanceStatus
   requestedStatus     AttendanceStatus
-  createdAt           DateTime                     @default(now())
+  createdAt           DateTime                    @default(now())
 
   @@unique([correctionRequestId, studentId])
   @@index([studentId])
@@ -949,29 +964,124 @@ model AttendanceCorrectionItem {
 // Append-only. Never updated or deleted through application routes — the
 // history endpoint only ever INSERTs (see src/lib/attendance-history.ts).
 model AttendanceHistory {
-  id                  String                        @id @default(cuid())
+  id                  String                       @id @default(cuid())
   schoolId            String
-  school              School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  attendanceId         String
-  attendance           Attendance                   @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  school              School                       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  attendanceId        String
+  attendance          Attendance                   @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
   studentId           String
-  student             Student                       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student             Student                      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   sectionId           String
-  date                DateTime                      @db.Date
+  date                DateTime                     @db.Date
   oldStatus           AttendanceStatus?
   newStatus           AttendanceStatus
   actorId             String
   actorRole           String?
   source              AttendanceHistorySource
   correctionRequestId String?
-  correctionRequest   AttendanceCorrectionRequest?  @relation(fields: [correctionRequestId], references: [id], onDelete: SetNull)
+  correctionRequest   AttendanceCorrectionRequest? @relation(fields: [correctionRequestId], references: [id], onDelete: SetNull)
   reason              String?
-  createdAt           DateTime                      @default(now())
+  createdAt           DateTime                     @default(now())
 
   @@index([schoolId, date])
   @@index([studentId])
   @@index([attendanceId])
   @@index([correctionRequestId])
+}
+
+// ─── Unified Notification Center v1 ──────────────────────────────────────────
+// Teacher/Student/Guardian/staff-User are four separate identity tables (no
+// shared FK target), so a single polymorphic "recipientId" string cannot be
+// backed by one real foreign key. Instead this model carries four nullable,
+// individually-FK'd recipient columns plus a `recipientType` discriminator;
+// a CHECK constraint added in the migration (not expressible in Prisma schema
+// syntax) enforces that EXACTLY ONE of them is set and that it matches
+// recipientType — see the migration's header comment for the exact SQL. This
+// gives real referential integrity (an orphaned/mistyped recipient is a DB
+// error, not just an app bug) while still supporting four different
+// recipient tables, unlike an unconstrained polymorphic string column.
+enum NotificationRecipientType {
+  STUDENT
+  GUARDIAN
+  TEACHER
+  // SCHOOL_OWNER / SCHOOL_ADMIN / VICE_PRINCIPAL — staff identity lives on
+  // User, not a dedicated table (mirrors SessionActorType's ADMIN_STAFF bucket).
+  ADMIN_STAFF
+}
+
+enum NotificationEventType {
+  HOMEWORK_PUBLISHED
+  HOMEWORK_UPDATED
+  ANNOUNCEMENT_PUBLISHED
+  ANNOUNCEMENT_CORRECTED
+  ATTENDANCE_ABSENT
+  ATTENDANCE_LATE
+  ATTENDANCE_ON_LEAVE
+  ATTENDANCE_CORRECTED
+  STUDENT_LEAVE_APPROVED
+  STUDENT_LEAVE_REJECTED
+  TEACHER_LEAVE_APPROVED
+  TEACHER_LEAVE_REJECTED
+  EARLY_LEAVE_APPROVED
+  EARLY_LEAVE_REJECTED
+  LEAVE_PENDING_REVIEW
+  ATTENDANCE_CORRECTION_PENDING_REVIEW
+  ATTENDANCE_RECONCILIATION_NEEDED
+}
+
+/**
+ * One row per (event, recipient). Deduplicated at the DATABASE level via the
+ * unique `idempotencyKey` — every writer computes it deterministically from
+ * (eventType, entityType, entityId, recipient, and a stable "version" signal
+ * for events that can legitimately recur, e.g. an announcement's
+ * correctionCount) so a retried business action or a re-delivered fan-out
+ * job can never create a duplicate notification (see src/lib/notifications.ts).
+ * `metadata` stores only stable, structured, non-sensitive identifiers/counts
+ * (see src/lib/notifications.ts doc comment for the exact allow-list per
+ * event type) — never raw request bodies, free-form translated copy, or
+ * unnecessary student PII. Display copy is rendered client-side from
+ * `eventType` + `metadata` through locale keys (locales/en.json / hi.json),
+ * so English/Hindi never drift and nothing untranslated is ever persisted.
+ * Future FCM/APNs push delivery (deferred — see AGENTS/PR notes) attaches
+ * here without a schema change: a push worker would simply read the same
+ * outbox job (NOTIFICATION_FANOUT) or the same Notification row and dispatch
+ * to a device-token registry that does not exist yet in this phase.
+ */
+model Notification {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  recipientType NotificationRecipientType
+  studentId     String?
+  student       Student?                  @relation("NotificationStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  guardianId    String?
+  guardian      Guardian?                 @relation("NotificationGuardian", fields: [guardianId], references: [id], onDelete: Cascade)
+  teacherId     String?
+  teacher       Teacher?                  @relation("NotificationTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?                     @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  eventType  NotificationEventType
+  // Safe deep-link target — e.g. entityType="AttendanceSession", entityId=<id>.
+  // The web/mobile client resolves this into a role-specific route at read
+  // time and re-checks authorization there; a stale/inaccessible target
+  // renders a safe fallback rather than following the link blindly.
+  entityType String
+  entityId   String
+  metadata   Json?
+
+  idempotencyKey String @unique
+
+  createdAt  DateTime  @default(now())
+  readAt     DateTime?
+  archivedAt DateTime?
+
+  @@index([schoolId, recipientType, studentId, readAt, createdAt])
+  @@index([schoolId, recipientType, guardianId, readAt, createdAt])
+  @@index([schoolId, recipientType, teacherId, readAt, createdAt])
+  @@index([schoolId, recipientType, userId, readAt, createdAt])
+  @@index([schoolId, createdAt])
 }
 
 model ReportCard {
@@ -1120,16 +1230,16 @@ enum AnnouncementReadActorType {
 }
 
 model Announcement {
-  id       String            @id @default(cuid())
+  id       String             @id @default(cuid())
   title    String
   body     String
   schoolId String
-  school   School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  scope    AnnouncementScope @default(SCHOOL_WIDE)
+  school   School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  scope    AnnouncementScope  @default(SCHOOL_WIDE)
   status   AnnouncementStatus @default(PUBLISHED)
 
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
+  createdById   String
+  createdBy     User    @relation(fields: [createdById], references: [id])
   // Snapshot of the creator's UserRole at creation time (SCHOOL_OWNER,
   // SCHOOL_ADMIN, VICE_PRINCIPAL or TEACHER) — used for UI badges/filters and
   // so a later role change never rewrites history. Null only for legacy rows
@@ -1144,7 +1254,7 @@ model Announcement {
   lastEditedById String?
   lastEditedAt   DateTime?
 
-  scheduledAt DateTime?
+  scheduledAt   DateTime?
   // Set the instant the announcement actually becomes PUBLISHED — for an
   // immediate publish this equals createdAt/updatedAt at that moment; for a
   // SCHEDULED -> PUBLISHED transition it is stamped by whatever process
@@ -1168,9 +1278,9 @@ model Announcement {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  targets   AnnouncementTarget[]
-  audience  AnnouncementAudience[]
-  reads     AnnouncementRead[]
+  targets  AnnouncementTarget[]
+  audience AnnouncementAudience[]
+  reads    AnnouncementRead[]
 
   @@index([schoolId, publishedAt])
   @@index([schoolId, status])
