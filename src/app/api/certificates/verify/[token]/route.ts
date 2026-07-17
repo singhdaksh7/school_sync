@@ -6,7 +6,12 @@ import { rateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 import { rateLimitedResponse } from "@/lib/auth-response";
 import { getClientIp } from "@/lib/request-ip";
 
-const INVALID_RESULT = NextResponse.json({ valid: false, status: "NOT_VERIFIABLE" }, { status: 200 });
+// A fresh NextResponse must be created per request — a shared module-level
+// instance's body stream can only be read once and would throw "Body has
+// already been read" on the second concurrent/subsequent invalid lookup.
+function invalidResult() {
+  return NextResponse.json({ valid: false, status: "NOT_VERIFIABLE" }, { status: 200 });
+}
 
 /**
  * Public, unauthenticated, read-only certificate verification (spec §8).
@@ -22,7 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   const limited = await rateLimit(`certificate-verify:${ip ?? "unknown"}`, RATE_LIMIT_POLICIES.certificateVerify);
   if (!limited.allowed) return rateLimitedResponse(limited.retryAfterSeconds);
 
-  if (!token || token.length < 10) return INVALID_RESULT;
+  if (!token || token.length < 10) return invalidResult();
 
   const tokenHash = hashVerificationToken(token);
   const issued = await prisma.issuedCertificate.findUnique({
@@ -36,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       student: { select: { name: true } },
     },
   });
-  if (!issued) return INVALID_RESULT;
+  if (!issued) return invalidResult();
 
   return NextResponse.json(
     serializePublicVerification({
