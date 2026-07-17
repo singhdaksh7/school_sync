@@ -1,4 +1,5 @@
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { Sparkles, Calendar, Plus, Trash2, Lock, Unlock, CheckCircle, AlertTriangle, ArrowRight, Loader2, Play, Settings, RefreshCw, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { parseCostGuardError } from "@/lib/cost-guard-error-handler";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { createRequestSequencer } from "@/lib/request-sequencer";
+import { clearStaleSubjectSelections } from "@/lib/smart-timetable-requirement-reconciliation";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +26,9 @@ interface Section { id: string; name: string }
 interface ClassOption { id: string; name: string; sections: Section[] }
 
 interface SubjectRequirement {
+  id?: string;
+  /** Canonical Master Subject id. Null for a not-yet-selected new row, or for a legacy pre-enforcement row that never had one. */
+  subjectId: string | null;
   subjectName: string;
   requiredPeriodsPerWeek: number;
   minPeriodsPerDay: number | null;
@@ -29,6 +36,8 @@ interface SubjectRequirement {
   allowConsecutive: boolean;
   preferredTeacherId: string | null;
 }
+
+interface MasterSubjectOption { id: string; name: string }
 
 interface DraftSlot {
   id: string;
@@ -73,6 +82,7 @@ interface Props {
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function SmartTimetableWorkspace({ schoolId, initialClasses, initialTeachers, schoolSlug }: Props) {
+  const { t } = useTranslation();
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedSectionId, setSelectedSectionId] = useState("");
 
@@ -83,6 +93,11 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
   const [capacity, setCapacity] = useState<{ totalCapacity: number; requiredPeriods: number; isValid: boolean } | null>(null);
   const [reqLoading, setReqLoading] = useState(false);
   const [reqSaving, setReqSaving] = useState(false);
+
+  // Master Subject options for the selected class/section — the only allowed
+  // subjects for Weekly Period Requirements (see /lib/master-subjects.ts).
+  const [masterSubjects, setMasterSubjects] = useState<MasterSubjectOption[]>([]);
+  const [masterSubjectsLoading, setMasterSubjectsLoading] = useState(false);
 
   // Drafts state
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -110,27 +125,64 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
   const selectedClass = initialClasses.find((c) => c.id === selectedClassId);
   const sections = selectedClass?.sections ?? [];
 
-  // Fetch requirements
+  // Guards the requirements/subjects fetch below against races: if the
+  // class/section changes again before an in-flight fetch resolves, that
+  // response's token no longer matches `sequencer.isCurrent(...)` and it is
+  // discarded instead of overwriting the latest selection.
+  const sequencerRef = useRef(createRequestSequencer());
+
+  // Fetch requirements + the Master Subject options applicable to this
+  // class/section.
   useEffect(() => {
-    if (!selectedSectionId) return;
+    if (!selectedSectionId) {
+      setRequirements([]);
+      setCapacity(null);
+      setMasterSubjects([]);
+      return;
+    }
+    const token = sequencerRef.current.next();
+
     setReqLoading(true);
-    fetch(`/api/schools/${schoolId}/smart-timetable/requirements?sectionId=${selectedSectionId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setRequirements(data.requirements || []);
-        setCapacity(data.capacity || null);
+    setMasterSubjectsLoading(true);
+    Promise.all([
+      fetch(`/api/schools/${schoolId}/smart-timetable/requirements?sectionId=${selectedSectionId}`).then((r) => r.json()),
+      fetch(`/api/schools/${schoolId}/subjects?classId=${selectedClassId}&sectionId=${selectedSectionId}&applicable=1`).then((r) => r.json()),
+    ])
+      .then(([reqData, subjectsData]) => {
+        if (!sequencerRef.current.isCurrent(token)) return;
+        const options: MasterSubjectOption[] = Array.isArray(subjectsData)
+          ? subjectsData.map((s: { id: string; name: string }) => ({ id: s.id, name: s.name }))
+          : [];
+        setMasterSubjects(options);
+        // Drop any row (new or previously loaded) whose subjectId is no
+        // longer among the valid options for this class/section — a stale
+        // subject from a prior class/section must never be submitted.
+        const validIds = new Set(options.map((o) => o.id));
+        const requirementsRaw: SubjectRequirement[] = reqData.requirements || [];
+        setRequirements(clearStaleSubjectSelections(requirementsRaw, validIds));
+        setCapacity(reqData.capacity || null);
       })
-      .finally(() => setReqLoading(false));
+      .catch((e) => {
+        if (sequencerRef.current.isCurrent(token)) console.error(e);
+      })
+      .finally(() => {
+        if (sequencerRef.current.isCurrent(token)) {
+          setReqLoading(false);
+          setMasterSubjectsLoading(false);
+        }
+      });
 
     // Fetch drafts list
     setDraftsLoading(true);
     fetch(`/api/schools/${schoolId}/smart-timetable/drafts?sectionId=${selectedSectionId}`)
       .then((r) => r.json())
       .then((data) => {
-        setDrafts(data.data || []);
+        if (sequencerRef.current.isCurrent(token)) setDrafts(data.data || []);
       })
-      .finally(() => setDraftsLoading(false));
-  }, [selectedSectionId, schoolId]);
+      .finally(() => {
+        if (sequencerRef.current.isCurrent(token)) setDraftsLoading(false);
+      });
+  }, [selectedSectionId, selectedClassId, schoolId]);
 
   // Fetch selected draft detail
   useEffect(() => {
@@ -217,9 +269,11 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
   }, [activeJobId, schoolId]);
 
   const addRequirementRow = () => {
+    if (masterSubjects.length === 0) return;
     setRequirements((prev) => [
       ...prev,
       {
+        subjectId: null,
         subjectName: "",
         requiredPeriodsPerWeek: 3,
         minPeriodsPerDay: null,
@@ -235,6 +289,7 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
   };
 
   const saveRequirements = async () => {
+    if (masterSubjects.length === 0) return;
     setReqSaving(true);
     try {
       const res = await fetch(`/api/schools/${schoolId}/smart-timetable/requirements`, {
@@ -243,12 +298,18 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
         body: JSON.stringify({
           classId: selectedClassId,
           sectionId: selectedSectionId,
-          requirements: requirements.filter((r) => r.subjectName.trim()),
+          // Legacy (pre-enforcement, subjectId-less) rows are never sent —
+          // they're read-only here and are preserved server-side regardless.
+          requirements: requirements.filter((r) => r.subjectId),
         }),
       });
       const data = await res.json();
-      setRequirements(data.requirements || []);
-      setCapacity(data.capacity || null);
+      if (res.ok) {
+        setRequirements(data.requirements || []);
+        setCapacity(data.capacity || null);
+      } else {
+        alert(data.error || "Failed to save weekly period requirements.");
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -473,7 +534,13 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
               <CardHeader>
                 <CardTitle className="text-base flex items-center justify-between">
                   <span>Weekly Periods Requirements</span>
-                  <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={addRequirementRow}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5"
+                    onClick={addRequirementRow}
+                    disabled={masterSubjectsLoading || masterSubjects.length === 0}
+                  >
                     <Plus className="w-3.5 h-3.5" /> Add Subject
                   </Button>
                 </CardTitle>
@@ -498,70 +565,108 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
                   </div>
                 )}
 
-                {reqLoading ? (
-                  <div className="py-12 text-center text-gray-400">Loading requirements...</div>
+                {reqLoading || masterSubjectsLoading ? (
+                  <div className="py-12 text-center text-gray-400">{t("smartTimetableRequirements.loadingSubjects")}</div>
+                ) : masterSubjects.length === 0 ? (
+                  <div className="py-10 text-center border border-dashed border-gray-300 rounded-xl space-y-2">
+                    <p className="font-semibold text-gray-600 text-sm">{t("smartTimetableRequirements.noMasterSubjectsTitle")}</p>
+                    <p className="text-xs text-gray-400 max-w-sm mx-auto leading-normal">{t("smartTimetableRequirements.noMasterSubjectsBody")}</p>
+                    <Link
+                      href={`/dashboard/${schoolSlug}/subjects`}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 mt-1"
+                    >
+                      {t("smartTimetableRequirements.goToSubjectMaster")} <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
                 ) : (
                   <div className="space-y-3">
-                    {requirements.map((req, idx) => (
-                      <div key={idx} className="flex flex-wrap items-center gap-3 p-3.5 border border-gray-100 rounded-xl hover:bg-gray-50/50 transition-colors">
-                        <div className="flex-1 min-w-[150px]">
-                          <Label className="text-xs text-gray-400 uppercase tracking-wide">Subject Name</Label>
-                          <Input 
-                            value={req.subjectName} 
-                            placeholder="e.g. Mathematics" 
-                            className="h-9 mt-1"
-                            onChange={(e) => {
-                              const copy = [...requirements];
-                              copy[idx].subjectName = e.target.value;
-                              setRequirements(copy);
-                            }}
-                          />
-                        </div>
-                        <div className="w-24">
-                          <Label className="text-xs text-gray-400 uppercase tracking-wide">Periods/Week</Label>
-                          <Input 
-                            type="number" 
-                            min={0}
-                            value={req.requiredPeriodsPerWeek} 
-                            className="h-9 mt-1 text-center"
-                            onChange={(e) => {
-                              const copy = [...requirements];
-                              copy[idx].requiredPeriodsPerWeek = parseInt(e.target.value, 10) || 0;
-                              setRequirements(copy);
-                            }}
-                          />
-                        </div>
-                        <div className="flex-1 min-w-[200px]">
-                          <Label className="text-xs text-gray-400 uppercase tracking-wide">Preferred Faculty</Label>
-                          <Select
-                            value={req.preferredTeacherId || "__none__"}
-                            onValueChange={(v) => {
-                              const copy = [...requirements];
-                              copy[idx].preferredTeacherId = v === "__none__" ? null : v;
-                              setRequirements(copy);
-                            }}
+                    {requirements.map((req, idx) => {
+                      const isLegacy = Boolean(req.id) && !req.subjectId;
+                      return (
+                        <div key={req.id ?? idx} className="flex flex-wrap items-center gap-3 p-3.5 border border-gray-100 rounded-xl hover:bg-gray-50/50 transition-colors">
+                          <div className="flex-1 min-w-[150px]">
+                            <Label className="text-xs text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
+                              Subject
+                              {isLegacy && (
+                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-amber-300 text-amber-700 normal-case">
+                                  {t("smartTimetableRequirements.legacyBadge")}
+                                </Badge>
+                              )}
+                            </Label>
+                            {isLegacy ? (
+                              <p className="h-9 mt-1 flex items-center text-sm text-gray-700" title={t("smartTimetableRequirements.legacyNote")}>
+                                {req.subjectName}
+                              </p>
+                            ) : (
+                              <Select
+                                value={req.subjectId ?? undefined}
+                                onValueChange={(v) => {
+                                  const chosen = masterSubjects.find((s) => s.id === v);
+                                  const copy = [...requirements];
+                                  copy[idx] = { ...copy[idx], subjectId: v, subjectName: chosen?.name ?? "" };
+                                  setRequirements(copy);
+                                }}
+                              >
+                                <SelectTrigger className="h-9 mt-1">
+                                  <SelectValue placeholder={t("smartTimetableRequirements.subjectPlaceholder")} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {masterSubjects.map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                          <div className="w-24">
+                            <Label className="text-xs text-gray-400 uppercase tracking-wide">Periods/Week</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={req.requiredPeriodsPerWeek}
+                              className="h-9 mt-1 text-center"
+                              disabled={isLegacy}
+                              onChange={(e) => {
+                                const copy = [...requirements];
+                                copy[idx].requiredPeriodsPerWeek = parseInt(e.target.value, 10) || 0;
+                                setRequirements(copy);
+                              }}
+                            />
+                          </div>
+                          <div className="flex-1 min-w-[200px]">
+                            <Label className="text-xs text-gray-400 uppercase tracking-wide">Preferred Faculty</Label>
+                            <Select
+                              value={req.preferredTeacherId || "__none__"}
+                              disabled={isLegacy}
+                              onValueChange={(v) => {
+                                const copy = [...requirements];
+                                copy[idx].preferredTeacherId = v === "__none__" ? null : v;
+                                setRequirements(copy);
+                              }}
+                            >
+                              <SelectTrigger className="h-9 mt-1">
+                                <SelectValue placeholder="No preference" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">No preference</SelectItem>
+                                {initialTeachers.map((teacher) => (
+                                  <SelectItem key={teacher.id} value={teacher.id}>{teacher.name} ({teacher.subject || "General"})</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="mt-5 text-gray-400 hover:text-red-500 shrink-0 h-9 w-9"
+                            onClick={() => removeRequirementRow(idx)}
+                            disabled={isLegacy}
                           >
-                            <SelectTrigger className="h-9 mt-1">
-                              <SelectValue placeholder="No preference" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">No preference</SelectItem>
-                              {initialTeachers.map((t) => (
-                                <SelectItem key={t.id} value={t.id}>{t.name} ({t.subject || "General"})</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="mt-5 text-gray-400 hover:text-red-500 shrink-0 h-9 w-9"
-                          onClick={() => removeRequirementRow(idx)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     <div className="flex justify-end pt-2">
                       <Button onClick={saveRequirements} disabled={reqSaving} className="gap-2">

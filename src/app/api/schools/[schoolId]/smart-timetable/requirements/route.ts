@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canAccessSchool, canWriteSchool, classBelongsToSchool, sectionBelongsToSchool, sessionRole, teacherBelongsToSchool } from "@/lib/tenant";
-import { getSubjectRequirements, setSubjectRequirements, type SubjectRequirementInput } from "@/lib/smart-timetable-drafts";
+import { getSubjectRequirements, setSubjectRequirements } from "@/lib/smart-timetable-drafts";
 import { calculateWeeklyCapacity, validateSubjectRequirements } from "@/lib/timetable-capacity";
+import { findApplicableSubject } from "@/lib/master-subjects";
 import { prisma } from "@/lib/prisma";
+
+interface RequirementBody {
+  subjectId?: unknown;
+  requiredPeriodsPerWeek?: unknown;
+  minPeriodsPerDay?: unknown;
+  maxPeriodsPerDay?: unknown;
+  allowConsecutive?: unknown;
+  preferredTeacherId?: unknown;
+}
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -37,7 +47,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
   if (!(await canWriteSchool(schoolId, session.user.id, role))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
-  const { classId, sectionId, requirements } = body as { classId: string; sectionId: string; requirements: SubjectRequirementInput[] };
+  const { classId, sectionId, requirements } = body as { classId: string; sectionId: string; requirements: RequirementBody[] };
 
   if (!classId || !sectionId || !Array.isArray(requirements)) {
     return NextResponse.json({ error: "classId, sectionId, and requirements are required" }, { status: 400 });
@@ -52,12 +62,43 @@ export async function PUT(req: Request, { params }: { params: Promise<{ schoolId
     }
   }
   for (const r of requirements) {
-    if (!r.subjectName?.trim() || !Number.isFinite(r.requiredPeriodsPerWeek) || r.requiredPeriodsPerWeek < 0) {
-      return NextResponse.json({ error: "Each requirement needs a subjectName and a non-negative requiredPeriodsPerWeek" }, { status: 400 });
+    if (typeof r.subjectId !== "string" || !r.subjectId.trim()) {
+      return NextResponse.json({ error: "Each requirement needs a subjectId" }, { status: 400 });
+    }
+    if (!Number.isFinite(r.requiredPeriodsPerWeek) || (r.requiredPeriodsPerWeek as number) < 0) {
+      return NextResponse.json({ error: "Each requirement needs a non-negative requiredPeriodsPerWeek" }, { status: 400 });
     }
   }
 
-  const saved = await setSubjectRequirements({ schoolId, classId, sectionId, requirements });
+  // Server-side enforcement: a subjectId must resolve to a real Master
+  // Subject that actually belongs to this school/class/section (class-wide or
+  // section-specific) — never trust the dropdown alone, since a caller could
+  // submit an arbitrary, stale, cross-school, or cross-class/section id.
+  const uniqueSubjectIds = [...new Set(requirements.map((r) => r.subjectId as string))];
+  const resolvedEntries = await Promise.all(
+    uniqueSubjectIds.map(async (id) => [id, await findApplicableSubject(id, schoolId, classId, sectionId)] as const)
+  );
+  const resolvedSubjects = new Map(resolvedEntries);
+  for (const r of requirements) {
+    if (!resolvedSubjects.get(r.subjectId as string)) {
+      return NextResponse.json(
+        { error: "One or more subjects are invalid, inactive, or not part of this class/section's Master Subjects" },
+        { status: 422 }
+      );
+    }
+  }
+
+  const resolvedRequirements = requirements.map((r) => ({
+    subjectId: r.subjectId as string,
+    subjectName: resolvedSubjects.get(r.subjectId as string)!.name,
+    requiredPeriodsPerWeek: r.requiredPeriodsPerWeek as number,
+    minPeriodsPerDay: (r.minPeriodsPerDay as number | null | undefined) ?? null,
+    maxPeriodsPerDay: (r.maxPeriodsPerDay as number | null | undefined) ?? null,
+    allowConsecutive: Boolean(r.allowConsecutive),
+    preferredTeacherId: (r.preferredTeacherId as string | null | undefined) ?? null,
+  }));
+
+  const saved = await setSubjectRequirements({ schoolId, classId, sectionId, requirements: resolvedRequirements });
 
   const school = await prisma.school.findUniqueOrThrow({ where: { id: schoolId }, select: { timetableWorkingDays: true, periodsPerDay: true } });
   const capacity = calculateWeeklyCapacity(school);
