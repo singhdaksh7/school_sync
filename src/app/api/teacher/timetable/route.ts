@@ -12,10 +12,14 @@ export async function GET(req: Request) {
     include: {
       timetableSlots: {
         include: {
+          // `students` is intentionally not selected here — this route's own
+          // response never includes a student roster (see the `slots` mapping
+          // below); the actual per-section student roster used by the marks
+          // entry UI comes from `getTeacherAssignments` (src/lib/homework.ts),
+          // which applies the canonical roll-number order.
           section: {
             include: {
               class: { select: { name: true } },
-              students: { orderBy: { rollNo: "asc" }, select: { id: true, name: true, rollNo: true } },
             },
           },
         },

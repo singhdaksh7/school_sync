@@ -874,8 +874,11 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
                   <SelectValue placeholder="Select a subject" />
                 </SelectTrigger>
                 <SelectContent>
-                  {requirements.map((req) => (
-                    <SelectItem key={req.subjectName} value={req.subjectName}>{req.subjectName}</SelectItem>
+                  {/* Only canonical (Master-Subject-linked) requirements are offered here —
+                      a legacy/unmapped requirement can't be placed into a new slot either
+                      (see upsertDraftSlot's SUBJECT_NOT_APPLICABLE guard). */}
+                  {requirements.filter((req) => req.subjectId).map((req) => (
+                    <SelectItem key={req.subjectId} value={req.subjectName}>{req.subjectName}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

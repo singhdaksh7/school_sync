@@ -4,6 +4,7 @@ import { getTeacherAuth } from "@/lib/mobile-auth";
 import { getTeacherForSession, reportCardInclude, serializeReportCard } from "@/lib/report-cards";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { compareStudentsByRollNumber } from "@/lib/student-ordering";
 
 export async function GET(req: Request) {
   const teacherAuth = await getTeacherAuth(req);
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
         generatedByTeacherId: teacher.id,
       },
       include: reportCardInclude,
-      orderBy: [{ status: "asc" }, { student: { rollNo: "asc" } }],
+      orderBy: [{ status: "asc" }],
     }),
     prisma.examScheme.findMany({
       where: { schoolId: teacher.schoolId },
@@ -38,9 +39,19 @@ export async function GET(req: Request) {
     }),
   ]);
 
+  // Universal roll-number ordering (canonical comparator — see /lib/student-ordering)
+  // as the tiebreak within each status group. Status order is the real enum
+  // declaration order (prisma/schema.prisma ReportCardStatus: DRAFT, PUBLISHED)
+  // — not a string comparison, which would only coincidentally match it.
+  const REPORT_CARD_STATUS_ORDER = ["DRAFT", "PUBLISHED"] as const;
+  const orderedReportCards = [...reportCards].sort((a, b) => {
+    if (a.status !== b.status) return REPORT_CARD_STATUS_ORDER.indexOf(a.status) - REPORT_CARD_STATUS_ORDER.indexOf(b.status);
+    return compareStudentsByRollNumber(a.student, b.student);
+  });
+
   return NextResponse.json({
     mentorSection: teacher.mentorSection,
     schemes,
-    reportCards: reportCards.map(serializeReportCard),
+    reportCards: orderedReportCards.map(serializeReportCard),
   });
 }
