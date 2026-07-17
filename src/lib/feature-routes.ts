@@ -30,6 +30,7 @@ export const MODULE_FEATURE_KEYS = [
   "NOTEBOOK_CHECKING",
   "WHITE_LABEL",
   "ADMISSIONS",
+  "CERTIFICATES",
 ] as const satisfies readonly FeatureFlagKeyValue[];
 
 /**
@@ -126,6 +127,14 @@ export const FEATURE_ROUTE_RULES: RouteRule[] = [
   // ── ADMISSIONS (staff admissions workflow — cycles/offerings/applications/
   //    documents/review-events/dashboard, all nested under this one prefix) ────
   { pattern: /^schools\/\[schoolId\]\/admissions(\/|$)/, feature: "ADMISSIONS" },
+
+  // ── CERTIFICATES (document-request workflow — requests/issued/templates/
+  // reports staff routes, student/parent self-service, public verification
+  // is deliberately NOT included here — see the module doc above the
+  // public-route exemption pattern below) ───────────────────────────────────
+  { pattern: /^schools\/\[schoolId\]\/certificates(\/|$)/, feature: "CERTIFICATES" },
+  { pattern: /^student\/certificates(\/|$)/, feature: "CERTIFICATES" },
+  { pattern: /^parent\/certificates(\/|$)/, feature: "CERTIFICATES" },
 ];
 
 /**
@@ -163,6 +172,7 @@ export const EXEMPT_ROUTE_RATIONALES: { pattern: RegExp; reason: string }[] = [
   // ── Teacher Operations Head & Automatic Delegation (Phase 3) ────────────────
   { pattern: /^schools\/\[schoolId\]\/operational-roles\/teacher-operations\/effective$/, reason: "Dynamic effective-assignee resolution, not configuration — must keep resolving for an already-configured chain even if TEACHER_PERMISSIONS later lapses." },
   { pattern: /^teacher\/operational-roles\/self-status$/, reason: "A teacher reading their own current delegation status — dynamic resolution, same rationale as the effective-status read above." },
+  { pattern: /^certificates\/verify\/\[token\]$/, reason: "Public, unauthenticated QR-verification lookup — gating it on CERTIFICATES would let an unauthenticated caller probe whether a school has the module enabled (an enumeration/information leak); an already-issued certificate must remain verifiable regardless of the issuing school's current plan state." },
 ];
 
 /** First-match classification of an API route path to its gating feature, or null. */
