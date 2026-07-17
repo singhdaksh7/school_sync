@@ -896,5 +896,26 @@
     "duplicateRollNo": "Roll number already exists",
     "duplicateStudent": "A student with these details already exists",
     "parentPhoneRequired": "Father Phone or Mother Phone is required so the student can log in"
+  },
+  "certificateVerify": {
+    "title": "Certificate Verification",
+    "checking": "Checking certificate...",
+    "invalidTitle": "Not Verifiable",
+    "invalidDescription": "This link is invalid, expired, or the certificate could not be verified.",
+    "validBadge": "Valid",
+    "revokedBadge": "Revoked",
+    "certificateNumber": "Certificate Number",
+    "certificateType": "Certificate Type",
+    "school": "School",
+    "student": "Student",
+    "issueDate": "Issue Date",
+    "revokedOn": "Revoked On",
+    "revokedNotice": "This certificate has been revoked by the issuing school and is no longer valid.",
+    "footerNote": "This page shows only the minimal information printed on the certificate. It does not represent an official government or board record.",
+    "typeBonafide": "Bonafide Certificate",
+    "typeTransferCertificate": "Transfer Certificate",
+    "typeCharacterCertificate": "Character Certificate",
+    "typeStudyCertificate": "Study Certificate",
+    "typeCustom": "Certificate"
   }
 }
