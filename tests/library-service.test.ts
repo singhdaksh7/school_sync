@@ -46,6 +46,7 @@ function makeTx(overrides: Record<string, unknown> = {}) {
     libraryBookCopy: {
       findUnique: vi.fn(async () => ({ id: "cp1", schoolId: "s1", bookId: "bk1", status: "AVAILABLE" })),
       update: vi.fn(async () => ({})),
+      updateMany: vi.fn(async () => ({ count: 1 })),
       count: vi.fn(async () => 5),
     },
     student: { findFirst: vi.fn(async () => ({ id: "st1" })) },
@@ -290,28 +291,30 @@ describe("returnLoan", () => {
   it("promotes the front of the reservation queue and holds the freed copy as RESERVED", async () => {
     const tx = makeTx({
       libraryLoan: { count: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(async () => activeLoan), create: vi.fn(), updateMany: vi.fn(async () => ({ count: 1 })) },
+      $queryRaw: vi.fn(async () => [{ id: "cp1", status: "AVAILABLE" }]),
       libraryBookCopy: {
         findUnique: vi.fn(async () => ({ bookId: "bk1" })),
         update: vi.fn(async () => ({})),
+        updateMany: vi.fn(async () => ({ count: 1 })),
         count: vi.fn(),
       },
       libraryReservation: {
-        findMany: vi.fn(),
-        findFirst: vi.fn(async () => ({ id: "res-next", requestedAt: NOW, expiresAt: null })),
+        findMany: vi.fn(async () => [{ id: "res-next", studentId: "st1", teacherId: null, requestedAt: NOW, expiresAt: null, allocatedCopyId: null }]),
+        findFirst: vi.fn(),
         count: vi.fn(),
         create: vi.fn(),
-        updateMany: vi.fn(),
-        update: vi.fn(async () => ({})),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        update: vi.fn(),
       },
     });
     mockTransaction(tx);
     const r = await returnLoan({ schoolId: "s1", loanId: "ln1", actor, timezone: TZ, now: NOW });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.data.copyStatus).toBe("RESERVED");
-    expect(tx.libraryReservation.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "res-next" }, data: expect.objectContaining({ allocatedCopyId: "cp1" }) })
+    expect(tx.libraryReservation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "res-next", status: "PENDING", allocatedCopyId: null }, data: expect.objectContaining({ allocatedCopyId: "cp1" }) })
     );
-    expect(tx.libraryBookCopy.update).toHaveBeenLastCalledWith({ where: { id: "cp1" }, data: { status: "RESERVED" } });
+    expect(tx.libraryBookCopy.updateMany).toHaveBeenCalledWith({ where: { id: "cp1", status: "AVAILABLE" }, data: { status: "RESERVED" } });
   });
 
   it("routes a LOST outcome to loan status LOST and copy status LOST with no queue promotion", async () => {
@@ -629,5 +632,203 @@ describe("cancelReservation", () => {
     const r = await cancelReservation({ schoolId: "s1", reservationId: "res1", actor, now: NOW });
     expect(r.ok).toBe(true);
     expect(tx.libraryBookCopy.update).not.toHaveBeenCalled();
+  });
+});
+
+// ── cancelReservation — FIFO promotion of the freed copy ──────────────────
+describe("cancelReservation FIFO promotion", () => {
+  const headReservation = { id: "res-head", status: "PENDING", bookId: "bk1", studentId: "st-head", teacherId: null, allocatedCopyId: "cp1" };
+
+  it("promotes the earliest eligible remaining reservation when the queue head (holding the copy) is cancelled", async () => {
+    const resA = { id: "res-a", studentId: "st-a", teacherId: null, requestedAt: new Date("2026-07-01T00:00:00Z"), expiresAt: null, allocatedCopyId: null };
+    const resB = { id: "res-b", studentId: "st-b", teacherId: null, requestedAt: new Date("2026-07-02T00:00:00Z"), expiresAt: null, allocatedCopyId: null };
+    const tx = makeTx({
+      $queryRaw: vi.fn(async () => [{ id: "cp1", status: "AVAILABLE" }]),
+      libraryReservation: {
+        findMany: vi.fn(async () => [resA, resB]), // pre-sorted ascending by requestedAt, as the real orderBy would return
+        findFirst: vi.fn(async () => headReservation),
+        count: vi.fn(), create: vi.fn(),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        update: vi.fn(),
+      },
+      libraryBookCopy: {
+        findUnique: vi.fn(async () => ({ status: "RESERVED" })),
+        update: vi.fn(async () => ({})),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        count: vi.fn(),
+      },
+      student: { findFirst: vi.fn(async () => ({ id: "any" })) },
+    });
+    mockTransaction(tx);
+    const r = await cancelReservation({ schoolId: "s1", reservationId: "res-head", actor, now: NOW });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.promotedReservationId).toBe("res-a");
+    expect(tx.libraryReservation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { schoolId: "s1", bookId: "bk1", status: "PENDING", allocatedCopyId: null },
+        orderBy: [{ requestedAt: "asc" }, { id: "asc" }],
+      })
+    );
+    expect(tx.libraryReservation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "res-a", status: "PENDING", allocatedCopyId: null }, data: expect.objectContaining({ allocatedCopyId: "cp1" }) })
+    );
+    expect(tx.libraryBookCopy.updateMany).toHaveBeenCalledWith({ where: { id: "cp1", status: "AVAILABLE" }, data: { status: "RESERVED" } });
+    expect(tx.libraryHistory.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ event: "COPY_STATUS_CHANGED", reservationId: "res-a" }) }));
+  });
+
+  it("cancelling a middle (non-holding) reservation does not touch the copy or attempt any promotion, preserving the rest of the FIFO queue untouched", async () => {
+    const middleReservation = { id: "res-mid", status: "PENDING", bookId: "bk1", studentId: "st-mid", teacherId: null, allocatedCopyId: null };
+    const tx = makeTx({
+      libraryReservation: {
+        findMany: vi.fn(),
+        findFirst: vi.fn(async () => middleReservation),
+        count: vi.fn(), create: vi.fn(),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        update: vi.fn(),
+      },
+      libraryBookCopy: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
+    });
+    mockTransaction(tx);
+    const r = await cancelReservation({ schoolId: "s1", reservationId: "res-mid", actor, now: NOW });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.promotedReservationId).toBeNull();
+    expect(tx.libraryBookCopy.findUnique).not.toHaveBeenCalled();
+    expect(tx.libraryBookCopy.update).not.toHaveBeenCalled();
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("skips a candidate whose borrower no longer exists and promotes the next eligible one instead", async () => {
+    const orphaned = { id: "res-orphan", studentId: "deleted-student", teacherId: null, requestedAt: new Date("2026-07-01T00:00:00Z"), expiresAt: null, allocatedCopyId: null };
+    const eligible = { id: "res-eligible", studentId: "st-ok", teacherId: null, requestedAt: new Date("2026-07-02T00:00:00Z"), expiresAt: null, allocatedCopyId: null };
+    const tx = makeTx({
+      $queryRaw: vi.fn(async () => [{ id: "cp1", status: "AVAILABLE" }]),
+      libraryReservation: {
+        findMany: vi.fn(async () => [orphaned, eligible]),
+        findFirst: vi.fn(async () => headReservation),
+        count: vi.fn(), create: vi.fn(),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        update: vi.fn(),
+      },
+      libraryBookCopy: {
+        findUnique: vi.fn(async () => ({ status: "RESERVED" })),
+        update: vi.fn(async () => ({})),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        count: vi.fn(),
+      },
+      student: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => (where.id === "deleted-student" ? null : { id: where.id })),
+      },
+    });
+    mockTransaction(tx);
+    const r = await cancelReservation({ schoolId: "s1", reservationId: "res-head", actor, now: NOW });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.promotedReservationId).toBe("res-eligible");
+    // The orphaned candidate was never mutated — left for a separate cleanup pass.
+    expect(tx.libraryReservation.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: "res-orphan" }) }));
+  });
+
+  it("does not promote anyone when the freed copy is no longer AVAILABLE under the lock (no eligible copy)", async () => {
+    const waiting = { id: "res-waiting", studentId: "st-w", teacherId: null, requestedAt: NOW, expiresAt: null, allocatedCopyId: null };
+    const tx = makeTx({
+      $queryRaw: vi.fn(async () => [{ id: "cp1", status: "ISSUED" }]), // raced: already re-issued before the lock was acquired
+      libraryReservation: {
+        findMany: vi.fn(async () => [waiting]),
+        findFirst: vi.fn(async () => headReservation),
+        count: vi.fn(), create: vi.fn(),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        update: vi.fn(),
+      },
+      libraryBookCopy: {
+        findUnique: vi.fn(async () => ({ status: "RESERVED" })),
+        update: vi.fn(async () => ({})),
+        updateMany: vi.fn(),
+        count: vi.fn(),
+      },
+    });
+    mockTransaction(tx);
+    const r = await cancelReservation({ schoolId: "s1", reservationId: "res-head", actor, now: NOW });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.promotedReservationId).toBeNull();
+    expect(tx.libraryReservation.findMany).not.toHaveBeenCalled();
+    expect(tx.libraryBookCopy.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("is idempotent under a repeated cancel call: the second call is rejected before any promotion is attempted", async () => {
+    const alreadyCancelled = { ...headReservation, status: "CANCELLED" };
+    const tx = makeTx({
+      libraryReservation: {
+        findMany: vi.fn(), findFirst: vi.fn(async () => alreadyCancelled), count: vi.fn(), create: vi.fn(),
+        updateMany: vi.fn(async () => ({ count: 1 })), update: vi.fn(),
+      },
+    });
+    mockTransaction(tx);
+    const r = await cancelReservation({ schoolId: "s1", reservationId: "res-head", actor, now: NOW });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe("INVALID_STATE");
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+    expect(tx.libraryBookCopy.update).not.toHaveBeenCalled();
+  });
+
+  it("under a concurrent claim race, falls through to the next candidate instead of allocating the same copy twice", async () => {
+    const resA = { id: "res-a", studentId: "st-a", teacherId: null, requestedAt: new Date("2026-07-01T00:00:00Z"), expiresAt: null, allocatedCopyId: null };
+    const resB = { id: "res-b", studentId: "st-b", teacherId: null, requestedAt: new Date("2026-07-02T00:00:00Z"), expiresAt: null, allocatedCopyId: null };
+    const claimCalls: string[] = [];
+    const tx = makeTx({
+      $queryRaw: vi.fn(async () => [{ id: "cp1", status: "AVAILABLE" }]),
+      libraryReservation: {
+        findMany: vi.fn(async () => [resA, resB]),
+        findFirst: vi.fn(async () => headReservation),
+        count: vi.fn(), create: vi.fn(),
+        updateMany: vi.fn(async ({ where }: { where: { id: string; allocatedCopyId?: null } }) => {
+          // Only track promotion-claim attempts (they include the allocatedCopyId:
+          // null guard); the reservation's own cancel-flip uses a different where.
+          if ("allocatedCopyId" in where) claimCalls.push(where.id);
+          if (where.id === "res-head") return { count: 1 };
+          // Simulate a concurrent transaction winning the race for res-a first.
+          return { count: where.id === "res-a" ? 0 : 1 };
+        }),
+        update: vi.fn(),
+      },
+      libraryBookCopy: {
+        findUnique: vi.fn(async () => ({ status: "RESERVED" })),
+        update: vi.fn(async () => ({})),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        count: vi.fn(),
+      },
+      student: { findFirst: vi.fn(async () => ({ id: "any" })) },
+    });
+    mockTransaction(tx);
+    const r = await cancelReservation({ schoolId: "s1", reservationId: "res-head", actor, now: NOW });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.promotedReservationId).toBe("res-b");
+    expect(claimCalls).toEqual(["res-a", "res-b"]);
+    // Only one copy status flip — never two reservations both winding up RESERVED against the same copy.
+    expect(tx.libraryBookCopy.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes the promotion candidate query to the reservation's own school, never a cross-school reservation", async () => {
+    const tx = makeTx({
+      $queryRaw: vi.fn(async () => [{ id: "cp1", status: "AVAILABLE" }]),
+      libraryReservation: {
+        findMany: vi.fn(async () => []),
+        findFirst: vi.fn(async () => headReservation),
+        count: vi.fn(), create: vi.fn(),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        update: vi.fn(),
+      },
+      libraryBookCopy: {
+        findUnique: vi.fn(async () => ({ status: "RESERVED" })),
+        update: vi.fn(async () => ({})),
+        updateMany: vi.fn(),
+        count: vi.fn(),
+      },
+    });
+    mockTransaction(tx);
+    await cancelReservation({ schoolId: "s1", reservationId: "res-head", actor, now: NOW });
+    expect(tx.libraryReservation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ schoolId: "s1" }) })
+    );
+    // The $queryRaw lock is also scoped to schoolId (see the SQL literal in promoteReservationQueue).
+    expect(tx.$queryRaw).toHaveBeenCalled();
   });
 });

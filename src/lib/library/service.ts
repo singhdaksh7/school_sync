@@ -47,6 +47,94 @@ function reservationIsLive(r: { expiresAt: Date | null }, now: Date): boolean {
   return !r.expiresAt || r.expiresAt.getTime() > now.getTime();
 }
 
+/**
+ * Promotes the next FIFO-eligible PENDING reservation for (schoolId, bookId) to
+ * hold a just-freed `copyId` — called when a copy becomes AVAILABLE again via
+ * return or reservation cancellation. Race-safety:
+ *  - Row-locks the copy (FOR UPDATE) so this promotion serializes against
+ *    issueLoan and any other concurrent promotion targeting the SAME copy;
+ *    re-checks the copy is still AVAILABLE under the lock (a no-op, returning
+ *    null, if something else already claimed it).
+ *  - Selects candidates ordered by requestedAt then id (stable tie-break) so
+ *    FIFO order is deterministic even when two reservations share a timestamp.
+ *  - Only considers PENDING, live (non-expired), not-already-holding-a-copy
+ *    reservations, and skips (without mutating) any whose borrower no longer
+ *    exists — an orphaned reservation is left for a separate cleanup pass
+ *    rather than silently allocated to a borrower who can't use it.
+ *  - Claims the winning candidate via a conditional updateMany scoped to
+ *    (status: PENDING, allocatedCopyId: null); a losing concurrent promotion
+ *    for a DIFFERENT freed copy racing on the same front-of-queue reservation
+ *    sees 0 rows affected and falls through to the next candidate — so two
+ *    reservations can never be awarded the same copy, and one reservation can
+ *    never be awarded two copies.
+ * Returns the promoted reservation's id/borrower, or null when nothing was
+ * promoted (empty/exhausted queue, or the copy was no longer AVAILABLE).
+ */
+async function promoteReservationQueue(
+  tx: Prisma.TransactionClient,
+  args: {
+    schoolId: string;
+    bookId: string;
+    copyId: string;
+    reservationHoldDurationDays: number;
+    now: Date;
+    actor: ServiceActor;
+  }
+): Promise<{ reservationId: string; borrower: Borrower } | null> {
+  const locked = await tx.$queryRaw<{ id: string; status: string }[]>(
+    Prisma.sql`SELECT "id", "status" FROM "LibraryBookCopy" WHERE "id" = ${args.copyId} AND "schoolId" = ${args.schoolId} FOR UPDATE`
+  );
+  if (locked.length === 0 || locked[0].status !== "AVAILABLE") return null;
+
+  const candidates = await tx.libraryReservation.findMany({
+    where: { schoolId: args.schoolId, bookId: args.bookId, status: "PENDING", allocatedCopyId: null },
+    orderBy: [{ requestedAt: "asc" }, { id: "asc" }],
+  });
+
+  for (const candidate of candidates) {
+    if (!reservationIsLive(candidate, args.now)) continue;
+    const borrower: Borrower = candidate.studentId
+      ? { type: "STUDENT", id: candidate.studentId }
+      : { type: "TEACHER", id: candidate.teacherId! };
+    if (!(await borrowerExists(tx, args.schoolId, borrower))) continue;
+
+    const holdUntil = new Date(args.now.getTime() + args.reservationHoldDurationDays * DAY_MS);
+    const claim = await tx.libraryReservation.updateMany({
+      where: { id: candidate.id, status: "PENDING", allocatedCopyId: null },
+      data: { allocatedCopyId: args.copyId, expiresAt: holdUntil },
+    });
+    if (claim.count === 0) continue;
+
+    const copyUpd = await tx.libraryBookCopy.updateMany({
+      where: { id: args.copyId, status: "AVAILABLE" },
+      data: { status: "RESERVED" },
+    });
+    if (copyUpd.count === 0) {
+      // Impossible while the FOR UPDATE lock above is held for this
+      // transaction's lifetime; fail loud rather than leave a reservation
+      // holding a copy whose status never actually flipped.
+      throw new Error("Copy status changed unexpectedly while locked for reservation promotion");
+    }
+
+    await recordLibraryHistory(tx, {
+      schoolId: args.schoolId,
+      event: "COPY_STATUS_CHANGED",
+      reservationId: candidate.id,
+      bookId: args.bookId,
+      copyId: args.copyId,
+      previousStatus: "AVAILABLE",
+      newStatus: "RESERVED",
+      borrowerType: borrower.type,
+      borrowerId: borrower.id,
+      actorId: args.actor.userId,
+      actorRole: args.actor.role,
+    });
+
+    return { reservationId: candidate.id, borrower };
+  }
+  return null;
+}
+
 // ─── Issue ───────────────────────────────────────────────────────────────────
 
 export type IssueResult = { loanId: string; dueAt: Date; copyId: string; fulfilledReservationId: string | null };
@@ -257,25 +345,21 @@ export async function returnLoan(args: {
     const copyStatus = outcome === "AVAILABLE" ? "AVAILABLE" : outcome;
     await tx.libraryBookCopy.update({ where: { id: loan.bookCopyId }, data: { status: copyStatus } });
 
-    // Allocate the freed copy to the front of the reservation queue (hold it).
+    // Allocate the freed copy to the next FIFO-eligible reservation (hold it).
     let allocatedReservationId: string | null = null;
     if (copyStatus === "AVAILABLE") {
       const copy = await tx.libraryBookCopy.findUnique({ where: { id: loan.bookCopyId }, select: { bookId: true } });
-      const queueFront = copy
-        ? await tx.libraryReservation.findFirst({
-            where: { schoolId: args.schoolId, bookId: copy.bookId, status: "PENDING" },
-            orderBy: { requestedAt: "asc" },
+      const promoted = copy
+        ? await promoteReservationQueue(tx, {
+            schoolId: args.schoolId,
+            bookId: copy.bookId,
+            copyId: loan.bookCopyId,
+            reservationHoldDurationDays: policy.reservationHoldDurationDays,
+            now,
+            actor: args.actor,
           })
         : null;
-      if (queueFront && reservationIsLive(queueFront, now)) {
-        const holdUntil = new Date(now.getTime() + policy.reservationHoldDurationDays * DAY_MS);
-        await tx.libraryReservation.update({
-          where: { id: queueFront.id },
-          data: { allocatedCopyId: loan.bookCopyId, expiresAt: holdUntil },
-        });
-        await tx.libraryBookCopy.update({ where: { id: loan.bookCopyId }, data: { status: "RESERVED" } });
-        allocatedReservationId = queueFront.id;
-      }
+      allocatedReservationId = promoted?.reservationId ?? null;
     }
 
     await recordLibraryHistory(tx, {
@@ -561,7 +645,7 @@ export async function cancelReservation(args: {
   reason?: string | null;
   now?: Date;
   skipAudit?: boolean;
-}): Promise<ServiceResult<{ reservationId: string }>> {
+}): Promise<ServiceResult<{ reservationId: string; promotedReservationId: string | null }>> {
   const now = args.now ?? new Date();
   const result = await prisma.$transaction(async (tx) => {
     const reservation = await tx.libraryReservation.findFirst({
@@ -576,11 +660,23 @@ export async function cancelReservation(args: {
     });
     if (upd.count === 0) return err("INVALID_STATE", 409, "Reservation is not active");
 
-    // Free a held copy if this reservation had one allocated.
+    // Free a held copy if this reservation had one allocated, then FIFO-promote
+    // the next eligible reservation for this title into it (if any).
+    let promotedReservationId: string | null = null;
     if (reservation.allocatedCopyId) {
       const copy = await tx.libraryBookCopy.findUnique({ where: { id: reservation.allocatedCopyId }, select: { status: true } });
       if (copy?.status === "RESERVED") {
         await tx.libraryBookCopy.update({ where: { id: reservation.allocatedCopyId }, data: { status: "AVAILABLE" } });
+        const policy = await getEffectiveLibraryPolicy(args.schoolId, tx);
+        const promoted = await promoteReservationQueue(tx, {
+          schoolId: args.schoolId,
+          bookId: reservation.bookId,
+          copyId: reservation.allocatedCopyId,
+          reservationHoldDurationDays: policy.reservationHoldDurationDays,
+          now,
+          actor: args.actor,
+        });
+        promotedReservationId = promoted?.reservationId ?? null;
       }
     }
 
@@ -596,7 +692,7 @@ export async function cancelReservation(args: {
       actorRole: args.actor.role,
     });
 
-    return { ok: true as const, data: { reservationId: reservation.id } };
+    return { ok: true as const, data: { reservationId: reservation.id, promotedReservationId } };
   });
 
   if (result.ok && !args.skipAudit) {
@@ -608,6 +704,17 @@ export async function cancelReservation(args: {
       schoolId: args.schoolId,
       actorRole: args.actor.role,
     });
+    if (result.data.promotedReservationId) {
+      await logAudit({
+        action: LIBRARY_EVENT_AUDIT_ACTION.COPY_STATUS_CHANGED,
+        entityType: "LibraryReservation",
+        entityId: result.data.promotedReservationId,
+        userId: args.actor.userId,
+        schoolId: args.schoolId,
+        actorRole: args.actor.role,
+        metadata: { reason: "queue_promotion_after_cancellation" },
+      });
+    }
   }
   return result;
 }
