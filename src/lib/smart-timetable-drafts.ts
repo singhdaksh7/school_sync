@@ -31,7 +31,12 @@ export async function createDraft(args: {
 export function getDraft(draftId: string, schoolId: string) {
   return prisma.timetableDraft.findFirst({
     where: { id: draftId, schoolId },
-    include: { slots: { orderBy: [{ dayOfWeek: "asc" }, { period: "asc" }] } },
+    include: {
+      slots: {
+        orderBy: [{ dayOfWeek: "asc" }, { period: "asc" }],
+        include: { teacher: { select: { id: true, name: true } } },
+      },
+    },
   });
 }
 
