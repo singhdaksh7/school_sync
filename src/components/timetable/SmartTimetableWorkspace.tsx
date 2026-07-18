@@ -45,6 +45,7 @@ interface DraftSlot {
   period: number;
   subjectName: string | null;
   teacherId: string | null;
+  teacher: { id: string; name: string } | null;
   locked: boolean;
 }
 
@@ -198,7 +199,7 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
     try {
       const res = await fetch(`/api/schools/${schoolId}/smart-timetable/drafts/${selectedDraftId}`);
       const data = await res.json();
-      setSelectedDraft(data);
+      setSelectedDraft(data.draft ?? null);
 
       // Fetch quality score
       const qRes = await fetch(`/api/schools/${schoolId}/smart-timetable/drafts/${selectedDraftId}/quality`);
@@ -428,11 +429,11 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
 
   const renderSlotCell = (day: number, period: number) => {
     const slot = selectedDraft?.slots?.find((s) => s.dayOfWeek === day && s.period === period);
-    const teacherName = initialTeachers.find((t) => t.id === slot?.teacherId)?.name || "Unknown Teacher";
-    
+    const teacherName = slot?.teacher?.name ?? null;
+
     return (
-      <div 
-        key={`${day}-${period}`} 
+      <div
+        key={`${day}-${period}`}
         className={cn(
           "min-h-[72px] border border-gray-200 p-2 rounded-xl flex flex-col justify-between transition-all relative group cursor-pointer hover:border-blue-300 hover:shadow-sm",
           slot?.locked ? "bg-gray-50/70 border-gray-300" : "bg-white"
@@ -447,7 +448,13 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
           <>
             <div>
               <p className="text-xs font-semibold text-gray-900 leading-tight">{slot.subjectName}</p>
-              <p className="text-[10px] text-gray-500 mt-0.5 truncate">{teacherName}</p>
+              <p className="text-[10px] text-gray-500 mt-0.5 truncate">{teacherName ?? "No teacher assigned"}</p>
+              <Badge
+                variant={teacherName ? "success" : "warning"}
+                className="text-[8px] px-1 py-0 h-3.5 mt-1"
+              >
+                {teacherName ? "Assigned" : "Unassigned"}
+              </Badge>
             </div>
             <div className="flex items-center justify-between mt-1">
               <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-150">
@@ -734,6 +741,20 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
                               {qualityScore !== null ? `${qualityScore}/100` : "—"}
                             </span>
                             <span className="text-xs text-gray-400">quality rating</span>
+                          </div>
+                        </div>
+
+                        <div className="h-8 w-px bg-gray-200" />
+
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Teacher Assignment</p>
+                          <div className="flex items-baseline gap-1.5 mt-0.5">
+                            <span className="text-2xl font-bold tracking-tight text-gray-900">
+                              {selectedDraft?.slots?.filter((s) => s.subjectName && s.teacherId).length ?? 0}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              assigned · {selectedDraft?.slots?.filter((s) => s.subjectName && !s.teacherId).length ?? 0} unassigned
+                            </span>
                           </div>
                         </div>
 
