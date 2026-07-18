@@ -1140,5 +1140,14 @@
     "goToSubjectMaster": "Go to Subject Master",
     "legacyBadge": "Legacy — no Master Subject match",
     "legacyNote": "This requirement predates Master Subject enforcement and is kept for reference only; it cannot be edited here."
+  },
+  "smartTimetableWorkspace": {
+    "assignedBadge": "Assigned",
+    "unassignedBadge": "Unassigned",
+    "noTeacherAssigned": "No teacher assigned",
+    "saving": "Saving...",
+    "saveConfiguration": "Save Configuration",
+    "assignmentConstraintViolation": "Constraint violation occurred.",
+    "failedToSaveRequirements": "Failed to save weekly period requirements."
   }
 }

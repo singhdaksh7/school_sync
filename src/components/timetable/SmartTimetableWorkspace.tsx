@@ -309,7 +309,7 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
         setRequirements(data.requirements || []);
         setCapacity(data.capacity || null);
       } else {
-        alert(data.error || "Failed to save weekly period requirements.");
+        alert(data.error || t("smartTimetableWorkspace.failedToSaveRequirements"));
       }
     } catch (e) {
       console.error(e);
@@ -397,7 +397,7 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(parseCostGuardError(res, data).message || "Constraint violation occurred.");
+        alert(parseCostGuardError(res, data).message || t("smartTimetableWorkspace.assignmentConstraintViolation"));
       } else {
         setEditingCell(null);
         refreshDraftDetails();
@@ -448,12 +448,12 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
           <>
             <div>
               <p className="text-xs font-semibold text-gray-900 leading-tight">{slot.subjectName}</p>
-              <p className="text-[10px] text-gray-500 mt-0.5 truncate">{teacherName ?? "No teacher assigned"}</p>
+              <p className="text-[10px] text-gray-500 mt-0.5 truncate">{teacherName ?? t("smartTimetableWorkspace.noTeacherAssigned")}</p>
               <Badge
                 variant={teacherName ? "success" : "warning"}
                 className="text-[8px] px-1 py-0 h-3.5 mt-1"
               >
-                {teacherName ? "Assigned" : "Unassigned"}
+                {teacherName ? t("smartTimetableWorkspace.assignedBadge") : t("smartTimetableWorkspace.unassignedBadge")}
               </Badge>
             </div>
             <div className="flex items-center justify-between mt-1">
@@ -677,7 +677,7 @@ export default function SmartTimetableWorkspace({ schoolId, initialClasses, init
 
                     <div className="flex justify-end pt-2">
                       <Button onClick={saveRequirements} disabled={reqSaving} className="gap-2">
-                        {reqSaving ? "Saving..." : "Save Configuration"}
+                        {reqSaving ? t("smartTimetableWorkspace.saving") : t("smartTimetableWorkspace.saveConfiguration")}
                       </Button>
                     </div>
                   </div>
