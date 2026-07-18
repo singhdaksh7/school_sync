@@ -1140,5 +1140,14 @@
     "goToSubjectMaster": "विषय मास्टर पर जाएँ",
     "legacyBadge": "लीगेसी — कोई मास्टर विषय मेल नहीं",
     "legacyNote": "यह आवश्यकता मास्टर विषय प्रवर्तन से पहले की है और केवल संदर्भ के लिए रखी गई है; इसे यहाँ संपादित नहीं किया जा सकता।"
+  },
+  "smartTimetableWorkspace": {
+    "assignedBadge": "असाइन किया गया",
+    "unassignedBadge": "असाइन नहीं",
+    "noTeacherAssigned": "कोई शिक्षक असाइन नहीं",
+    "saving": "सहेजा जा रहा है...",
+    "saveConfiguration": "कॉन्फ़िगरेशन सहेजें",
+    "assignmentConstraintViolation": "एक बाधा उल्लंघन हुआ।",
+    "failedToSaveRequirements": "साप्ताहिक पीरियड आवश्यकताएँ सहेजने में विफल।"
   }
 }
