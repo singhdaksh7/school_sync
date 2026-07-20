@@ -13,6 +13,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { getEligibleStudentIds } from "@/lib/attendance-roster";
 import { recordAttendanceHistory } from "@/lib/attendance-history";
 import { logAudit } from "@/lib/audit";
+import { enqueueNotificationFanout, guardianRecipientsForStudents, type RecipientRef } from "@/lib/notifications";
 
 export type AttendanceStatusValue = "PRESENT" | "ABSENT" | "LATE" | "ON_LEAVE";
 export const ATTENDANCE_STATUS_VALUES: AttendanceStatusValue[] = ["PRESENT", "ABSENT", "LATE", "ON_LEAVE"];
@@ -178,6 +179,28 @@ export async function submitAttendanceSession(args: {
       schoolId: args.schoolId,
       actorRole: args.actorRole ?? null,
     });
+
+    // Fan out ABSENT/LATE/ON_LEAVE notifications (never for merely-drafted
+    // attendance — this only runs on a successful DRAFT->SUBMITTED
+    // transition, which happens at most once per session). Potentially a
+    // whole section's worth of students+guardians, so this goes through the
+    // durable job outbox (enqueued in the SAME transaction as the guarded
+    // status update above), never a synchronous unbounded loop here.
+    const notifiableStatuses = { ABSENT: "ATTENDANCE_ABSENT", LATE: "ATTENDANCE_LATE", ON_LEAVE: "ATTENDANCE_ON_LEAVE" } as const;
+    for (const [status, eventType] of Object.entries(notifiableStatuses) as [keyof typeof notifiableStatuses, (typeof notifiableStatuses)[keyof typeof notifiableStatuses]][]) {
+      const studentIds = attendanceRows.filter((r) => r.status === status).map((r) => r.studentId!);
+      if (studentIds.length === 0) continue;
+      const studentRecipients: RecipientRef[] = studentIds.map((studentId) => ({ recipientType: "STUDENT", recipientId: studentId }));
+      const guardianRecipients = await guardianRecipientsForStudents(studentIds);
+      await enqueueNotificationFanout(tx, {
+        schoolId: args.schoolId,
+        eventType,
+        entityType: "AttendanceSession",
+        entityId: session.id,
+        recipients: [...studentRecipients, ...guardianRecipients],
+        metadata: { sectionId: args.sectionId, date: args.date.toISOString().slice(0, 10), status },
+      });
+    }
 
     return { ok: true, submittedCount: attendanceRows.length };
   });

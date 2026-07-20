@@ -7,7 +7,7 @@ import Header from "./Header";
 import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
 
 interface DashboardShellProps {
-  school: { slug: string; name: string; logoUrl?: string | null };
+  school: { id: string; slug: string; name: string; logoUrl?: string | null };
   user: { name?: string | null; email?: string | null };
   userRole: string;
   featureFlags?: Record<FeatureFlagKeyValue, boolean>;

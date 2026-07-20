@@ -6,6 +6,7 @@ vi.mock("@/lib/prisma", () => ({
     leaveRequest: { findMany: vi.fn() },
     attendanceSession: { findMany: vi.fn() },
     attendance: { findMany: vi.fn() },
+    studentGuardian: { findMany: vi.fn() },
   },
 }));
 vi.mock("@/lib/audit", () => ({ logAudit: vi.fn() }));
@@ -24,6 +25,7 @@ function makeTx(overrides: Record<string, unknown> = {}) {
       update: vi.fn(),
     },
     attendanceHistory: { createMany: vi.fn() },
+    notification: { create: vi.fn() },
     ...overrides,
   };
 }
@@ -31,6 +33,7 @@ function makeTx(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(makeTx()));
+  (prisma.studentGuardian.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 });
 
 describe("applyAdminAttendanceCorrection", () => {
@@ -71,6 +74,29 @@ describe("applyAdminAttendanceCorrection", () => {
       expect.objectContaining({ data: [expect.objectContaining({ oldStatus: "ABSENT", newStatus: "PRESENT", source: "ADMIN_EMERGENCY", reason: "audit fix" })] })
     );
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "ATTENDANCE_ADMIN_CORRECTED" }));
+  });
+
+  it("notifies the affected student + guardian only when the final status actually changed", async () => {
+    const tx = makeTx({ attendance: { findUnique: vi.fn().mockResolvedValue({ id: "att-1", status: "ABSENT" }), update: vi.fn() } });
+    (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+    (prisma.studentGuardian.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([{ guardianId: "g1" }]);
+
+    await applyAdminAttendanceCorrection({
+      schoolId: "s1", sectionId: "sec1", date: new Date("2026-01-05"), actorUserId: "admin-1",
+      reason: "audit fix", source: "ADMIN_EMERGENCY", items: [{ studentId: "st1", requestedStatus: "PRESENT" }],
+    });
+    expect((tx as ReturnType<typeof makeTx>).notification.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT notify when the requested status equals the current status (a no-op correction)", async () => {
+    const tx = makeTx({ attendance: { findUnique: vi.fn().mockResolvedValue({ id: "att-1", status: "PRESENT" }), update: vi.fn() } });
+    (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+    await applyAdminAttendanceCorrection({
+      schoolId: "s1", sectionId: "sec1", date: new Date("2026-01-05"), actorUserId: "admin-1",
+      reason: "no real change", source: "ADMIN_EMERGENCY", items: [{ studentId: "st1", requestedStatus: "PRESENT" }],
+    });
+    expect((tx as ReturnType<typeof makeTx>).notification.create).not.toHaveBeenCalled();
   });
 
   it("never touches the session's own status — it stays SUBMITTED (session is never reopened)", async () => {

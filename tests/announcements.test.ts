@@ -6,11 +6,12 @@ vi.mock("@/lib/prisma", () => ({
     announcementTarget: { deleteMany: vi.fn() },
     announcementAudience: { deleteMany: vi.fn() },
     announcementRead: { upsert: vi.fn(), findMany: vi.fn(), count: vi.fn() },
-    teacher: { findFirst: vi.fn(), count: vi.fn() },
+    teacher: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn() },
     section: { findMany: vi.fn() },
-    student: { count: vi.fn() },
-    guardian: { count: vi.fn() },
+    student: { findMany: vi.fn(), count: vi.fn() },
+    guardian: { findMany: vi.fn(), count: vi.fn() },
     studentGuardian: { findMany: vi.fn(), count: vi.fn() },
+    backgroundJob: { create: vi.fn(), findFirst: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -45,6 +46,10 @@ const p = prisma as any;
 beforeEach(() => {
   vi.clearAllMocks();
   p.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(p));
+  p.student.findMany.mockResolvedValue([]);
+  p.guardian.findMany.mockResolvedValue([]);
+  p.teacher.findMany.mockResolvedValue([]);
+  p.backgroundJob.create.mockResolvedValue({ id: "job1" });
 });
 
 const SCHOOL = "school1";
@@ -281,7 +286,7 @@ describe("updateDraftOrScheduled — ownership + tenant isolation", () => {
 describe("publishAnnouncement / cancelAnnouncement / archiveAnnouncement", () => {
   it("publishes a draft and stamps publishedAt/publishedById", async () => {
     p.announcement.findFirst.mockResolvedValue({ id: "a1", schoolId: SCHOOL, status: "DRAFT", createdById: "admin1" });
-    p.announcement.update.mockResolvedValue({ id: "a1", title: "t" });
+    p.announcement.update.mockResolvedValue({ id: "a1", title: "t", schoolId: SCHOOL, audience: [], targets: [] });
     await publishAnnouncement(leadershipCtx, "a1");
     const call = p.announcement.update.mock.calls[0][0];
     expect(call.data.status).toBe("PUBLISHED");
@@ -313,7 +318,7 @@ describe("correctPublishedAnnouncement — published-correction audit behavior",
       publishedAt: new Date("2026-01-01T00:00:00Z"),
       expiresAt: null,
     });
-    p.announcement.update.mockResolvedValue({ id: "a1", title: "New title", body: "New body", correctionCount: 1, expiresAt: null });
+    p.announcement.update.mockResolvedValue({ id: "a1", title: "New title", body: "New body", correctionCount: 1, expiresAt: null, schoolId: SCHOOL, audience: [], targets: [] });
 
     const result = correctionSchema.safeParse({ title: "New title", body: "New body" });
     expect(result.success).toBe(true);
@@ -336,12 +341,34 @@ describe("correctPublishedAnnouncement — published-correction audit behavior",
     p.announcement.findFirst.mockResolvedValue({ id: "a1", schoolId: SCHOOL, status: "DRAFT", createdById: "admin1" });
     await expect(correctPublishedAnnouncement(leadershipCtx, "a1", { title: "x", body: "y" })).rejects.toMatchObject({ status: 409 });
   });
+
+  it("gives two successive corrections distinct fan-out idempotency version keys (correctionCount) so neither is dropped as a duplicate", async () => {
+    p.announcement.findFirst.mockResolvedValue({
+      id: "a1", schoolId: SCHOOL, status: "PUBLISHED", createdById: "admin1",
+      title: "Old", body: "Old", publishedAt: new Date("2026-01-01T00:00:00Z"), expiresAt: null,
+    });
+    p.student.findMany.mockResolvedValue([{ id: "st1" }]);
+    const audience = [{ group: "STUDENTS" }];
+
+    p.announcement.update.mockResolvedValueOnce({ id: "a1", title: "v2", body: "v2", correctionCount: 1, expiresAt: null, schoolId: SCHOOL, audience, targets: [] });
+    await correctPublishedAnnouncement(leadershipCtx, "a1", { title: "v2", body: "v2" });
+    const firstVersionKey = p.backgroundJob.create.mock.calls[0][0].data.payload.versionKey;
+
+    p.announcement.update.mockResolvedValueOnce({ id: "a1", title: "v3", body: "v3", correctionCount: 2, expiresAt: null, schoolId: SCHOOL, audience, targets: [] });
+    await correctPublishedAnnouncement(leadershipCtx, "a1", { title: "v3", body: "v3" });
+    const secondVersionKey = p.backgroundJob.create.mock.calls[1][0].data.payload.versionKey;
+
+    expect(firstVersionKey).toBe("1");
+    expect(secondVersionKey).toBe("2");
+    expect(firstVersionKey).not.toBe(secondVersionKey);
+  });
 });
 
 describe("transitionDueScheduledAnnouncements", () => {
   it("flips only SCHEDULED announcements whose scheduledAt has passed", async () => {
     p.announcement.findMany.mockResolvedValue([{ id: "a1", schoolId: SCHOOL, createdById: "admin1", createdByRole: "SCHOOL_ADMIN", title: "t" }]);
     p.announcement.update.mockResolvedValue({});
+    p.announcement.findMany.mockResolvedValue([{ id: "a1", schoolId: SCHOOL, createdById: "admin1", createdByRole: "SCHOOL_ADMIN", title: "t", audience: [], targets: [], scope: "SCHOOL_WIDE" }]);
     const count = await transitionDueScheduledAnnouncements(SCHOOL);
     expect(count).toBe(1);
     const query = p.announcement.findMany.mock.calls[0][0];

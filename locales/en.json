@@ -896,5 +896,40 @@
     "duplicateRollNo": "Roll number already exists",
     "duplicateStudent": "A student with these details already exists",
     "parentPhoneRequired": "Father Phone or Mother Phone is required so the student can log in"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all read",
+    "loadError": "Couldn't load notifications.",
+    "empty": "No notifications yet.",
+    "viewAll": "View all notifications",
+    "showAll": "Show all",
+    "showingUnread": "Showing unread",
+    "loadMore": "Load more",
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    },
+    "events": {
+      "HOMEWORK_PUBLISHED": "New homework has been published",
+      "HOMEWORK_UPDATED": "A published homework was updated",
+      "ANNOUNCEMENT_PUBLISHED": "A new announcement was published",
+      "ANNOUNCEMENT_CORRECTED": "An announcement was corrected",
+      "ATTENDANCE_ABSENT": "Marked absent for a submitted attendance session",
+      "ATTENDANCE_LATE": "Marked late for a submitted attendance session",
+      "ATTENDANCE_ON_LEAVE": "Marked on leave for a submitted attendance session",
+      "ATTENDANCE_CORRECTED": "An attendance record was corrected",
+      "STUDENT_LEAVE_APPROVED": "Leave request approved",
+      "STUDENT_LEAVE_REJECTED": "Leave request rejected",
+      "TEACHER_LEAVE_APPROVED": "Your leave request was approved",
+      "TEACHER_LEAVE_REJECTED": "Your leave request was rejected",
+      "EARLY_LEAVE_APPROVED": "Your early-leave request was approved",
+      "EARLY_LEAVE_REJECTED": "Your early-leave request was rejected",
+      "LEAVE_PENDING_REVIEW": "A leave request is awaiting your review",
+      "ATTENDANCE_CORRECTION_PENDING_REVIEW": "An attendance correction request is awaiting your review",
+      "ATTENDANCE_RECONCILIATION_NEEDED": "Approved leave needs attendance reconciliation"
+    }
   }
 }
