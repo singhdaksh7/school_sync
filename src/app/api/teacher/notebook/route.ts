@@ -6,6 +6,7 @@ import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { logAudit } from "@/lib/audit";
 import { getTeacherByUserId, normalizeSubject, teacherCanTeachSubjectSection } from "@/lib/homework";
+import { sortStudentsByRollNumber } from "@/lib/student-ordering";
 
 interface CheckInput {
   studentId: string;
@@ -40,11 +41,12 @@ export async function GET(req: Request) {
   const milestoneOk = await examMilestoneBelongsToSchool(examMilestoneId, teacher.schoolId);
   if (!milestoneOk) return NextResponse.json({ error: "Exam milestone not found" }, { status: 404 });
 
-  const students = await prisma.student.findMany({
-    where: { schoolId: teacher.schoolId, sectionId },
-    select: { id: true, name: true, rollNo: true },
-    orderBy: { rollNo: "asc" },
-  });
+  const students = sortStudentsByRollNumber(
+    await prisma.student.findMany({
+      where: { schoolId: teacher.schoolId, sectionId },
+      select: { id: true, name: true, rollNo: true },
+    })
+  );
 
   const checks = await prisma.notebookCheck.findMany({
     where: { schoolId: teacher.schoolId, examMilestoneId, subject: { equals: subject, mode: "insensitive" }, studentId: { in: students.map((s) => s.id) } },

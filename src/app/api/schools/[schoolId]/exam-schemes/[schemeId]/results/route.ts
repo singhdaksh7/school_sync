@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { allStudentsBelongToSchool, canAccessSchool, examSchemeBelongsToSchool, getExamInSchool, sectionBelongsToSchool } from "@/lib/tenant";
+import { compareStudentsByRollNumber } from "@/lib/student-ordering";
 
 // GET all results for a scheme (with optional sectionId filter)
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string; schemeId: string }> }) {
@@ -26,9 +27,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
       exam: { select: { id: true, name: true, maxMarks: true, order: true } },
       student: { select: { id: true, name: true, rollNo: true, sectionId: true } },
     },
-    orderBy: [{ exam: { order: "asc" } }, { student: { rollNo: "asc" } }],
+    orderBy: [{ exam: { order: "asc" } }],
   });
-  return NextResponse.json(results);
+
+  // Universal roll-number ordering (canonical comparator — see /lib/student-ordering)
+  // as the tiebreak within each exam group; exam.order is a plain integer, so
+  // comparing it directly keeps the outer grouping exactly as the query above
+  // already returned it.
+  const ordered = [...results].sort((a, b) => {
+    if (a.exam.order !== b.exam.order) return a.exam.order - b.exam.order;
+    return compareStudentsByRollNumber(a.student, b.student);
+  });
+  return NextResponse.json(ordered);
 }
 
 // POST: admin bulk upsert results for a section + exam

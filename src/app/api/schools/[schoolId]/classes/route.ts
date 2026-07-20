@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sortStudentsByRollNumber } from "@/lib/student-ordering";
 
 async function getSchoolAndVerify(schoolId: string, userId: string) {
   const school = await prisma.school.findUnique({
@@ -27,12 +28,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
       sections: {
         include: {
           _count: { select: { students: true } },
-          students: { orderBy: { rollNo: "asc" }, select: { id: true, name: true, rollNo: true } },
+          students: { select: { id: true, name: true, rollNo: true } },
         },
       },
     },
     orderBy: { name: "asc" },
   });
+
+  // Universal roll-number ordering (canonical comparator — see /lib/student-ordering).
+  // Section rosters are small/bounded, so an in-memory sort right after the
+  // fetch is both correct and cheap; Prisma's plain-string orderBy above was
+  // dropped since it would sort "10" before "2".
+  for (const cls of classes) {
+    for (const section of cls.sections) {
+      section.students = sortStudentsByRollNumber(section.students);
+    }
+  }
 
   return NextResponse.json(classes);
 }

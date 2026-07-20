@@ -502,15 +502,16 @@ model Section {
 }
 
 model Subject {
-  id        String   @id @default(cuid())
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  classId   String
-  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
-  sectionId String?
-  section   Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  name      String
-  createdAt DateTime @default(now())
+  id                    String                        @id @default(cuid())
+  schoolId              String
+  school                School                        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId               String
+  class                 Class                         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId             String?
+  section               Section?                      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  name                  String
+  createdAt             DateTime                      @default(now())
+  timetableRequirements TimetableSubjectRequirement[]
 
   @@unique([classId, sectionId, name])
   @@index([schoolId])
@@ -665,6 +666,14 @@ model TeacherSubjectEligibility {
 
 /**
  * Weekly period requirement for one subject in one class/section's timetable (used for capacity validation + generation, not the live TimetableSlot rows directly).
+ *
+ * subjectId is the canonical link to the school's Master Subject (Subject
+ * model) catalogue — every row created/updated through the API is required to
+ * resolve to one. It stays nullable so pre-existing free-text rows (created
+ * before Master Subject enforcement existed) keep loading untouched as
+ * "legacy/unmapped" rather than being deleted or auto-remapped; subjectName is
+ * kept in sync with the canonical Subject.name for these rows so the rest of
+ * the generation pipeline (which still matches by name) needs no changes.
  */
 model TimetableSubjectRequirement {
   id                     String   @id @default(cuid())
@@ -674,6 +683,8 @@ model TimetableSubjectRequirement {
   class                  Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
   sectionId              String
   section                Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectId              String?
+  subject                Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   subjectName            String
   requiredPeriodsPerWeek Int
   minPeriodsPerDay       Int?
@@ -685,8 +696,10 @@ model TimetableSubjectRequirement {
   updatedAt              DateTime @updatedAt
 
   @@unique([sectionId, subjectName])
+  @@unique([sectionId, subjectId])
   @@index([schoolId])
   @@index([classId])
+  @@index([subjectId])
 }
 
 enum TimetableDraftStatus {

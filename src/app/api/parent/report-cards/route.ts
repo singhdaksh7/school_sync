@@ -3,6 +3,7 @@ import { getAuthenticatedGuardian } from "@/lib/parent-auth";
 import { prisma } from "@/lib/prisma";
 import { reportCardInclude, serializeReportCard } from "@/lib/report-cards";
 import { requireSchoolFeature } from "@/lib/feature-flags";
+import { compareStudentsByRollNumber } from "@/lib/student-ordering";
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedGuardian(req);
@@ -30,8 +31,18 @@ export async function GET(req: NextRequest) {
       },
     },
     include: reportCardInclude,
-    orderBy: [{ publishedAt: "desc" }, { student: { rollNo: "asc" } }],
+    orderBy: [{ publishedAt: "desc" }],
   });
 
-  return NextResponse.json({ reportCards: reportCards.map(serializeReportCard) });
+  // Universal roll-number ordering (canonical comparator — see /lib/student-ordering)
+  // as the tiebreak within each publishedAt instant; comparing publishedAt
+  // directly (not via string) keeps the outer recency grouping correct.
+  const ordered = [...reportCards].sort((a, b) => {
+    const at = a.publishedAt?.getTime() ?? 0;
+    const bt = b.publishedAt?.getTime() ?? 0;
+    if (at !== bt) return bt - at;
+    return compareStudentsByRollNumber(a.student, b.student);
+  });
+
+  return NextResponse.json({ reportCards: ordered.map(serializeReportCard) });
 }
