@@ -133,7 +133,10 @@ export async function loadTodayOperationsContext(schoolId: string, now: Date = n
   const teacherMap = new Map(teachers.map((t) => [t.id, t]));
   const teacherAttendance = new Map<string, "PRESENT" | "ABSENT" | "LATE">();
   for (const row of teacherAttendanceRows) {
-    if (row.teacherId) teacherAttendance.set(row.teacherId, row.status);
+    // ON_LEAVE (Attendance v2) is only ever written for STUDENT attendance —
+    // this query is scoped to type: "TEACHER", so row.status is always
+    // PRESENT/ABSENT/LATE in practice; the cast reflects that invariant.
+    if (row.teacherId) teacherAttendance.set(row.teacherId, row.status as "PRESENT" | "ABSENT" | "LATE");
   }
   const teachersOnLeave = new Set(fullDayLeaves.map((l) => l.teacherId).filter((id): id is string => Boolean(id)));
   const teacherEarlyLeave = new Map(earlyLeaves.map((e) => [e.teacherId, e.leaveAfterPeriod]));
