@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateParentToken, normalizePhone } from "@/lib/parent-auth";
+import { generateParentToken, normalizePhone, GUARDIAN_COOKIE_NAME } from "@/lib/parent-auth";
+import { isForwardedHttps } from "@/proxy";
 import { hostnameFromHeaders, resolveSchool } from "@/lib/school-resolver";
 import { statusIsBlocked } from "@/lib/school-access";
 import { getClientIp } from "@/lib/request-ip";
@@ -115,8 +116,12 @@ export async function POST(req: NextRequest) {
       sid,
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
+      // Retained for the mobile client (frozen contract — see
+      // docs/backend-pilot-contract-freeze.md), which has no concept of
+      // cookies and stores this itself. The web portal ignores it and
+      // relies on the cookie set below instead.
       token,
       user: {
         id: guardian.id,
@@ -128,6 +133,18 @@ export async function POST(req: NextRequest) {
         schoolSlug: guardian.school.slug,
       },
     });
+
+    // Guardian web portal session (PART 1) — same JWT as `token` above,
+    // carried as an httpOnly cookie so client JS never touches it.
+    response.cookies.set(GUARDIAN_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: isForwardedHttps(req),
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7, // matches generateParentToken's 7d expiry
+    });
+
+    return response;
   } catch (error) {
     console.error("Parent login error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

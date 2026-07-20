@@ -4,11 +4,29 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   CalendarDays, BookOpenCheck, RefreshCw, ClipboardCheck,
-  ArrowRight, Check, X, Clock, DoorOpen, Award, ArrowUpRight,
+  ArrowRight, Check, X, Clock, DoorOpen, Award, ArrowUpRight, ChevronRight,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { TEACHER_NAV_ITEMS } from "@/components/teacher/TeacherSidebar";
+
+/**
+ * Maps a subset of TEACHER_NAV_ITEMS hrefs to the PERMISSION_CATALOG module
+ * they're gated by for Operational/Delegated Teachers (teachers WITH at
+ * least one TeacherRoleAssignment — see src/lib/teacher-permissions.ts).
+ * Routes not listed here (timetable, arrangements, early-leave, leaves,
+ * profile) are self-service/always-on and are never gated.
+ */
+const MODULE_GATE: Record<string, string> = {
+  "/teacher/attendance": "ATTENDANCE",
+  "/teacher/marks": "MARKS",
+  "/teacher/report-cards": "REPORT_CARDS",
+  "/teacher/homework": "HOMEWORK",
+  "/teacher/notebook": "NOTEBOOK",
+};
+
+interface PermissionPair { module: string; action: string }
 
 interface Slot { dayOfWeek: number; period: number; subject: string | null; sectionName: string; className: string }
 interface HomeworkSubmission { status: string }
@@ -41,6 +59,20 @@ export default function TeacherDashboardPage() {
   const [pendingReviews, setPendingReviews] = useState(0);
   const [todaySubs, setTodaySubs] = useState<Arrangement[]>([]);
   const [self, setSelf] = useState<SelfAttendance | null>(null);
+  // Unrestricted until proven otherwise — matches the base Teacher case
+  // (no custom-role assignments => full standard access) so tiles don't
+  // flicker hidden while the permissions fetch is in flight.
+  const [hasCustomRole, setHasCustomRole] = useState(false);
+  const [permissions, setPermissions] = useState<PermissionPair[]>([]);
+
+  useEffect(() => {
+    fetch("/api/teacher/permissions").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) {
+        setHasCustomRole(!!d.hasCustomRole);
+        setPermissions(Array.isArray(d.permissions) ? d.permissions : []);
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch("/api/teacher/me").then((r) => r.json()).then((d) => { if (!d.error) setProfileName(d.name || ""); }).catch(() => {});
@@ -232,6 +264,35 @@ export default function TeacherDashboardPage() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* All modules — full tile grid, gated per-module for Operational/Delegated Teachers */}
+      <div className="space-y-3">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground/70">{t("teacherDashboard.allModules")}</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {TEACHER_NAV_ITEMS.filter((item) => item.href !== "/teacher").filter((item) => {
+            const gateModule = MODULE_GATE[item.href];
+            if (!gateModule || !hasCustomRole) return true;
+            return permissions.some((p) => p.module === gateModule && p.action === "VIEW");
+          }).map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="group flex flex-col gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+            >
+              <div className="flex items-start justify-between">
+                <span
+                  className="flex h-10 w-10 items-center justify-center rounded-xl text-primary"
+                  style={{ background: "linear-gradient(135deg, hsl(var(--primary) / 0.14), hsl(var(--primary) / 0.05))" }}
+                >
+                  <item.icon className="h-5 w-5" />
+                </span>
+                <ChevronRight className="h-4 w-4 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+              </div>
+              <span className="text-sm font-semibold leading-tight text-foreground">{t(item.labelKey)}</span>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );

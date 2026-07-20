@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   BookOpenCheck, ClipboardCheck, Award, ClipboardList, CalendarDays,
-  Megaphone, TrendingUp, GraduationCap, PartyPopper,
+  Megaphone, TrendingUp, GraduationCap, PartyPopper, BookCheck, User,
 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { sessionRole } from "@/lib/tenant";
@@ -29,12 +29,18 @@ export default async function StudentDashboardPage() {
   const latestResult = latestResults.latestExamResults[0];
   const latestReportCard = latestResults.latestReportCard;
 
+  // Every route under STUDENT_NAV_ITEMS (src/components/student/StudentSidebar.tsx)
+  // gets a tile here except "dashboard" itself — this page never gates any of
+  // them further since the student sidebar shows the full set unconditionally.
   const quickActions = [
     { href: "/student/homework", label: t("studentDashboard.viewHomework"), icon: BookOpenCheck },
+    { href: "/student/notebook", label: t("nav.notebookChecking"), icon: BookCheck },
     { href: "/student/attendance", label: t("studentDashboard.viewAttendance"), icon: ClipboardCheck },
     { href: "/student/results", label: t("studentDashboard.viewResults"), icon: Award },
     { href: "/student/leave", label: t("studentDashboard.applyLeave"), icon: ClipboardList },
     { href: "/student/timetable", label: t("studentDashboard.viewTimetable"), icon: CalendarDays },
+    { href: "/student/announcements", label: t("nav.announcements"), icon: Megaphone },
+    { href: "/student/profile", label: t("nav.profile"), icon: User },
   ];
 
   return (
@@ -235,7 +241,7 @@ export default async function StudentDashboardPage() {
           <CardTitle className="text-base">{t("studentDashboard.quickActions")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {quickActions.map((a) => (
               <Link
                 key={a.href}
