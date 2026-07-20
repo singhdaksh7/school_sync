@@ -8,7 +8,7 @@ import {
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
   ClipboardList, PieChart, Activity, BarChart, X, Wand2, BookOpenCheck, Replace, Palette, ShieldCheck, LayoutTemplate,
-  CreditCard, BookCheck, ListTree, UserMinus,
+  CreditCard, BookCheck, ListTree, UserMinus, Library,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
@@ -76,6 +76,7 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
         { href: `${base}/attendance`, label: t("nav.attendance"), icon: ClipboardCheck, show: flagEnabled("ATTENDANCE") },
         { href: `${base}/reports`, label: t("nav.attendanceReports"), icon: BarChart2, show: flagEnabled("ATTENDANCE") },
         { href: `${base}/exam-milestones`, label: t("nav.examMilestones"), icon: BookCheck, show: flagEnabled("NOTEBOOK_CHECKING") },
+        { href: `${base}/library`, label: t("nav.library"), icon: Library, show: flagEnabled("LIBRARY") },
       ]
     },
     {

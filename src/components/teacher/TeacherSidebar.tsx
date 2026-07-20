@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   GraduationCap, LayoutDashboard, ClipboardCheck, CalendarDays,
   FileText, BookOpenCheck, RefreshCw, DoorOpen, ClipboardList,
-  User, X, Award, Sparkles, BookCheck, ShieldAlert, Megaphone
+  User, X, Award, Sparkles, BookCheck, ShieldAlert, Megaphone, Library
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
@@ -26,6 +26,7 @@ export const TEACHER_NAV_ITEMS: TeacherNavItem[] = [
   { href: "/teacher/homework", labelKey: "nav.homework", icon: BookOpenCheck },
   { href: "/teacher/announcements", labelKey: "nav.announcements", icon: Megaphone },
   { href: "/teacher/notebook", labelKey: "nav.notebookChecking", icon: BookCheck },
+  { href: "/teacher/library", labelKey: "nav.library", icon: Library },
   { href: "/teacher/arrangements", labelKey: "nav.arrangements", icon: RefreshCw },
   { href: "/teacher/early-leave", labelKey: "nav.earlyLeave", icon: DoorOpen },
   { href: "/teacher/leaves", labelKey: "nav.leaves", icon: ClipboardList },
