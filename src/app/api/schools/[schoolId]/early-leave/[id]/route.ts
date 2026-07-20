@@ -6,6 +6,7 @@ import { canWriteSchool, sessionRole } from "@/lib/tenant";
 import { createArrangementsForEarlyLeave } from "@/lib/arrangements";
 import { logAudit } from "@/lib/audit";
 import { getClientIp } from "@/lib/request-ip";
+import { createNotificationsBounded } from "@/lib/notifications";
 
 const patchSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED"]),
@@ -67,6 +68,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ school
       schoolId,
       actorRole: role,
       ipAddress: getClientIp(req),
+    });
+
+    await createNotificationsBounded(prisma, {
+      schoolId,
+      eventType: status === "APPROVED" ? "EARLY_LEAVE_APPROVED" : "EARLY_LEAVE_REJECTED",
+      entityType: "TeacherEarlyLeaveRequest",
+      entityId: request.id,
+      recipients: [{ recipientType: "TEACHER", recipientId: request.teacherId }],
+      metadata: { leaveAfterPeriod: request.leaveAfterPeriod },
+      versionKey: status,
     });
 
     return NextResponse.json({ success: true, generation });

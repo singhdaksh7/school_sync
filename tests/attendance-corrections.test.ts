@@ -4,6 +4,8 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     $transaction: vi.fn(),
     $executeRaw: vi.fn(),
+    user: { findMany: vi.fn() },
+    studentGuardian: { findMany: vi.fn() },
   },
 }));
 vi.mock("@/lib/audit", () => ({ logAudit: vi.fn() }));
@@ -25,6 +27,7 @@ function makeTx(overrides: Record<string, unknown> = {}) {
       update: vi.fn(),
     },
     attendanceHistory: { createMany: vi.fn() },
+    notification: { create: vi.fn() },
     ...overrides,
   };
 }
@@ -32,6 +35,8 @@ function makeTx(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(makeTx()));
+  (prisma.user.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+  (prisma.studentGuardian.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 });
 
 describe("createCorrectionRequest", () => {

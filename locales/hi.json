@@ -897,6 +897,41 @@
     "duplicateStudent": "इन विवरणों वाला छात्र पहले से मौजूद है",
     "parentPhoneRequired": "छात्र के लॉगिन के लिए पिता या माता का फ़ोन नंबर आवश्यक है"
   },
+  "notifications": {
+    "title": "सूचनाएं",
+    "markAllRead": "सभी पढ़ी हुई चिह्नित करें",
+    "loadError": "सूचनाएं लोड नहीं हो सकीं।",
+    "empty": "अभी तक कोई सूचना नहीं।",
+    "viewAll": "सभी सूचनाएं देखें",
+    "showAll": "सभी दिखाएं",
+    "showingUnread": "अपठित दिखा रहे हैं",
+    "loadMore": "और देखें",
+    "time": {
+      "justNow": "अभी-अभी",
+      "minutesAgo": "{{count}} मिनट पहले",
+      "hoursAgo": "{{count}} घंटे पहले",
+      "daysAgo": "{{count}} दिन पहले"
+    },
+    "events": {
+      "HOMEWORK_PUBLISHED": "नई गृहकार्य प्रकाशित की गई है",
+      "HOMEWORK_UPDATED": "प्रकाशित गृहकार्य में सुधार किया गया",
+      "ANNOUNCEMENT_PUBLISHED": "एक नई घोषणा प्रकाशित की गई",
+      "ANNOUNCEMENT_CORRECTED": "एक घोषणा में सुधार किया गया",
+      "ATTENDANCE_ABSENT": "जमा की गई उपस्थिति में अनुपस्थित दर्ज किया गया",
+      "ATTENDANCE_LATE": "जमा की गई उपस्थिति में देरी से दर्ज किया गया",
+      "ATTENDANCE_ON_LEAVE": "जमा की गई उपस्थिति में अवकाश पर दर्ज किया गया",
+      "ATTENDANCE_CORRECTED": "एक उपस्थिति रिकॉर्ड में सुधार किया गया",
+      "STUDENT_LEAVE_APPROVED": "अवकाश अनुरोध स्वीकृत",
+      "STUDENT_LEAVE_REJECTED": "अवकाश अनुरोध अस्वीकृत",
+      "TEACHER_LEAVE_APPROVED": "आपका अवकाश अनुरोध स्वीकृत हो गया",
+      "TEACHER_LEAVE_REJECTED": "आपका अवकाश अनुरोध अस्वीकृत हो गया",
+      "EARLY_LEAVE_APPROVED": "आपका जल्दी छुट्टी अनुरोध स्वीकृत हो गया",
+      "EARLY_LEAVE_REJECTED": "आपका जल्दी छुट्टी अनुरोध अस्वीकृत हो गया",
+      "LEAVE_PENDING_REVIEW": "एक अवकाश अनुरोध आपकी समीक्षा की प्रतीक्षा में है",
+      "ATTENDANCE_CORRECTION_PENDING_REVIEW": "एक उपस्थिति सुधार अनुरोध आपकी समीक्षा की प्रतीक्षा में है",
+      "ATTENDANCE_RECONCILIATION_NEEDED": "स्वीकृत अवकाश के लिए उपस्थिति मिलान की आवश्यकता है"
+    }
+  },
   "library": {
     "title": "पुस्तकालय",
     "subtitle": "सूची, प्रतियाँ, वितरण और आरक्षण प्रबंधित करें",

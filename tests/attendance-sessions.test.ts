@@ -8,6 +8,7 @@ vi.mock("@/lib/prisma", () => ({
     attendance: { findMany: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
     attendanceSession: { findUnique: vi.fn() },
     leaveRequest: { findMany: vi.fn() },
+    studentGuardian: { findMany: vi.fn() },
   },
 }));
 vi.mock("@/lib/audit", () => ({ logAudit: vi.fn() }));
@@ -31,6 +32,8 @@ function makeTx(overrides: Record<string, unknown> = {}) {
       findMany: vi.fn().mockResolvedValue([]),
     },
     attendanceHistory: { createMany: vi.fn() },
+    notification: { create: vi.fn() },
+    backgroundJob: { create: vi.fn().mockResolvedValue({ id: "job1" }), findFirst: vi.fn() },
     ...overrides,
   };
 }
@@ -38,6 +41,7 @@ function makeTx(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(makeTx()));
+  (prisma.studentGuardian.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 });
 
 describe("saveAttendanceDraft", () => {
@@ -72,6 +76,17 @@ describe("saveAttendanceDraft", () => {
     expect((tx as ReturnType<typeof makeTx>).attendanceHistory.createMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: [expect.objectContaining({ source: "DRAFT_MARK", newStatus: "PRESENT", oldStatus: null })] })
     );
+  });
+
+  it("never enqueues a notification fan-out while attendance is merely a draft", async () => {
+    const tx = makeTx({ student: { count: vi.fn().mockResolvedValue(1) } });
+    (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+    await saveAttendanceDraft({
+      schoolId: "s1", sectionId: "sec1", date: new Date("2026-01-05"), actorUserId: "u1",
+      records: [{ studentId: "st1", status: "ABSENT" }],
+    });
+    expect((tx as ReturnType<typeof makeTx>).backgroundJob.create).not.toHaveBeenCalled();
   });
 
   it("rejects every draft write once the session is SUBMITTED — changes nothing", async () => {
@@ -114,6 +129,30 @@ describe("submitAttendanceSession", () => {
       expect.objectContaining({ data: [expect.objectContaining({ source: "SUBMISSION", oldStatus: "PRESENT", newStatus: "PRESENT" })] })
     );
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "ATTENDANCE_SUBMITTED" }));
+  });
+
+  it("enqueues a fan-out job only for ABSENT/LATE/ON_LEAVE students on submission — never for PRESENT", async () => {
+    (prisma.student.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: "st1" }, { id: "st2" }, { id: "st3" }]);
+    const tx = makeTx({
+      attendance: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "a1", studentId: "st1", status: "PRESENT" },
+          { id: "a2", studentId: "st2", status: "ABSENT" },
+          { id: "a3", studentId: "st3", status: "LATE" },
+        ]),
+      },
+    });
+    (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+    await submitAttendanceSession({ schoolId: "s1", sectionId: "sec1", date: new Date("2026-01-05"), actorUserId: "u1" });
+
+    const jobCalls = (tx as ReturnType<typeof makeTx>).backgroundJob.create.mock.calls.map((c) => c[0].data);
+    expect(jobCalls).toHaveLength(2);
+    const absentJob = jobCalls.find((c: { payload: { eventType: string } }) => c.payload.eventType === "ATTENDANCE_ABSENT");
+    const lateJob = jobCalls.find((c: { payload: { eventType: string } }) => c.payload.eventType === "ATTENDANCE_LATE");
+    expect(absentJob.payload.recipients).toContainEqual({ recipientType: "STUDENT", recipientId: "st2" });
+    expect(lateJob.payload.recipients).toContainEqual({ recipientType: "STUDENT", recipientId: "st3" });
+    expect(jobCalls.some((c: { payload: { eventType: string } }) => c.payload.eventType === "ATTENDANCE_ON_LEAVE")).toBe(false);
   });
 
   it("rejects re-submission of an already-SUBMITTED session", async () => {

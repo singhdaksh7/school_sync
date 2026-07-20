@@ -9,6 +9,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { recordAttendanceHistory } from "@/lib/attendance-history";
 import { logAudit } from "@/lib/audit";
 import type { AttendanceStatusValue } from "@/lib/attendance-sessions";
+import { createNotificationsBounded, guardianRecipientsForStudents, leadershipRecipientsForSchool, type RecipientRef } from "@/lib/notifications";
 
 function correctionLockKey(correctionId: string): string {
   return `attendance-correction:${correctionId}`;
@@ -108,6 +109,17 @@ export async function createCorrectionRequest(args: {
       metadata: { sectionId: args.sectionId, date: args.date.toISOString().slice(0, 10), itemCount: args.items.length },
       userId: args.requestedByUserId,
       schoolId: args.schoolId,
+    });
+
+    // Notify only the users actually authorized to review this request.
+    const reviewers = await leadershipRecipientsForSchool(args.schoolId);
+    await createNotificationsBounded(tx, {
+      schoolId: args.schoolId,
+      eventType: "ATTENDANCE_CORRECTION_PENDING_REVIEW",
+      entityType: "AttendanceCorrectionRequest",
+      entityId: created.id,
+      recipients: reviewers,
+      metadata: { sectionId: args.sectionId, date: args.date.toISOString().slice(0, 10), itemCount: args.items.length },
     });
 
     return { ok: true, correctionRequestId: created.id };
@@ -217,6 +229,22 @@ export async function reviewCorrectionRequest(args: {
       userId: args.reviewerUserId,
       schoolId: args.schoolId,
       actorRole: args.reviewerRole ?? null,
+    });
+
+    // Every item here changed status by construction (createCorrectionRequest
+    // rejects NO_OP items at creation time) — notify the affected students and
+    // their guardians. Bounded by this request's own item list, never a
+    // whole-section fan-out, so this stays synchronous.
+    const changedStudentIds = request.items.map((i) => i.studentId);
+    const studentRecipients: RecipientRef[] = changedStudentIds.map((studentId) => ({ recipientType: "STUDENT", recipientId: studentId }));
+    const guardianRecipients = await guardianRecipientsForStudents(changedStudentIds);
+    await createNotificationsBounded(tx, {
+      schoolId: args.schoolId,
+      eventType: "ATTENDANCE_CORRECTED",
+      entityType: "AttendanceCorrectionRequest",
+      entityId: request.id,
+      recipients: [...studentRecipients, ...guardianRecipients],
+      metadata: { sectionId: request.sectionId, date: request.date.toISOString().slice(0, 10) },
     });
 
     return { ok: true, status: "APPROVED", alreadyFinal: false };

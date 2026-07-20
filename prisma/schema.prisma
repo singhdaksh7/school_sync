@@ -228,6 +228,16 @@ enum JobType {
   // before the email is sent can never leave the invite permanently
   // unsent — the standalone worker will still find and process this row.
   INVITE_EMAIL_DELIVERY
+  // Durable outbox record for potentially unbounded in-app notification
+  // fan-out (a whole section/school of students+guardians+teachers) — see
+  // src/lib/notifications.ts (enqueueNotificationFanout, created in the SAME
+  // transaction as the triggering business write) and the handler in
+  // src/lib/job-handlers.ts. Bounded, small-recipient-count notifications
+  // (a leave decision, an attendance correction naming specific students)
+  // are created synchronously instead — this job type exists only for the
+  // class/school-wide cases (attendance submission, homework publish,
+  // announcement publish/correction).
+  NOTIFICATION_FANOUT
 }
 
 enum JobStatus {
@@ -275,6 +285,7 @@ model User {
   admissionStatusHistoryActed       AdmissionStatusHistory[]      @relation("AdmissionStatusHistoryActor")
   attendanceSessionsSubmitted       AttendanceSession[]           @relation("AttendanceSessionSubmitter")
   attendanceCorrectionsReviewed     AttendanceCorrectionRequest[] @relation("AttendanceCorrectionReviewer")
+  notificationsReceived             Notification[]                @relation("NotificationUser")
   createdAt                         DateTime                      @default(now())
   updatedAt                         DateTime                      @updatedAt
 }
@@ -408,6 +419,7 @@ model School {
   attendanceSessions                   AttendanceSession[]
   attendanceCorrectionRequests         AttendanceCorrectionRequest[]
   attendanceHistory                    AttendanceHistory[]
+  inAppNotifications                   Notification[]
   libraryBooks                         LibraryBook[]
   libraryBookCopies                    LibraryBookCopy[]
   libraryLoans                         LibraryLoan[]
@@ -536,6 +548,7 @@ model Teacher {
   operationalRoleAssignments   OperationalRoleAssignment[]
   admissionReviewEvents        AdmissionReviewEvent[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[] @relation("AttendanceCorrectionRequester")
+  notificationsReceived        Notification[]                @relation("NotificationTeacher")
   libraryLoans                 LibraryLoan[]
   libraryReservations          LibraryReservation[]
   isDeleted                    Boolean                       @default(false)
@@ -812,6 +825,7 @@ model Student {
   sectionTransfers          SectionTransfer[]
   attendanceCorrectionItems AttendanceCorrectionItem[]
   attendanceHistory         AttendanceHistory[]
+  notificationsReceived     Notification[]             @relation("NotificationStudent")
   libraryLoans              LibraryLoan[]
   libraryReservations       LibraryReservation[]
   createdAt                 DateTime                   @default(now())
@@ -825,17 +839,18 @@ model Student {
 }
 
 model Guardian {
-  id                  String               @id @default(cuid())
-  name                String
-  phone               String
-  email               String?
-  passwordHash        String?
-  schoolId            String
-  school              School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  studentLinks        StudentGuardian[]
-  homeworkSubmissions HomeworkSubmission[]
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  id                    String               @id @default(cuid())
+  name                  String
+  phone                 String
+  email                 String?
+  passwordHash          String?
+  schoolId              String
+  school                School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentLinks          StudentGuardian[]
+  homeworkSubmissions   HomeworkSubmission[]
+  notificationsReceived Notification[]       @relation("NotificationGuardian")
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
 
   @@unique([schoolId, phone])
   @@index([schoolId])
@@ -984,6 +999,101 @@ model AttendanceHistory {
   @@index([studentId])
   @@index([attendanceId])
   @@index([correctionRequestId])
+}
+
+// ─── Unified Notification Center v1 ──────────────────────────────────────────
+// Teacher/Student/Guardian/staff-User are four separate identity tables (no
+// shared FK target), so a single polymorphic "recipientId" string cannot be
+// backed by one real foreign key. Instead this model carries four nullable,
+// individually-FK'd recipient columns plus a `recipientType` discriminator;
+// a CHECK constraint added in the migration (not expressible in Prisma schema
+// syntax) enforces that EXACTLY ONE of them is set and that it matches
+// recipientType — see the migration's header comment for the exact SQL. This
+// gives real referential integrity (an orphaned/mistyped recipient is a DB
+// error, not just an app bug) while still supporting four different
+// recipient tables, unlike an unconstrained polymorphic string column.
+enum NotificationRecipientType {
+  STUDENT
+  GUARDIAN
+  TEACHER
+  // SCHOOL_OWNER / SCHOOL_ADMIN / VICE_PRINCIPAL — staff identity lives on
+  // User, not a dedicated table (mirrors SessionActorType's ADMIN_STAFF bucket).
+  ADMIN_STAFF
+}
+
+enum NotificationEventType {
+  HOMEWORK_PUBLISHED
+  HOMEWORK_UPDATED
+  ANNOUNCEMENT_PUBLISHED
+  ANNOUNCEMENT_CORRECTED
+  ATTENDANCE_ABSENT
+  ATTENDANCE_LATE
+  ATTENDANCE_ON_LEAVE
+  ATTENDANCE_CORRECTED
+  STUDENT_LEAVE_APPROVED
+  STUDENT_LEAVE_REJECTED
+  TEACHER_LEAVE_APPROVED
+  TEACHER_LEAVE_REJECTED
+  EARLY_LEAVE_APPROVED
+  EARLY_LEAVE_REJECTED
+  LEAVE_PENDING_REVIEW
+  ATTENDANCE_CORRECTION_PENDING_REVIEW
+  ATTENDANCE_RECONCILIATION_NEEDED
+}
+
+/**
+ * One row per (event, recipient). Deduplicated at the DATABASE level via the
+ * unique `idempotencyKey` — every writer computes it deterministically from
+ * (eventType, entityType, entityId, recipient, and a stable "version" signal
+ * for events that can legitimately recur, e.g. an announcement's
+ * correctionCount) so a retried business action or a re-delivered fan-out
+ * job can never create a duplicate notification (see src/lib/notifications.ts).
+ * `metadata` stores only stable, structured, non-sensitive identifiers/counts
+ * (see src/lib/notifications.ts doc comment for the exact allow-list per
+ * event type) — never raw request bodies, free-form translated copy, or
+ * unnecessary student PII. Display copy is rendered client-side from
+ * `eventType` + `metadata` through locale keys (locales/en.json / hi.json),
+ * so English/Hindi never drift and nothing untranslated is ever persisted.
+ * Future FCM/APNs push delivery (deferred — see AGENTS/PR notes) attaches
+ * here without a schema change: a push worker would simply read the same
+ * outbox job (NOTIFICATION_FANOUT) or the same Notification row and dispatch
+ * to a device-token registry that does not exist yet in this phase.
+ */
+model Notification {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  recipientType NotificationRecipientType
+  studentId     String?
+  student       Student?                  @relation("NotificationStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  guardianId    String?
+  guardian      Guardian?                 @relation("NotificationGuardian", fields: [guardianId], references: [id], onDelete: Cascade)
+  teacherId     String?
+  teacher       Teacher?                  @relation("NotificationTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?                     @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  eventType  NotificationEventType
+  // Safe deep-link target — e.g. entityType="AttendanceSession", entityId=<id>.
+  // The web/mobile client resolves this into a role-specific route at read
+  // time and re-checks authorization there; a stale/inaccessible target
+  // renders a safe fallback rather than following the link blindly.
+  entityType String
+  entityId   String
+  metadata   Json?
+
+  idempotencyKey String @unique
+
+  createdAt  DateTime  @default(now())
+  readAt     DateTime?
+  archivedAt DateTime?
+
+  @@index([schoolId, recipientType, studentId, readAt, createdAt])
+  @@index([schoolId, recipientType, guardianId, readAt, createdAt])
+  @@index([schoolId, recipientType, teacherId, readAt, createdAt])
+  @@index([schoolId, recipientType, userId, readAt, createdAt])
+  @@index([schoolId, createdAt])
 }
 
 model ReportCard {

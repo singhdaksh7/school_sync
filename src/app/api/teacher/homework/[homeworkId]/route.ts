@@ -4,6 +4,7 @@ import { getTeacherAuth } from "@/lib/mobile-auth";
 import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { logAudit } from "@/lib/audit";
+import { enqueueNotificationFanout, guardianRecipientsForStudents, type RecipientRef } from "@/lib/notifications";
 import {
   editHomeworkSchema,
   getHomeworkForTeacherAccess,
@@ -172,6 +173,33 @@ export async function PATCH(
             studentId: student.id,
             status: "PENDING",
           })),
+        });
+      }
+    }
+
+    // Fan out only for a genuine "just published" transition or a correction
+    // to a homework that was already ACTIVE — never for a DRAFT/SCHEDULED
+    // edit nobody has seen yet.
+    const isFreshPublish = auditAction === "HOMEWORK_PUBLISHED";
+    const isCorrectionToActive = auditAction === "HOMEWORK_UPDATED" && homework.status === "ACTIVE";
+    if (isFreshPublish || isCorrectionToActive) {
+      const targetSectionId = nextHomework.sectionId;
+      const targetStudents = await tx.student.findMany({ where: { schoolId: teacher.schoolId, sectionId: targetSectionId }, select: { id: true } });
+      if (targetStudents.length > 0) {
+        const studentIds = targetStudents.map((s) => s.id);
+        const studentRecipients: RecipientRef[] = studentIds.map((studentId) => ({ recipientType: "STUDENT", recipientId: studentId }));
+        const guardianRecipients = await guardianRecipientsForStudents(studentIds);
+        await enqueueNotificationFanout(tx, {
+          schoolId: teacher.schoolId,
+          eventType: isFreshPublish ? "HOMEWORK_PUBLISHED" : "HOMEWORK_UPDATED",
+          entityType: "Homework",
+          entityId: nextHomework.id,
+          recipients: [...studentRecipients, ...guardianRecipients],
+          metadata: { subject: nextHomework.subject, sectionId: targetSectionId },
+          // updatedAt is bumped by every write, so a genuinely new correction
+          // (a fresh updatedAt) always gets its own notification, while a
+          // retried identical PATCH re-applying the SAME updatedAt collapses.
+          versionKey: isCorrectionToActive ? nextHomework.updatedAt.toISOString() : undefined,
         });
       }
     }

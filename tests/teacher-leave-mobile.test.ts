@@ -4,6 +4,8 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     teacher: { findUnique: vi.fn() },
     leaveRequest: { findMany: vi.fn(), create: vi.fn() },
+    notification: { create: vi.fn() },
+    user: { findMany: vi.fn() },
   },
 }));
 vi.mock("@/lib/mobile-auth", () => ({ getTeacherAuth: vi.fn() }));
@@ -14,6 +16,8 @@ import { getTeacherAuth } from "@/lib/mobile-auth";
 const p = prisma as unknown as {
   teacher: { findUnique: ReturnType<typeof vi.fn> };
   leaveRequest: { findMany: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
+  notification: { create: ReturnType<typeof vi.fn> };
+  user: { findMany: ReturnType<typeof vi.fn> };
 };
 const getTeacherAuthMock = getTeacherAuth as unknown as ReturnType<typeof vi.fn>;
 
@@ -29,6 +33,7 @@ beforeEach(() => {
   getTeacherAuthMock.mockResolvedValue(TEACHER_AUTH);
   p.teacher.findUnique.mockResolvedValue(TEACHER_ROW);
   p.leaveRequest.findMany.mockResolvedValue([]);
+  p.user.findMany.mockResolvedValue([]);
 });
 
 describe("Teacher personal leave — self-only", () => {
