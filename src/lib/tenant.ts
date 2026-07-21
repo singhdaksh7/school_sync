@@ -192,3 +192,27 @@ export async function notebookCheckBelongsToSchool(notebookCheckId: string, scho
   });
   return Boolean(check);
 }
+
+export async function routeBelongsToSchool(routeId: string, schoolId: string) {
+  const route = await prisma.route.findFirst({
+    where: { id: routeId, schoolId },
+    select: { id: true },
+  });
+  return Boolean(route);
+}
+
+export async function vehicleBelongsToSchool(vehicleId: string, schoolId: string) {
+  const vehicle = await prisma.vehicle.findFirst({
+    where: { id: vehicleId, schoolId },
+    select: { id: true },
+  });
+  return Boolean(vehicle);
+}
+
+export async function driverBelongsToSchool(driverId: string, schoolId: string) {
+  const driver = await prisma.driver.findFirst({
+    where: { id: driverId, schoolId },
+    select: { id: true },
+  });
+  return Boolean(driver);
+}

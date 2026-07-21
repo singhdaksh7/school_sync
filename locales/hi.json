@@ -188,7 +188,8 @@
     "groupExams": "परीक्षा और परिणाम",
     "groupFinance": "प्रबंधन और वित्त",
     "groupSystem": "सिस्टम और सेटिंग्स",
-    "library": "पुस्तकालय"
+    "library": "पुस्तकालय",
+    "transport": "परिवहन"
   },
   "founder": {
     "platformOverview": "प्लेटफ़ॉर्म अवलोकन",
@@ -1158,6 +1159,87 @@
       "BORROWER_NOT_FOUND": "उधारकर्ता नहीं मिला",
       "NOT_FOUND": "नहीं मिला",
       "COPY_ON_LOAN": "इस प्रति की स्थिति बदलने से पहले सक्रिय ऋण हल करें",
+      "generic": "क्रिया पूरी नहीं हो सकी"
+    }
+  },
+  "transport": {
+    "title": "परिवहन",
+    "subtitle": "बस मार्ग, स्टॉप, वाहन, चालक और छात्र असाइनमेंट प्रबंधित करें",
+    "nav": {
+      "routes": "मार्ग",
+      "vehicles": "वाहन",
+      "drivers": "चालक"
+    },
+    "common": {
+      "loading": "लोड हो रहा है…",
+      "error": "कुछ गलत हो गया",
+      "save": "सहेजें",
+      "cancel": "रद्द करें",
+      "add": "जोड़ें",
+      "close": "बंद करें",
+      "actions": "क्रियाएँ",
+      "edit": "संपादित करें",
+      "delete": "हटाएं",
+      "active": "सक्रिय",
+      "inactive": "निष्क्रिय",
+      "saving": "सहेजा जा रहा है…"
+    },
+    "routes": {
+      "heading": "मार्ग",
+      "addRoute": "मार्ग जोड़ें",
+      "name": "मार्ग का नाम",
+      "description": "विवरण",
+      "noRoutes": "अभी तक कोई मार्ग नहीं",
+      "routeCreated": "मार्ग बनाया गया",
+      "stops": "स्टॉप",
+      "addStop": "स्टॉप जोड़ें",
+      "stopName": "स्टॉप का नाम",
+      "sequence": "क्रम",
+      "stopAdded": "स्टॉप जोड़ा गया",
+      "assign": "वाहन और चालक असाइन करें",
+      "vehicle": "वाहन",
+      "driver": "चालक",
+      "none": "कोई नहीं",
+      "assignmentUpdated": "असाइनमेंट अपडेट किया गया",
+      "students": "असाइन किए गए छात्र",
+      "assignStudent": "छात्र असाइन करें",
+      "unassignStudent": "असाइनमेंट हटाएं",
+      "selectStudent": "एक छात्र चुनें",
+      "selectStop": "स्टॉप (वैकल्पिक)",
+      "deleteConfirm": "इस मार्ग को हटाएं? इसके स्टॉप और छात्र असाइनमेंट भी हटा दिए जाएंगे।"
+    },
+    "vehicles": {
+      "heading": "वाहन",
+      "addVehicle": "वाहन जोड़ें",
+      "registrationNumber": "पंजीकरण संख्या",
+      "capacity": "क्षमता",
+      "model": "मॉडल",
+      "noVehicles": "अभी तक कोई वाहन नहीं",
+      "vehicleCreated": "वाहन जोड़ा गया",
+      "vehicleUpdated": "वाहन अपडेट किया गया",
+      "deleteConfirm": "इस वाहन को हटाएं?"
+    },
+    "drivers": {
+      "heading": "चालक",
+      "addDriver": "चालक जोड़ें",
+      "name": "चालक का नाम",
+      "phone": "फ़ोन",
+      "email": "ईमेल",
+      "licenseNumber": "लाइसेंस संख्या",
+      "password": "पासवर्ड (वैकल्पिक)",
+      "passwordHint": "बाद के चरण में चालक लॉगिन शुरू होने तक उपयोग नहीं किया जाएगा",
+      "passwordEditHint": "मौजूदा पासवर्ड बनाए रखने के लिए इसे खाली छोड़ें",
+      "noDrivers": "अभी तक कोई चालक नहीं",
+      "driverCreated": "चालक जोड़ा गया",
+      "driverUpdated": "चालक अपडेट किया गया",
+      "deleteConfirm": "इस चालक को हटाएं?"
+    },
+    "errors": {
+      "DUPLICATE_REGISTRATION": "उस पंजीकरण संख्या वाला वाहन पहले से मौजूद है",
+      "DUPLICATE_PHONE": "उस फ़ोन नंबर वाला चालक पहले से मौजूद है",
+      "DUPLICATE_SEQUENCE": "इस मार्ग पर उस क्रम संख्या वाला स्टॉप पहले से मौजूद है",
+      "VEHICLE_IN_USE": "हटाने से पहले इस वाहन को हर मार्ग से असाइन हटाएं",
+      "DRIVER_IN_USE": "हटाने से पहले इस चालक को हर मार्ग से असाइन हटाएं",
       "generic": "क्रिया पूरी नहीं हो सकी"
     }
   },
