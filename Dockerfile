@@ -48,6 +48,13 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # via ECS Secrets Manager (see infra/terraform/secrets.tf), never baked in.
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build_placeholder"
 RUN npx prisma generate
+# next build's TypeScript-checking phase has been observed OOM-killing V8's
+# default old-space heap (~2007 MB) on this Next.js/TypeScript codebase's
+# size, even with 11.68 GiB available to the Docker build overall — the
+# default ceiling, not container memory, was the limiter. Scoped to this
+# stage only: the `runner` stage below starts a fresh FROM and never
+# inherits it, same as DATABASE_URL above.
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm run build
 
 # ---- prod-deps: production-only node_modules for the runtime image ----
