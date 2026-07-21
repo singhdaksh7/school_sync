@@ -90,7 +90,7 @@ export async function getSchoolAdminAnalyticsExtras(schoolId: string) {
     }),
     prisma.student.findMany({ where: { schoolId }, select: { section: { select: { class: { select: { name: true } } } } } }),
     prisma.announcement.findMany({
-      where: { schoolId },
+      where: { schoolId, status: "PUBLISHED" },
       orderBy: { publishedAt: "desc" },
       take: 5,
       select: { id: true, title: true, publishedAt: true },

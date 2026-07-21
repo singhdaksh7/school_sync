@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { getTeacherAuth } from "@/lib/mobile-auth";
+import { createNotificationsBounded, leadershipRecipientsForSchool } from "@/lib/notifications";
 
 async function getTeacher(userId: string) {
   return prisma.teacher.findUnique({ where: { userId } });
@@ -55,6 +56,16 @@ export async function POST(req: Request) {
         schoolId: teacher.schoolId,
       },
       include: { reviewedBy: { select: { name: true } } },
+    });
+
+    const reviewers = await leadershipRecipientsForSchool(teacher.schoolId);
+    await createNotificationsBounded(prisma, {
+      schoolId: teacher.schoolId,
+      eventType: "LEAVE_PENDING_REVIEW",
+      entityType: "LeaveRequest",
+      entityId: leave.id,
+      recipients: reviewers,
+      metadata: { requestType: "TEACHER" },
     });
 
     return NextResponse.json(leave, { status: 201 });

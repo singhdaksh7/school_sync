@@ -19,6 +19,10 @@ interface HomeworkSummary {
   completionPercentage: number | null;
 }
 
+type SubmissionStatus = "PENDING" | "SUBMITTED" | "LATE_SUBMITTED" | "NOT_SUBMITTED" | "CHECKED" | "REJECTED";
+type AssessmentMode = "CHECKING_ONLY" | "GRADED";
+type HomeworkLifecycleStatus = "DRAFT" | "SCHEDULED" | "ACTIVE" | "CLOSED" | "CANCELLED";
+
 interface HomeworkItem {
   id: string;
   title: string;
@@ -26,9 +30,28 @@ interface HomeworkItem {
   subject: string;
   assignedAt: string;
   dueDate: string;
+  deadlineAt: string;
+  checkingDeadlineAt: string | null;
   attachmentUrl: string | null;
   teacher: { id: string; name: string };
+  homeworkStatus: HomeworkLifecycleStatus;
+  assessmentMode: AssessmentMode;
+  maxMarks: number | null;
+  submissionStatus: SubmissionStatus;
+  score: number | null;
+  maxScore: number | null;
+  // Student/guardian-visible feedback ONLY — never the teacher's private remark.
+  studentFeedback: string | null;
 }
+
+const STATUS_LABEL: Record<SubmissionStatus, string> = {
+  PENDING: "Pending",
+  SUBMITTED: "Submitted",
+  LATE_SUBMITTED: "Submitted late",
+  NOT_SUBMITTED: "Not submitted",
+  CHECKED: "Checked",
+  REJECTED: "Needs resubmission",
+};
 
 type Category = "ALL" | "TODAY" | "YESTERDAY" | "LAST_7_DAYS";
 
@@ -57,7 +80,7 @@ export default function StudentHomeworkPage() {
 
   const filtered = useMemo(() => {
     return homework.filter((hw) => {
-      const due = new Date(hw.dueDate);
+      const due = new Date(hw.deadlineAt);
       if (category === "TODAY" && !isToday(due)) return false;
       if (category === "YESTERDAY" && !isYesterday(due)) return false;
       if (category === "LAST_7_DAYS") {
@@ -167,15 +190,23 @@ export default function StudentHomeworkPage() {
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="default">{hw.subject}</Badge>
-                      {isToday(new Date(hw.dueDate)) && <Badge variant="warning">Due Today</Badge>}
+                      {hw.homeworkStatus === "CLOSED" && <Badge variant="secondary">Closed</Badge>}
+                      {hw.homeworkStatus === "CANCELLED" && <Badge variant="destructive">Cancelled</Badge>}
+                      {hw.submissionStatus === "LATE_SUBMITTED" && <Badge variant="warning">Late</Badge>}
+                      {hw.submissionStatus === "REJECTED" && <Badge variant="destructive">{STATUS_LABEL.REJECTED}</Badge>}
+                      {hw.submissionStatus === "CHECKED" && <Badge variant="success">Checked</Badge>}
+                      {isToday(new Date(hw.deadlineAt)) && <Badge variant="warning">Due Today</Badge>}
+                      {hw.assessmentMode === "GRADED" && hw.submissionStatus === "CHECKED" && hw.score !== null && hw.maxScore !== null && (
+                        <Badge variant="success">{hw.score}/{hw.maxScore}</Badge>
+                      )}
                     </div>
                     <p className="mt-2 truncate text-sm font-semibold text-foreground">{hw.title}</p>
                     {hw.description && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{hw.description}</p>}
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1"><User className="h-3 w-3" /> {hw.teacher.name}</span>
-                      <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" /> Due {format(new Date(hw.dueDate), "dd MMM yyyy")}</span>
+                      <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" /> Due {format(new Date(hw.deadlineAt), "dd MMM yyyy")}</span>
                       {hw.attachmentUrl && <span className="flex items-center gap-1"><Paperclip className="h-3 w-3" /> Attachment</span>}
                     </div>
                   </div>
@@ -206,10 +237,36 @@ export default function StudentHomeworkPage() {
                     <p className="font-medium text-foreground">{format(new Date(selected.assignedAt), "dd MMM yyyy")}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Due Date</p>
-                    <p className="font-medium text-foreground">{format(new Date(selected.dueDate), "dd MMM yyyy")}</p>
+                    <p className="text-muted-foreground">Submission Deadline</p>
+                    <p className="font-medium text-foreground">{format(new Date(selected.deadlineAt), "dd MMM yyyy")}</p>
                   </div>
+                  {selected.checkingDeadlineAt && (
+                    <div>
+                      <p className="text-muted-foreground">Checking Deadline</p>
+                      <p className="font-medium text-foreground">{format(new Date(selected.checkingDeadlineAt), "dd MMM yyyy")}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-muted-foreground">Status</p>
+                    <p className="font-medium text-foreground">{STATUS_LABEL[selected.submissionStatus]}</p>
+                  </div>
+                  {selected.assessmentMode === "GRADED" && (
+                    <div>
+                      <p className="text-muted-foreground">Marks</p>
+                      <p className="font-medium text-foreground">
+                        {selected.submissionStatus === "CHECKED" && selected.score !== null
+                          ? `${selected.score} / ${selected.maxScore ?? selected.maxMarks}`
+                          : "Not checked yet"}
+                      </p>
+                    </div>
+                  )}
                 </div>
+                {selected.studentFeedback && (
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">Teacher feedback</p>
+                    <p className="mt-1 text-foreground">{selected.studentFeedback}</p>
+                  </div>
+                )}
                 {selected.attachmentUrl && (
                   <a
                     href={selected.attachmentUrl}

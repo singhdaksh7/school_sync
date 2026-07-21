@@ -656,7 +656,7 @@ export default async function AnalyticsPage({
                 {extras.operational.recentAnnouncements.map((a) => (
                   <div key={a.id} className="flex items-center justify-between gap-3">
                     <p className="text-sm font-medium text-gray-900 truncate">{a.title}</p>
-                    <span className="text-xs text-gray-400 flex-shrink-0">{formatDate(a.publishedAt)}</span>
+                    {a.publishedAt && <span className="text-xs text-gray-400 flex-shrink-0">{formatDate(a.publishedAt)}</span>}
                   </div>
                 ))}
               </div>

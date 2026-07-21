@@ -9,6 +9,8 @@ import { requireSchoolAccess } from "@/lib/teacher-authorization";
 import { requireSchoolAccessOrOperationalCapability } from "@/lib/operational-authorization";
 import { resolveOperationsActor } from "@/lib/operations-bearer-auth";
 import { buildDelegatedAuditMetadata } from "@/lib/operational-audit";
+import { createNotificationsBounded, guardianRecipientsForStudents, leadershipRecipientsForSchool, type RecipientRef } from "@/lib/notifications";
+import { listAttendanceReconciliationItems } from "@/lib/attendance-admin-correction";
 
 const patchSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED"]),
@@ -76,6 +78,52 @@ export async function PATCH(
       userId: actor.userId,
       schoolId,
     });
+
+    const decisionEventType =
+      leaveRequest.type === "STUDENT"
+        ? status === "APPROVED" ? "STUDENT_LEAVE_APPROVED" : "STUDENT_LEAVE_REJECTED"
+        : status === "APPROVED" ? "TEACHER_LEAVE_APPROVED" : "TEACHER_LEAVE_REJECTED";
+    const decisionRecipients: RecipientRef[] =
+      leaveRequest.type === "STUDENT" && leaveRequest.studentId
+        ? [{ recipientType: "STUDENT", recipientId: leaveRequest.studentId }, ...(await guardianRecipientsForStudents([leaveRequest.studentId]))]
+        : leaveRequest.teacherId
+          ? [{ recipientType: "TEACHER", recipientId: leaveRequest.teacherId }]
+          : [];
+    if (decisionRecipients.length > 0) {
+      // versionKey = the decided status itself: a retried identical decision
+      // collapses onto the same idempotencyKey (no duplicate), while a
+      // genuinely different later decision on the same request (rare, but
+      // not blocked by this route) still gets its own notification.
+      await createNotificationsBounded(prisma, {
+        schoolId,
+        eventType: decisionEventType,
+        entityType: "LeaveRequest",
+        entityId: leaveId,
+        recipients: decisionRecipients,
+        metadata: { type: leaveRequest.type },
+        versionKey: status,
+      });
+    }
+
+    // Late leave approval reconciliation: if this STUDENT leave was just
+    // approved after attendance for an overlapping date was already
+    // SUBMITTED, surface an admin attention item — never silently rewrite
+    // the locked attendance here.
+    if (status === "APPROVED" && leaveRequest.type === "STUDENT") {
+      const reconciliationItems = (await listAttendanceReconciliationItems(schoolId)).filter((i) => i.leaveRequestId === leaveId);
+      if (reconciliationItems.length > 0) {
+        const reviewers = await leadershipRecipientsForSchool(schoolId);
+        await createNotificationsBounded(prisma, {
+          schoolId,
+          eventType: "ATTENDANCE_RECONCILIATION_NEEDED",
+          entityType: "LeaveRequest",
+          entityId: leaveId,
+          recipients: reviewers,
+          metadata: { affectedDateCount: reconciliationItems.length },
+        });
+      }
+    }
+
     return NextResponse.json({ success: true });
   } catch (err) {
     if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

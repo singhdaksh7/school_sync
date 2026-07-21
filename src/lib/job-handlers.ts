@@ -7,7 +7,9 @@
 
 import { prisma } from "@/lib/prisma";
 import type { BackgroundJob } from "@/generated/prisma/client";
-import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema, smartTimetableGenerationPayloadSchema, fileRetentionCleanupPayloadSchema, schoolDataPurgePayloadSchema, inviteEmailDeliveryPayloadSchema, claimSpecificJob, completeJob, failJob } from "@/lib/jobs";
+import { reportCardBatchPayloadSchema, studentBulkImportPayloadSchema, smartTimetableGenerationPayloadSchema, fileRetentionCleanupPayloadSchema, schoolDataPurgePayloadSchema, inviteEmailDeliveryPayloadSchema, notificationFanoutPayloadSchema, claimSpecificJob, completeJob, failJob } from "@/lib/jobs";
+import { buildNotificationIdempotencyKey } from "@/lib/notifications";
+import { hasPrismaErrorCode } from "@/lib/tenant";
 import { buildReportCardBatchContext, generateReportCardForStudent } from "@/lib/report-cards";
 import { importStudentRows, type ImportRow } from "@/lib/student-import";
 import { getStudentLimitInfo } from "@/lib/plan-limits";
@@ -403,6 +405,63 @@ const handlers: Record<string, JobHandler> = {
       processedItems: result.delivered ? 1 : 0,
       failedItems: 0,
       resultMetadata: { inviteId: payload.inviteId, delivered: result.delivered, reason: result.reason ?? null },
+    };
+  },
+
+  // Unified Notification Center v1 durable fan-out — resolves the recipient
+  // list captured at enqueue time (see src/lib/notifications.ts) into one
+  // Notification row per recipient. Never re-derives eligibility here (the
+  // enqueueing call site already resolved the authorized recipient set at
+  // the moment of the triggering business action) — this handler's only job
+  // is idempotent delivery. A duplicate delivery attempt (retried job,
+  // re-processed after a crash) hits the same deterministic idempotencyKey
+  // and is silently skipped (P2002), never double-counted as a failure.
+  NOTIFICATION_FANOUT: async (job, { updateProgress }) => {
+    const payload = notificationFanoutPayloadSchema.parse(job.payload);
+    let processed = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const recipient of payload.recipients) {
+      const idempotencyKey = buildNotificationIdempotencyKey({
+        eventType: payload.eventType as never,
+        entityType: payload.entityType,
+        entityId: payload.entityId,
+        recipientType: recipient.recipientType as never,
+        recipientId: recipient.recipientId,
+        versionKey: payload.versionKey,
+      });
+      try {
+        const data: Record<string, unknown> = {
+          schoolId: payload.schoolId,
+          recipientType: recipient.recipientType,
+          eventType: payload.eventType,
+          entityType: payload.entityType,
+          entityId: payload.entityId,
+          metadata: payload.metadata,
+          idempotencyKey,
+        };
+        if (recipient.recipientType === "STUDENT") data.studentId = recipient.recipientId;
+        else if (recipient.recipientType === "GUARDIAN") data.guardianId = recipient.recipientId;
+        else if (recipient.recipientType === "TEACHER") data.teacherId = recipient.recipientId;
+        else data.userId = recipient.recipientId;
+
+        await prisma.notification.create({ data: data as never });
+        processed += 1;
+      } catch (err) {
+        if (hasPrismaErrorCode(err, "P2002")) {
+          skipped += 1; // already delivered — not a failure
+        } else {
+          failed += 1;
+        }
+      }
+      await updateProgress(processed + skipped, failed);
+    }
+
+    return {
+      processedItems: processed + skipped,
+      failedItems: failed,
+      resultMetadata: { total: payload.recipients.length, created: processed, alreadyDelivered: skipped, failed },
     };
   },
 };

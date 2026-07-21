@@ -13,7 +13,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { assertPilotSeedAllowed } from "../src/lib/pilot-seed-guard";
 import { SCHOOL_A_CONFIG } from "./pilot-data";
-import { setSubjectRequirements, getDraft } from "../src/lib/smart-timetable-drafts";
+import { setSubjectRequirements, getDraft, type SubjectRequirementInput } from "../src/lib/smart-timetable-drafts";
 import { calculateWeeklyCapacity, validateSubjectRequirements } from "../src/lib/timetable-capacity";
 import { recommendTeachers } from "../src/lib/smart-timetable-recommendations";
 import { generateDraft } from "../src/lib/smart-timetable-generator";
@@ -28,6 +28,26 @@ function buildPrisma(): PrismaClient {
   const isLocalHost = ["localhost", "127.0.0.1"].includes(new URL(connectionString).hostname);
   const pool = new Pool({ connectionString, ssl: isLocalHost ? false : { rejectUnauthorized: false } });
   return new PrismaClient({ adapter: new PrismaPg(pool) });
+}
+
+/**
+ * Resolves each { subjectName, requiredPeriodsPerWeek } entry to its
+ * canonical Master Subject id for this class/section (Weekly Period
+ * Requirements now require subjectId — see src/lib/master-subjects.ts).
+ */
+async function resolveRequirements(
+  prisma: PrismaClient,
+  classId: string,
+  sectionId: string,
+  reqs: { subjectName: string; requiredPeriodsPerWeek: number }[]
+): Promise<SubjectRequirementInput[]> {
+  const resolved: SubjectRequirementInput[] = [];
+  for (const r of reqs) {
+    const subject = await prisma.subject.findFirst({ where: { classId, sectionId, name: r.subjectName } });
+    if (!subject) throw new Error(`No Master Subject "${r.subjectName}" seeded for class/section ${classId}/${sectionId}`);
+    resolved.push({ subjectId: subject.id, subjectName: subject.name, requiredPeriodsPerWeek: r.requiredPeriodsPerWeek });
+  }
+  return resolved;
 }
 
 type StepResult = "PASS" | "FAIL" | "SKIP";
@@ -100,7 +120,8 @@ async function main() {
 
     for (const section of [sectionA, sectionB, sectionC, sectionD]) {
       await step(`6. Set subject requirements for 10-${section.name}`, async () => {
-        await setSubjectRequirements({ schoolId: school.id, classId: cls.id, sectionId: section.id, requirements: REQUIREMENTS });
+        const requirements = await resolveRequirements(prisma, cls.id, section.id, REQUIREMENTS);
+        await setSubjectRequirements({ schoolId: school.id, classId: cls.id, sectionId: section.id, requirements });
         return `sectionId=${section.id}`;
       });
     }
@@ -213,9 +234,20 @@ async function main() {
 
     await step("15. Impossible configuration (subject with zero eligible teachers) returns useful diagnostics", async () => {
       const impossible = await prisma.timetableDraft.create({ data: { schoolId: school.id, classId: cls.id, sectionId: sectionC.id, createdById: school.ownerId!, source: "AUTO", status: "DRAFT" } });
+      // "Library Studies" is deliberately not part of the seeded Master
+      // Subject pool (no teacher lists it), so create a section-specific
+      // Master Subject row for it here to keep this scenario valid under
+      // subjectId-based enforcement while still exercising the "zero eligible
+      // teacher" diagnostic path.
+      const librarySubject = await prisma.subject.upsert({
+        where: { classId_sectionId_name: { classId: cls.id, sectionId: sectionC.id, name: "Library Studies" } },
+        create: { schoolId: school.id, classId: cls.id, sectionId: sectionC.id, name: "Library Studies" },
+        update: {},
+      });
+      const requirements = await resolveRequirements(prisma, cls.id, sectionC.id, REQUIREMENTS);
       await setSubjectRequirements({
         schoolId: school.id, classId: cls.id, sectionId: sectionC.id,
-        requirements: [...REQUIREMENTS, { subjectName: "Library Studies", requiredPeriodsPerWeek: 4 }],
+        requirements: [...requirements, { subjectId: librarySubject.id, subjectName: librarySubject.name, requiredPeriodsPerWeek: 4 }],
       });
       // Requirements now total 40 > 36 capacity AND include a subject with no eligible teacher —
       // both a capacity problem and an eligibility problem, deliberately, to prove diagnostics surface real reasons.
@@ -224,7 +256,7 @@ async function main() {
       const noEligible = result.diagnostics.find((d) => d.code === "NO_ELIGIBLE_TEACHER" && d.subjectName === "Library Studies");
       if (!noEligible) throw new Error(`expected a NO_ELIGIBLE_TEACHER diagnostic for Library Studies, got: ${JSON.stringify(result.diagnostics)}`);
       // Reset 10-C back to the normal requirement set for later steps.
-      await setSubjectRequirements({ schoolId: school.id, classId: cls.id, sectionId: sectionC.id, requirements: REQUIREMENTS });
+      await setSubjectRequirements({ schoolId: school.id, classId: cls.id, sectionId: sectionC.id, requirements });
       return `diagnostics=${result.diagnostics.length}, sample=${noEligible.message}`;
     });
 

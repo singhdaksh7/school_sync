@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
 import { canAccessSchool, hasPrismaErrorCode, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
 import { requireSchoolAccess } from "@/lib/teacher-authorization";
 import { getClientIp } from "@/lib/request-ip";
-import { buildStudentPasswordHashes } from "@/lib/student-credentials";
+import { createStudentRecord } from "@/lib/student-creation";
 import { backfillHomeworkStatusForStudent } from "@/lib/homework";
 import { getStudentLimitInfo, withinStudentLimit, STUDENT_LIMIT_MESSAGE } from "@/lib/plan-limits";
 import { parsePagination, paginated } from "@/lib/pagination";
 import { enforceActorRateLimit } from "@/lib/api-cost-guard";
+import { buildRollNumberOrderByExprSql } from "@/lib/student-ordering";
 
 function duplicateFieldMessage(err: unknown) {
   const target = (err as { meta?: { target?: unknown } })?.meta?.target;
@@ -58,16 +60,40 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const { skip, take, page, limit } = parsePagination(searchParams, { maxLimit: 500 });
 
   const where = { schoolId, ...(sectionId ? { sectionId } : {}) };
-  const [students, total] = await Promise.all([
-    prisma.student.findMany({
-      where,
-      include: { section: { include: { class: true } } },
-      orderBy: [{ section: { class: { name: "asc" } } }, { rollNo: "asc" }],
-      skip,
-      take,
-    }),
+
+  // Ordering (class name, then universal roll-number order) must happen at
+  // the database level BEFORE skip/take — this is the one genuinely paginated
+  // student-list endpoint, so sorting only the fetched page would silently
+  // break page boundaries for a school with more students than fit on one
+  // page. rollNo is a plain string column with no natural-sort collation, so
+  // Prisma's `orderBy` can't express it directly; a small parameterized raw
+  // query resolves just the ordered/paginated id slice (schoolId/sectionId
+  // bound as query parameters, never string-concatenated), and the actual
+  // typed rows are then fetched normally through Prisma and re-assembled in
+  // that exact order.
+  const whereConditions = [Prisma.sql`s."schoolId" = ${schoolId}`];
+  if (sectionId) whereConditions.push(Prisma.sql`s."sectionId" = ${sectionId}`);
+
+  const [orderedIdRows, total] = await Promise.all([
+    prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT s.id
+      FROM "Student" s
+      JOIN "Section" sec ON sec.id = s."sectionId"
+      JOIN "Class" c ON c.id = sec."classId"
+      WHERE ${Prisma.join(whereConditions, " AND ")}
+      ORDER BY lower(c.name) ASC, ${buildRollNumberOrderByExprSql("s")}
+      LIMIT ${take} OFFSET ${skip}
+    `),
     prisma.student.count({ where }),
   ]);
+
+  const orderedIds = orderedIdRows.map((r) => r.id);
+  const rows = orderedIds.length
+    ? await prisma.student.findMany({ where: { id: { in: orderedIds } }, include: { section: { include: { class: true } } } })
+    : [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const students = orderedIds.map((id) => byId.get(id)!).filter(Boolean);
+
   return NextResponse.json(paginated(students, total, { skip, take, page, limit }));
 }
 
@@ -93,26 +119,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ schoolI
       return NextResponse.json({ error: STUDENT_LIMIT_MESSAGE }, { status: 403 });
     }
 
-    const { fatherPhoneHash, motherPhoneHash } = await buildStudentPasswordHashes(data.fatherPhone, data.motherPhone);
-
-    const student = await prisma.student.create({
-      data: {
+    const student = await createStudentRecord(
+      prisma,
+      {
         name: data.name,
         admissionNo: data.admissionNo,
         rollNo: data.rollNo,
-        email: data.email || null,
-        phone: data.phone || null,
-        fatherName: data.fatherName || null,
-        fatherPhone: data.fatherPhone || null,
-        fatherPhoneHash,
-        motherName: data.motherName || null,
-        motherPhone: data.motherPhone || null,
-        motherPhoneHash,
+        email: data.email,
+        phone: data.phone,
+        fatherName: data.fatherName,
+        fatherPhone: data.fatherPhone,
+        motherName: data.motherName,
+        motherPhone: data.motherPhone,
         sectionId: data.sectionId,
         schoolId,
       },
-      include: { section: { include: { class: true } } },
-    });
+      { include: { section: { include: { class: true } } } }
+    );
     await logAudit({ action: "STUDENT_CREATED", entityType: "Student", entityId: student.id, metadata: { name: student.name, rollNo: student.rollNo, admissionNo: student.admissionNo }, userId: session.user.id, schoolId, actorRole: sessionRole(session.user), ipAddress: getClientIp(req) });
     await backfillHomeworkStatusForStudent(student.id, schoolId, student.sectionId);
     return NextResponse.json(student, { status: 201 });

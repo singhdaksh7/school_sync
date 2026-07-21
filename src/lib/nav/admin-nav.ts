@@ -4,7 +4,7 @@ import {
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
   ClipboardList, PieChart, Activity, BarChart, Wand2, BookOpenCheck, Replace, Palette, ShieldCheck, LayoutTemplate,
-  CreditCard, BookCheck, ListTree, UserMinus,
+  CreditCard, BookCheck, ListTree, UserMinus, Library,
 } from "lucide-react";
 import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
 
@@ -47,6 +47,7 @@ export function getAdminNavGroups(
       title: t("nav.groupPeople"),
       items: [
         { href: `${base}/students`, label: t("nav.students"), icon: GraduationCap, show: true },
+        { href: `${base}/admissions`, label: t("nav.admissions"), icon: UserPlus, show: flagEnabled("ADMISSIONS") },
         { href: `${base}/teachers`, label: t("nav.teachers"), icon: Users, show: true },
         { href: `${base}/teachers/deleted`, label: t("nav.deletedTeachers"), icon: UserMinus, show: isOwnerOrAdmin },
         { href: `${base}/teacher-roles`, label: t("nav.teacherRoles"), icon: ShieldCheck, show: isOwnerOrAdmin && flagEnabled("TEACHER_PERMISSIONS") },
@@ -64,6 +65,7 @@ export function getAdminNavGroups(
         { href: `${base}/attendance`, label: t("nav.attendance"), icon: ClipboardCheck, show: flagEnabled("ATTENDANCE") },
         { href: `${base}/reports`, label: t("nav.attendanceReports"), icon: BarChart2, show: flagEnabled("ATTENDANCE") },
         { href: `${base}/exam-milestones`, label: t("nav.examMilestones"), icon: BookCheck, show: flagEnabled("NOTEBOOK_CHECKING") },
+        { href: `${base}/library`, label: t("nav.library"), icon: Library, show: flagEnabled("LIBRARY") },
       ],
     },
     {

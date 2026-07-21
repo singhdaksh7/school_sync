@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedGuardian } from "@/lib/parent-auth";
+import { sortStudentsByRollNumber } from "@/lib/student-ordering";
 
 export async function GET(req: NextRequest) {
   try {
@@ -31,7 +32,11 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ children });
+    // Universal roll-number ordering (canonical comparator — see /lib/student-ordering)
+    // — this query previously had no `orderBy` at all, so its result order was
+    // undefined; a guardian's linked children are always few, so an in-memory
+    // sort is safe.
+    return NextResponse.json({ children: sortStudentsByRollNumber(children) });
   } catch (error) {
     console.error("Error fetching children:", error);
     return NextResponse.json(
