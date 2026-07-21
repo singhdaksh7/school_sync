@@ -1216,6 +1216,7 @@
       "model": "Model",
       "noVehicles": "No vehicles yet",
       "vehicleCreated": "Vehicle added",
+      "vehicleUpdated": "Vehicle updated",
       "deleteConfirm": "Delete this vehicle?"
     },
     "drivers": {
@@ -1227,8 +1228,10 @@
       "licenseNumber": "License number",
       "password": "Password (optional)",
       "passwordHint": "Not used until driver login ships in a later phase",
+      "passwordEditHint": "Leave blank to keep the current password",
       "noDrivers": "No drivers yet",
       "driverCreated": "Driver added",
+      "driverUpdated": "Driver updated",
       "deleteConfirm": "Delete this driver?"
     },
     "errors": {

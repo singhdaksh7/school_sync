@@ -437,6 +437,8 @@ function RouteDetailPanel({
 // ── Vehicles ──────────────────────────────────────────────────────────────────
 type Vehicle = { id: string; registrationNumber: string; capacity: number | null; model: string | null; isActive: boolean; _count: { routes: number } };
 
+type VehicleEditForm = { id: string; registrationNumber: string; capacity: string; model: string; isActive: boolean };
+
 function Vehicles({ base, errText }: { base: string; errText: (c: unknown) => string }) {
   const { t } = useTranslation();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -446,6 +448,8 @@ function Vehicles({ base, errText }: { base: string; errText: (c: unknown) => st
   const [capacity, setCapacity] = useState("");
   const [model, setModel] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [editing, setEditing] = useState<VehicleEditForm | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   // See the Routes component's `load` for why this is `.then()`, not
   // async/await.
@@ -483,6 +487,34 @@ function Vehicles({ base, errText }: { base: string; errText: (c: unknown) => st
     const r = await api(`${base}/vehicles/${id}`, { method: "DELETE" });
     if (r.ok) load();
     else setMsg((r.data as Json)?.error as string || errText((r.data as Json)?.code));
+  }
+
+  function startEdit(v: Vehicle) {
+    setMsg(null);
+    setEditing({ id: v.id, registrationNumber: v.registrationNumber, capacity: v.capacity != null ? String(v.capacity) : "", model: v.model ?? "", isActive: v.isActive });
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    setEditSaving(true);
+    setMsg(null);
+    const r = await api(`${base}/vehicles/${editing.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        registrationNumber: editing.registrationNumber,
+        capacity: editing.capacity ? Number(editing.capacity) : null,
+        model: editing.model || null,
+        isActive: editing.isActive,
+      }),
+    });
+    setEditSaving(false);
+    if (r.ok) {
+      setMsg(t("transport.vehicles.vehicleUpdated"));
+      setEditing(null);
+      load();
+    } else {
+      setMsg((r.data as Json)?.error as string || errText((r.data as Json)?.code));
+    }
   }
 
   return (
@@ -527,18 +559,73 @@ function Vehicles({ base, errText }: { base: string; errText: (c: unknown) => st
       ) : (
         <div className="space-y-2">
           {vehicles.map((v) => (
-            <div key={v.id} className="flex items-center justify-between rounded-xl border border-border bg-card p-4 shadow-sm">
-              <div>
-                <p className="font-medium text-foreground">
-                  {v.registrationNumber} {!v.isActive && <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs">{t("transport.common.inactive")}</span>}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {v.model ?? "—"} · {v.capacity ?? "—"} seats · {v._count.routes} routes
-                </p>
+            <div key={v.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-foreground">
+                    {v.registrationNumber} {!v.isActive && <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs">{t("transport.common.inactive")}</span>}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {v.model ?? "—"} · {v.capacity ?? "—"} seats · {v._count.routes} routes
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => startEdit(v)} className="rounded-lg border border-border px-3 py-1.5 text-sm">
+                    {t("transport.common.edit")}
+                  </button>
+                  <button onClick={() => remove(v.id)} className="rounded-lg border border-border px-3 py-1.5 text-sm text-destructive">
+                    {t("transport.common.delete")}
+                  </button>
+                </div>
               </div>
-              <button onClick={() => remove(v.id)} className="rounded-lg border border-border px-3 py-1.5 text-sm text-destructive">
-                {t("transport.common.delete")}
-              </button>
+
+              {editing?.id === v.id && (
+                <div className="mt-3 border-t border-border pt-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <label className="text-sm">
+                      {t("transport.vehicles.registrationNumber")}
+                      <input
+                        value={editing.registrationNumber}
+                        onChange={(e) => setEditing({ ...editing, registrationNumber: e.target.value })}
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
+                      />
+                    </label>
+                    <label className="text-sm">
+                      {t("transport.vehicles.capacity")}
+                      <input
+                        type="number"
+                        value={editing.capacity}
+                        onChange={(e) => setEditing({ ...editing, capacity: e.target.value })}
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
+                      />
+                    </label>
+                    <label className="text-sm">
+                      {t("transport.vehicles.model")}
+                      <input
+                        value={editing.model}
+                        onChange={(e) => setEditing({ ...editing, model: e.target.value })}
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
+                      />
+                    </label>
+                  </div>
+                  <label className="mt-3 flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={editing.isActive} onChange={(e) => setEditing({ ...editing, isActive: e.target.checked })} />
+                    {t("transport.common.active")}
+                  </label>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={saveEdit}
+                      disabled={!editing.registrationNumber.trim() || editSaving}
+                      className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                    >
+                      {editSaving ? t("transport.common.saving") : t("transport.common.save")}
+                    </button>
+                    <button onClick={() => setEditing(null)} className="rounded-lg border border-border px-3 py-2 text-sm">
+                      {t("transport.common.cancel")}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -559,6 +646,16 @@ type Driver = {
   _count: { routes: number };
 };
 
+type DriverEditForm = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  licenseNumber: string;
+  isActive: boolean;
+  password: string;
+};
+
 function Drivers({ base, errText }: { base: string; errText: (c: unknown) => string }) {
   const { t } = useTranslation();
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -570,6 +667,8 @@ function Drivers({ base, errText }: { base: string; errText: (c: unknown) => str
   const [licenseNumber, setLicenseNumber] = useState("");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [editing, setEditing] = useState<DriverEditForm | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   // See the Routes component's `load` for why this is `.then()`, not
   // async/await.
@@ -615,6 +714,40 @@ function Drivers({ base, errText }: { base: string; errText: (c: unknown) => str
     const r = await api(`${base}/drivers/${id}`, { method: "DELETE" });
     if (r.ok) load();
     else setMsg((r.data as Json)?.error as string || errText((r.data as Json)?.code));
+  }
+
+  function startEdit(d: Driver) {
+    setMsg(null);
+    setEditing({ id: d.id, name: d.name, phone: d.phone, email: d.email ?? "", licenseNumber: d.licenseNumber ?? "", isActive: d.isActive, password: "" });
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    setEditSaving(true);
+    setMsg(null);
+    // Blank password is omitted, not sent as an empty string — the API only
+    // rehashes/updates passwordHash when a password of at least 8 characters
+    // is present, so leaving this field blank on edit never touches the
+    // existing stored hash.
+    const r = await api(`${base}/drivers/${editing.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: editing.name,
+        phone: editing.phone,
+        email: editing.email || null,
+        licenseNumber: editing.licenseNumber || null,
+        isActive: editing.isActive,
+        password: editing.password || undefined,
+      }),
+    });
+    setEditSaving(false);
+    if (r.ok) {
+      setMsg(t("transport.drivers.driverUpdated"));
+      setEditing(null);
+      load();
+    } else {
+      setMsg((r.data as Json)?.error as string || errText((r.data as Json)?.code));
+    }
   }
 
   return (
@@ -668,18 +801,78 @@ function Drivers({ base, errText }: { base: string; errText: (c: unknown) => str
       ) : (
         <div className="space-y-2">
           {drivers.map((d) => (
-            <div key={d.id} className="flex items-center justify-between rounded-xl border border-border bg-card p-4 shadow-sm">
-              <div>
-                <p className="font-medium text-foreground">
-                  {d.name} {!d.isActive && <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs">{t("transport.common.inactive")}</span>}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {d.phone} · {d.licenseNumber ?? "—"} · {d._count.routes} routes
-                </p>
+            <div key={d.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-foreground">
+                    {d.name} {!d.isActive && <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs">{t("transport.common.inactive")}</span>}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {d.phone} · {d.licenseNumber ?? "—"} · {d._count.routes} routes
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => startEdit(d)} className="rounded-lg border border-border px-3 py-1.5 text-sm">
+                    {t("transport.common.edit")}
+                  </button>
+                  <button onClick={() => remove(d.id)} className="rounded-lg border border-border px-3 py-1.5 text-sm text-destructive">
+                    {t("transport.common.delete")}
+                  </button>
+                </div>
               </div>
-              <button onClick={() => remove(d.id)} className="rounded-lg border border-border px-3 py-1.5 text-sm text-destructive">
-                {t("transport.common.delete")}
-              </button>
+
+              {editing?.id === d.id && (
+                <div className="mt-3 border-t border-border pt-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="text-sm">
+                      {t("transport.drivers.name")}
+                      <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2" />
+                    </label>
+                    <label className="text-sm">
+                      {t("transport.drivers.phone")}
+                      <input value={editing.phone} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2" />
+                    </label>
+                    <label className="text-sm">
+                      {t("transport.drivers.email")}
+                      <input value={editing.email} onChange={(e) => setEditing({ ...editing, email: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2" />
+                    </label>
+                    <label className="text-sm">
+                      {t("transport.drivers.licenseNumber")}
+                      <input
+                        value={editing.licenseNumber}
+                        onChange={(e) => setEditing({ ...editing, licenseNumber: e.target.value })}
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
+                      />
+                    </label>
+                    <label className="text-sm md:col-span-2">
+                      {t("transport.drivers.password")}
+                      <input
+                        type="password"
+                        value={editing.password}
+                        onChange={(e) => setEditing({ ...editing, password: e.target.value })}
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
+                      />
+                      <span className="mt-1 block text-xs text-muted-foreground">{t("transport.drivers.passwordEditHint")}</span>
+                    </label>
+                  </div>
+                  <label className="mt-3 flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={editing.isActive} onChange={(e) => setEditing({ ...editing, isActive: e.target.checked })} />
+                    {t("transport.common.active")}
+                  </label>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={saveEdit}
+                      disabled={!editing.name.trim() || !editing.phone.trim() || editSaving}
+                      className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                    >
+                      {editSaving ? t("transport.common.saving") : t("transport.common.save")}
+                    </button>
+                    <button onClick={() => setEditing(null)} className="rounded-lg border border-border px-3 py-2 text-sm">
+                      {t("transport.common.cancel")}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -1216,6 +1216,7 @@
       "model": "मॉडल",
       "noVehicles": "अभी तक कोई वाहन नहीं",
       "vehicleCreated": "वाहन जोड़ा गया",
+      "vehicleUpdated": "वाहन अपडेट किया गया",
       "deleteConfirm": "इस वाहन को हटाएं?"
     },
     "drivers": {
@@ -1227,8 +1228,10 @@
       "licenseNumber": "लाइसेंस संख्या",
       "password": "पासवर्ड (वैकल्पिक)",
       "passwordHint": "बाद के चरण में चालक लॉगिन शुरू होने तक उपयोग नहीं किया जाएगा",
+      "passwordEditHint": "मौजूदा पासवर्ड बनाए रखने के लिए इसे खाली छोड़ें",
       "noDrivers": "अभी तक कोई चालक नहीं",
       "driverCreated": "चालक जोड़ा गया",
+      "driverUpdated": "चालक अपडेट किया गया",
       "deleteConfirm": "इस चालक को हटाएं?"
     },
     "errors": {
