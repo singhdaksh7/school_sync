@@ -16,7 +16,12 @@ interface ChildrenApiStudent {
 
 export default function GuardianShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [user, setUser] = useState<GuardianUser | null>(null);
+  // getGuardianUser() reads localStorage and is a no-op (returns null) during
+  // SSR (see its `typeof window === "undefined"` guard), so it's safe to use
+  // as a lazy initializer — this is a one-time read, not something derived
+  // from a changing prop, so it belongs in initial state, not in the effect
+  // below.
+  const [user] = useState<GuardianUser | null>(() => getGuardianUser());
   const [kids, setKids] = useState<GuardianChild[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,7 +34,6 @@ export default function GuardianShell({ children }: { children: React.ReactNode 
   // (src/lib/guardian-auth-client.ts), so this is the single auth gate for
   // the whole portal — no separate pre-check needed.
   useEffect(() => {
-    setUser(getGuardianUser());
     let active = true;
     guardianFetch("/api/parent/children")
       .then((res) => (res.ok ? res.json() : null))

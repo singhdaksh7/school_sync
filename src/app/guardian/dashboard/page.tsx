@@ -98,16 +98,27 @@ const ATT_STATUS_ICON: Record<string, { icon: typeof Check; color: string }> = {
  * keeping the old child's numbers up with no indication anything went wrong.
  */
 function useGuardianModule<T>(path: string | null): { data: T | null; loading: boolean; error: boolean } {
+  // `prevPath` lets us detect a path change (e.g. a child switch) during
+  // render and reset state right there, instead of in the effect below.
+  // Resetting inside the effect would mean the previous child's data is
+  // still on screen for one paint after the switch — the effect runs after
+  // commit — before being cleared; adjusting state during render bails out
+  // and re-renders with the cleared state before anything is painted.
+  const [prevPath, setPrevPath] = useState(path);
   const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(path !== null);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
+  if (path !== prevPath) {
+    setPrevPath(path);
     setData(null);
     setError(false);
-    if (!path) { setLoading(false); return; }
+    setLoading(path !== null);
+  }
+
+  useEffect(() => {
+    if (!path) return;
     let active = true;
-    setLoading(true);
     guardianFetch(path)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`status ${res.status}`))))
       .then((json) => { if (active) { setData(json); setLoading(false); } })
