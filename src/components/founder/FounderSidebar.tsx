@@ -2,31 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  ShieldCheck, LayoutDashboard, Building2, PieChart,
-  IndianRupee, CreditCard, Flag, Settings, ChevronRight, X,
-  Receipt, FileText, Bell, UserPlus,
-} from "lucide-react";
+import { ShieldCheck, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { founderNavItems as navItems } from "@/lib/nav/founder-nav";
 
 interface FounderSidebarProps {
   onClose?: () => void;
 }
-
-const navItems = [
-  { href: "/founder/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
-  { href: "/founder/schools", labelKey: "nav.schools", icon: Building2 },
-  { href: "/founder/invites", labelKey: "nav.invites", icon: UserPlus },
-  { href: "/founder/analytics", labelKey: "nav.analytics", icon: PieChart },
-  { href: "/founder/revenue", labelKey: "nav.revenue", icon: IndianRupee },
-  { href: "/founder/billing", labelKey: "nav.billing", icon: CreditCard },
-  { href: "/founder/payment-proofs", labelKey: "nav.paymentProofs", icon: Receipt },
-  { href: "/founder/invoices", labelKey: "nav.invoices", icon: FileText },
-  { href: "/founder/feature-flags", labelKey: "nav.featureFlags", icon: Flag },
-  { href: "/founder/notifications", labelKey: "nav.notifications", icon: Bell },
-  { href: "/founder/settings", labelKey: "nav.settings", icon: Settings },
-];
 
 export default function FounderSidebar({ onClose }: FounderSidebarProps) {
   const { t } = useTranslation();

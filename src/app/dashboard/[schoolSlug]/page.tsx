@@ -5,7 +5,9 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { sessionRole } from "@/lib/tenant";
+import { getSchoolFeatureFlags } from "@/lib/feature-flags";
 import OperationsCommandCenter from "@/components/operations/OperationsCommandCenter";
+import AdminModuleGrid from "@/components/dashboard/AdminModuleGrid";
 
 export default async function DashboardPage({ params }: { params: Promise<{ schoolSlug: string }> }) {
   const { schoolSlug } = await params;
@@ -19,6 +21,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ scho
   if (!school) redirect("/no-school");
 
   const role = sessionRole(session.user) ?? "";
+  const featureFlags = await getSchoolFeatureFlags(school.id);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-2 sm:px-6 lg:px-8">
@@ -46,13 +49,16 @@ export default async function DashboardPage({ params }: { params: Promise<{ scho
         <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-3xl" />
       </div>
 
+      {/* Modules — grid of every module this admin's role can open */}
+      <AdminModuleGrid schoolSlug={schoolSlug} userRole={role} featureFlags={featureFlags} />
+
       {/* Live Operations Command Center */}
       <div className="space-y-2">
         <h3 className="text-lg font-bold tracking-tight text-gray-900">School Operations Command Center</h3>
-        <OperationsCommandCenter 
-          schoolId={school.id} 
-          userRole={role} 
-          schoolSlug={schoolSlug} 
+        <OperationsCommandCenter
+          schoolId={school.id}
+          userRole={role}
+          schoolSlug={schoolSlug}
         />
       </div>
     </div>

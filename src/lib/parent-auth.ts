@@ -5,6 +5,18 @@ import { statusIsBlocked } from "@/lib/school-access";
 import { validateSession } from "@/lib/auth-sessions";
 import { systemClock } from "@/lib/clock";
 
+/**
+ * httpOnly cookie name for the Guardian web portal session (PART 1). This is
+ * ADDITIVE to the pre-existing Bearer-token scheme below: the same signed JWT
+ * is delivered both ways from /api/parent/login. This app's real mobile
+ * client (see docs/backend-pilot-contract-freeze.md — the /api/parent/*
+ * surface is a frozen external contract) calls /api/parent/* directly with
+ * `Authorization: Bearer <token>` and has no concept of cookies, so Bearer
+ * support cannot be removed — the web portal is simply a second consumer of
+ * the same token, carried a different way.
+ */
+export const GUARDIAN_COOKIE_NAME = "guardian_session";
+
 export interface ParentTokenPayload {
   guardianId: string;
   name: string;
@@ -47,7 +59,10 @@ export function generateParentToken(payload: ParentTokenPayload): string {
 }
 
 export async function getAuthenticatedGuardian(req: NextRequest) {
-  const token = req.headers.get("Authorization")?.replace("Bearer ", "");
+  // Bearer header (the frozen mobile contract) takes precedence; the
+  // httpOnly cookie (PART 1, web portal) is the fallback. Either is
+  // sufficient — this route never requires both.
+  const token = req.headers.get("Authorization")?.replace("Bearer ", "") || req.cookies.get(GUARDIAN_COOKIE_NAME)?.value;
   if (!token) return null;
 
   const decoded = verifyParentToken(token);

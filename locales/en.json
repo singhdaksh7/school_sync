@@ -647,6 +647,7 @@
     "classSection": "Class {{className}} – {{sectionName}}"
   },
   "teacherDashboard": {
+    "allModules": "All Modules",
     "goodMorning": "Good morning",
     "goodAfternoon": "Good afternoon",
     "goodEvening": "Good evening",
@@ -896,6 +897,34 @@
     "duplicateRollNo": "Roll number already exists",
     "duplicateStudent": "A student with these details already exists",
     "parentPhoneRequired": "Father Phone or Mother Phone is required so the student can log in"
+  },
+  "guardian": {
+    "portalTitle": "Guardian Portal",
+    "loginTitle": "Guardian Login",
+    "loginSubtitle": "Sign in with your registered phone number",
+    "invalidCredentials": "Invalid phone number or password",
+    "selectChild": "Select child",
+    "welcomeBack": "Welcome back, {{name}} 👋",
+    "dashboardSubtitle": "Here's what's happening with your children today",
+    "myChildren": "My Children",
+    "noChildrenLinked": "No children linked to your account yet",
+    "fees": "Fees",
+    "feesDesc": "Pending dues across your children",
+    "noPendingFees": "No pending fees",
+    "attendanceDesc": "Last 30 days attendance record",
+    "noAttendanceYet": "No attendance records yet",
+    "homeworkDesc": "Recently assigned homework",
+    "noHomework": "No homework assigned yet",
+    "marksDesc": "Latest exam results",
+    "noMarksYet": "No exam results yet",
+    "reportCardsDesc": "Published report cards",
+    "noReportCardsYet": "No report cards published yet",
+    "timetableDesc": "Weekly class schedule",
+    "noTimetableYet": "Timetable not available yet",
+    "announcementsDesc": "Latest school announcements",
+    "noAnnouncements": "No announcements yet",
+    "selectChildPrompt": "Select a child above to view this",
+    "loadFailed": "Couldn't load this — please try again"
   },
   "notifications": {
     "title": "Notifications",

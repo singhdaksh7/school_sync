@@ -647,6 +647,7 @@
     "classSection": "कक्षा {{className}} – {{sectionName}}"
   },
   "teacherDashboard": {
+    "allModules": "सभी मॉड्यूल",
     "goodMorning": "सुप्रभात",
     "goodAfternoon": "नमस्कार",
     "goodEvening": "शुभ संध्या",
@@ -896,6 +897,34 @@
     "duplicateRollNo": "यह रोल नंबर पहले से मौजूद है",
     "duplicateStudent": "इन विवरणों वाला छात्र पहले से मौजूद है",
     "parentPhoneRequired": "छात्र के लॉगिन के लिए पिता या माता का फ़ोन नंबर आवश्यक है"
+  },
+  "guardian": {
+    "portalTitle": "अभिभावक पोर्टल",
+    "loginTitle": "अभिभावक लॉगिन",
+    "loginSubtitle": "अपने पंजीकृत फ़ोन नंबर से साइन इन करें",
+    "invalidCredentials": "अमान्य फ़ोन नंबर या पासवर्ड",
+    "selectChild": "बच्चा चुनें",
+    "welcomeBack": "वापसी पर स्वागत है, {{name}} 👋",
+    "dashboardSubtitle": "आज आपके बच्चों के साथ यही हो रहा है",
+    "myChildren": "मेरे बच्चे",
+    "noChildrenLinked": "अभी तक आपके खाते से कोई बच्चा जुड़ा नहीं है",
+    "fees": "फीस",
+    "feesDesc": "आपके बच्चों की लंबित फीस",
+    "noPendingFees": "कोई लंबित फीस नहीं",
+    "attendanceDesc": "पिछले 30 दिनों का उपस्थिति रिकॉर्ड",
+    "noAttendanceYet": "अभी तक कोई उपस्थिति रिकॉर्ड नहीं",
+    "homeworkDesc": "हाल ही में सौंपा गया गृहकार्य",
+    "noHomework": "अभी तक कोई गृहकार्य नहीं सौंपा गया",
+    "marksDesc": "नवीनतम परीक्षा परिणाम",
+    "noMarksYet": "अभी तक कोई परीक्षा परिणाम नहीं",
+    "reportCardsDesc": "प्रकाशित रिपोर्ट कार्ड",
+    "noReportCardsYet": "अभी तक कोई रिपोर्ट कार्ड प्रकाशित नहीं हुआ",
+    "timetableDesc": "साप्ताहिक कक्षा समय सारणी",
+    "noTimetableYet": "समय सारणी अभी उपलब्ध नहीं है",
+    "announcementsDesc": "नवीनतम स्कूल घोषणाएं",
+    "noAnnouncements": "अभी तक कोई घोषणा नहीं",
+    "selectChildPrompt": "इसे देखने के लिए ऊपर एक बच्चा चुनें",
+    "loadFailed": "यह लोड नहीं हो सका — कृपया पुनः प्रयास करें"
   },
   "notifications": {
     "title": "सूचनाएं",
