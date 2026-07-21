@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
+import jwt from "jsonwebtoken";
 
 /**
  * Whether Auth.js would have used secure (`__Secure-`-prefixed) session
@@ -36,7 +37,7 @@ export function isForwardedHttps(req: NextRequest): boolean {
   return req.nextUrl.protocol === "https:";
 }
 
-const publicRoutes = ["/", "/login", "/founder/login", "/forgot-password", "/reset-password", "/student/login", "/no-school"];
+const publicRoutes = ["/", "/login", "/founder/login", "/forgot-password", "/reset-password", "/student/login", "/guardian/login", "/no-school"];
 
 export function isPublicRoute(pathname: string) {
   return (
@@ -97,6 +98,35 @@ export function isStudentRoute(pathname: string) {
   return (pathname === "/student" || pathname.startsWith("/student/")) && pathname !== "/student/login";
 }
 
+export function isGuardianRoute(pathname: string) {
+  return (pathname === "/guardian" || pathname.startsWith("/guardian/")) && pathname !== "/guardian/login";
+}
+
+/**
+ * Guardian sessions are NOT a NextAuth token (see src/lib/parent-auth.ts) —
+ * they're a separate signed JWT in the `guardian_session` httpOnly cookie,
+ * issued by /api/parent/login. getToken() above only understands NextAuth's
+ * own cookie, so the Founder/Student pattern of checking `token.role` can't
+ * apply here; this verifies the guardian JWT's signature/expiry directly
+ * (mirroring verifyParentToken in src/lib/parent-auth.ts exactly, including
+ * its NEXTAUTH_SECRET-only secret resolution — no AUTH_SECRET fallback,
+ * since that's what signed it) rather than only checking cookie presence,
+ * matching the same verified-not-just-present depth as the Founder/Student
+ * gates above.
+ */
+function hasValidGuardianSession(req: NextRequest): boolean {
+  const token = req.cookies.get("guardian_session")?.value;
+  if (!token) return false;
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret) return false;
+  try {
+    const decoded = jwt.verify(token, secret) as { role?: string };
+    return decoded.role === "PARENT";
+  } catch {
+    return false;
+  }
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
@@ -136,6 +166,16 @@ export async function proxy(req: NextRequest) {
   if (isStudentRoute(pathname)) {
     if (!token || token.role !== "STUDENT") {
       return NextResponse.redirect(new URL("/student/login", req.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Guardian routes are gated independently too, same shape as Founder/
+  // Student above, but against the separate guardian_session JWT instead of
+  // a NextAuth token — see hasValidGuardianSession.
+  if (isGuardianRoute(pathname)) {
+    if (!hasValidGuardianSession(req)) {
+      return NextResponse.redirect(new URL("/guardian/login", req.url));
     }
     return NextResponse.next();
   }
