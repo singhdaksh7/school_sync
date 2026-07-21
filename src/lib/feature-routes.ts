@@ -31,6 +31,7 @@ export const MODULE_FEATURE_KEYS = [
   "WHITE_LABEL",
   "ADMISSIONS",
   "LIBRARY",
+  "TRANSPORT",
 ] as const satisfies readonly FeatureFlagKeyValue[];
 
 /**
@@ -135,6 +136,11 @@ export const FEATURE_ROUTE_RULES: RouteRule[] = [
   { pattern: /^teacher\/library(\/|$)/, feature: "LIBRARY" },
   { pattern: /^student\/library(\/|$)/, feature: "LIBRARY" },
   { pattern: /^parent\/library(\/|$)/, feature: "LIBRARY" },
+
+  // ── TRANSPORT (routes/stops/vehicles/drivers/assignment admin CRUD — Phase A;
+  //    driver auth and location ingest are Phases B/C and will get their own
+  //    rules under mobile/driver and parent/teacher prefixes when they land) ──
+  { pattern: /^schools\/\[schoolId\]\/transport(\/|$)/, feature: "TRANSPORT" },
 ];
 
 /**

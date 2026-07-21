@@ -61,6 +61,7 @@ enum FeatureFlagKey {
   NOTEBOOK_CHECKING
   ADMISSIONS
   LIBRARY
+  TRANSPORT
 }
 
 enum PaymentProofStatus {
@@ -426,6 +427,12 @@ model School {
   libraryReservations                  LibraryReservation[]
   libraryPolicy                        LibraryPolicy?
   libraryHistory                       LibraryHistory[]
+  transportRoutes                      Route[]
+  transportStops                       Stop[]
+  transportVehicles                    Vehicle[]
+  transportDrivers                     Driver[]
+  studentRouteAssignments              StudentRouteAssignment[]
+  transportTrips                       Trip[]
   createdAt                            DateTime                      @default(now())
   updatedAt                            DateTime                      @updatedAt
 
@@ -841,6 +848,7 @@ model Student {
   notificationsReceived     Notification[]             @relation("NotificationStudent")
   libraryLoans              LibraryLoan[]
   libraryReservations       LibraryReservation[]
+  routeAssignments          StudentRouteAssignment[]
   createdAt                 DateTime                   @default(now())
   updatedAt                 DateTime                   @updatedAt
 
@@ -2726,4 +2734,149 @@ model LibraryHistory {
   @@index([schoolId, event])
   @@index([schoolId, bookId])
   @@index([schoolId, loanId])
+}
+
+// Transport / Bus Tracking v1 — Phase A (admin CRUD only). Route/Stop/
+// Vehicle/Driver/StudentRouteAssignment/Trip all land in one migration so
+// later phases (driver auth, location ingest) don't each need their own
+// migration. Live position is intentionally NOT modeled here — Phase B
+// stores it in Redis as a latest-position-only key, not a Postgres table.
+
+enum TripStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model Route {
+  id          String   @id @default(cuid())
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  vehicleId   String?
+  vehicle     Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  driverId    String?
+  driver      Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  stops               Stop[]
+  studentAssignments  StudentRouteAssignment[]
+  trips               Trip[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([schoolId, vehicleId])
+  @@index([schoolId, driverId])
+}
+
+model Stop {
+  id        String  @id @default(cuid())
+  schoolId  String
+  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  routeId   String
+  route     Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  name      String
+  sequence  Int
+  latitude  Float?
+  longitude Float?
+
+  studentAssignments StudentRouteAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([routeId, sequence])
+  @@index([schoolId])
+  @@index([routeId])
+}
+
+model Vehicle {
+  id                 String  @id @default(cuid())
+  schoolId           String
+  school             School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  registrationNumber String
+  capacity           Int?
+  model              String?
+  isActive           Boolean @default(true)
+
+  routes Route[]
+  trips  Trip[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, registrationNumber])
+  @@index([schoolId])
+}
+
+// Mirrors the Guardian model's shape (own row, not a User.role value) — a
+// driver is mobile-only and never authenticates through NextAuth, so it
+// doesn't belong in the UserRole enum. passwordHash is settable in Phase A
+// but unused until Phase B's driver login lands.
+model Driver {
+  id            String  @id @default(cuid())
+  schoolId      String
+  school        School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name          String
+  phone         String
+  email         String?
+  passwordHash  String?
+  licenseNumber String?
+  isActive      Boolean @default(true)
+
+  routes Route[]
+  trips  Trip[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, phone])
+  @@index([schoolId])
+}
+
+model StudentRouteAssignment {
+  id        String  @id @default(cuid())
+  schoolId  String
+  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  routeId   String
+  route     Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stopId    String?
+  stop      Stop?   @relation(fields: [stopId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, routeId])
+  @@index([schoolId])
+  @@index([routeId])
+  @@index([stopId])
+}
+
+model Trip {
+  id        String     @id @default(cuid())
+  schoolId  String
+  school    School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  routeId   String
+  route     Route      @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  driverId  String
+  driver    Driver     @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleId String
+  vehicle   Vehicle    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  status    TripStatus @default(SCHEDULED)
+  startedAt DateTime?
+  endedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([routeId])
+  @@index([driverId])
+  @@index([status])
 }

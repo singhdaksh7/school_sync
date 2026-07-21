@@ -4,7 +4,7 @@ import {
   CalendarDays, FileText, BarChart2, Award,
   Megaphone, CalendarOff, IndianRupee,
   ClipboardList, PieChart, Activity, BarChart, Wand2, BookOpenCheck, Replace, Palette, ShieldCheck, LayoutTemplate,
-  CreditCard, BookCheck, ListTree, UserMinus, Library,
+  CreditCard, BookCheck, ListTree, UserMinus, Library, Bus,
 } from "lucide-react";
 import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
 
@@ -83,6 +83,7 @@ export function getAdminNavGroups(
       title: t("nav.groupFinance"),
       items: [
         { href: `${base}/fees`, label: t("nav.feeManagement"), icon: IndianRupee, show: flagEnabled("FEES") },
+        { href: `${base}/transport`, label: t("nav.transport"), icon: Bus, show: flagEnabled("TRANSPORT") },
         { href: `${base}/leaves`, label: t("nav.leaveManagement"), icon: ClipboardList, show: true },
         { href: `${base}/substitutions`, label: t("nav.substitutions"), icon: Replace, show: true },
         { href: `${base}/announcements`, label: t("nav.announcements"), icon: Megaphone, show: true },
