@@ -151,6 +151,13 @@ export class RedisProtocolRateLimiter implements RateLimiter {
     });
   }
 
+  /** Exposes the underlying ioredis connection so other modules that need raw
+   * Redis (not just fixed-window counters) can reuse this exact connection
+   * instead of opening a second one — see {@link getSharedRedisProtocolClient}. */
+  getClient(): Redis {
+    return this.client;
+  }
+
   async check(key: string, policy: RateLimitPolicy): Promise<RateLimitResult> {
     const namespaced = `ratelimit:${key}`;
     const pipeline = this.client.pipeline();
@@ -266,6 +273,23 @@ function warnIfNonDistributed() {
  * AI_ACTOR/AI_SCHOOL only. Every other category (login, upload, standard
  * ERP reads/mutations) is completely unaffected by this parameter existing.
  */
+/**
+ * Returns the shared RESP-protocol ioredis connection when the distributed
+ * backend is configured with a `redis://`/`rediss://` URL (ElastiCache
+ * Valkey/Redis — see {@link RedisProtocolRateLimiter}), or `null` when no
+ * such backend is configured (local/dev, or an Upstash-style REST backend,
+ * which has no raw client to share). Callers that need Redis for something
+ * other than fixed-window counting (e.g. the driver location-ping store,
+ * src/lib/location-store.ts) should use this instead of opening a second
+ * connection, and must treat `null` as "distributed Redis unavailable" —
+ * never silently fall back to per-instance memory for anything that needs
+ * to be read by a different request/instance than the one that wrote it.
+ */
+export function getSharedRedisProtocolClient(): Redis | null {
+  initRateLimiterFromEnv();
+  return limiter instanceof RedisProtocolRateLimiter ? limiter.getClient() : null;
+}
+
 export async function rateLimit(key: string, policy: RateLimitPolicy, opts: { failClosed?: boolean } = {}): Promise<RateLimitResult> {
   initRateLimiterFromEnv();
   warnIfNonDistributed();

@@ -27,7 +27,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
     include: {
       vehicle: { select: { id: true, registrationNumber: true, capacity: true } },
       driver: { select: { id: true, name: true, phone: true } },
-      stops: { orderBy: { sequence: "asc" } },
+      // Per-stop student counts (aggregated via the relation's _count) —
+      // the schema already supports this, it just wasn't being aggregated.
+      stops: { orderBy: { sequence: "asc" }, include: { _count: { select: { studentAssignments: true } } } },
       studentAssignments: {
         include: {
           student: { select: { id: true, name: true, rollNo: true, section: { select: { name: true, class: { select: { name: true } } } } } },
@@ -38,7 +40,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ schoolI
   });
   if (!route) return NextResponse.json({ error: "Route not found" }, { status: 404 });
 
-  return NextResponse.json(route);
+  return NextResponse.json({
+    ...route,
+    stops: route.stops.map(({ _count, ...stop }) => ({ ...stop, studentCount: _count.studentAssignments })),
+  });
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ schoolId: string; routeId: string }> }) {

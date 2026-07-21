@@ -164,6 +164,38 @@ describe("DELETE /api/schools/[schoolId]/transport/drivers/[driverId] — in-use
   });
 });
 
+describe("GET /api/schools/[schoolId]/transport/routes/[routeId] — per-stop student counts (Phase A gap fix)", () => {
+  it("aggregates a studentCount per stop instead of leaving it out", async () => {
+    p.route.findFirst.mockResolvedValue({
+      id: "route-1",
+      name: "North Loop",
+      vehicle: null,
+      driver: null,
+      stops: [
+        { id: "stop-1", name: "Gate A", sequence: 1, _count: { studentAssignments: 3 } },
+        { id: "stop-2", name: "Gate B", sequence: 2, _count: { studentAssignments: 0 } },
+      ],
+      studentAssignments: [],
+    });
+    const { GET } = await import("@/app/api/schools/[schoolId]/transport/routes/[routeId]/route");
+    const res = await GET(jsonReq("http://localhost/x", "GET"), { params: Promise.resolve({ schoolId: "school-1", routeId: "route-1" }) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.stops).toEqual([
+      { id: "stop-1", name: "Gate A", sequence: 1, studentCount: 3 },
+      { id: "stop-2", name: "Gate B", sequence: 2, studentCount: 0 },
+    ]);
+    // The aggregation is requested from Prisma, not computed client-side from a fuller payload.
+    expect(p.route.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          stops: expect.objectContaining({ include: { _count: { select: { studentAssignments: true } } } }),
+        }),
+      })
+    );
+  });
+});
+
 describe("POST /api/schools/[schoolId]/transport/drivers — password is hashed, never stored plain", () => {
   it("hashes a provided password before create and never trusts it to bypass validation", async () => {
     const { POST } = await import("@/app/api/schools/[schoolId]/transport/drivers/route");
