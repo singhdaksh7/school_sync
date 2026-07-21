@@ -96,6 +96,15 @@ export const API_COST_POLICIES = {
   JOB_STATUS: { limit: 60, windowMs: MINUTE_MS },
   AI_ACTOR: { limit: 10, windowMs: HOUR_MS },
   AI_SCHOOL: { limit: 50, windowMs: DAY_MS },
+  // Transport Phase B: driver location pings. Target steady-state is 1 ping
+  // per 10s per driver (6/min) — frequent enough for a live map to feel
+  // responsive without hammering Redis. 8/min (not 6/min) gives ~33% burst
+  // headroom for a jittery mobile network (e.g. a retry right after
+  // reconnecting, or two pings landing close together across a fixed-window
+  // boundary) without allowing sustained faster-than-intended polling. A 60s
+  // fixed window (not per-second) keeps this cheap: one counter increment per
+  // ~7.5s of driving on average, not per ping.
+  LOCATION_PING: { limit: 8, windowMs: MINUTE_MS },
 } as const;
 
 export type ApiCostCategory = keyof typeof API_COST_POLICIES;
