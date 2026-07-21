@@ -11,8 +11,9 @@ interface Announcement {
   id: string;
   title: string;
   body: string;
-  publishedAt: string;
+  publishedAt: string | null;
   createdBy: { name: string; role: string };
+  isRead?: boolean;
 }
 
 export default function StudentAnnouncementsPage() {
@@ -29,19 +30,33 @@ export default function StudentAnnouncementsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  function markRead(id: string) {
+    setAnnouncements((prev) => prev.map((a) => (a.id === id ? { ...a, isRead: true } : a)));
+    void fetch(`/api/student/announcements/${id}/read`, { method: "POST" });
+  }
+
   const filtered = useMemo(() => {
     return announcements.filter((a) => {
       if (search && !`${a.title} ${a.body}`.toLowerCase().includes(search.toLowerCase())) return false;
-      if (dateFilter && format(new Date(a.publishedAt), "yyyy-MM-dd") !== dateFilter) return false;
+      if (dateFilter && a.publishedAt && format(new Date(a.publishedAt), "yyyy-MM-dd") !== dateFilter) return false;
       return true;
     });
   }, [announcements, search, dateFilter]);
 
+  const unreadCount = announcements.filter((a) => !a.isRead).length;
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("studentAnnouncements.title")}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t("studentAnnouncements.subtitle")}</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("studentAnnouncements.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("studentAnnouncements.subtitle")}</p>
+        </div>
+        {unreadCount > 0 && (
+          <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            {t("studentAnnouncements.unreadCount", { count: unreadCount })}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -71,16 +86,24 @@ export default function StudentAnnouncementsPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map((a) => (
-            <Card key={a.id} className="border-border transition-all hover:-translate-y-0.5 hover:shadow-md">
+            <Card
+              key={a.id}
+              className="border-border transition-all hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+              role="button"
+              tabIndex={0}
+              onClick={() => !a.isRead && markRead(a.id)}
+              onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !a.isRead) markRead(a.id); }}
+            >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <Megaphone className="h-5 w-5" />
+                    {!a.isRead && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-primary" aria-label={t("studentAnnouncements.unread")} />}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <p className="font-semibold text-foreground">{a.title}</p>
-                      <p className="text-xs text-muted-foreground">{format(new Date(a.publishedAt), "dd MMM yyyy")}</p>
+                      {a.publishedAt && <p className="text-xs text-muted-foreground">{format(new Date(a.publishedAt), "dd MMM yyyy")}</p>}
                     </div>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{a.body}</p>
                     <p className="mt-2 text-xs text-muted-foreground">{t("studentAnnouncements.byAuthor", { name: a.createdBy.name })}</p>

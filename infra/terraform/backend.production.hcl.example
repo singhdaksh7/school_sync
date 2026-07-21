@@ -1,0 +1,7 @@
+# Production application state. The bucket/table must already exist. Keep
+# this key separate from staging and from the GitHub-OIDC bootstrap state.
+bucket         = "schoolsync-tfstate-928805968612-ap-south-1"
+key            = "schoolsync/production/terraform.tfstate"
+region         = "ap-south-1"
+dynamodb_table = "schoolsync-terraform-locks"
+encrypt        = true

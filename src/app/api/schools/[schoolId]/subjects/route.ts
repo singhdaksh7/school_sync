@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { canAccessSchool, canWriteSchool, classBelongsToSchool, hasPrismaErrorCode, sessionRole } from "@/lib/tenant";
+import { canAccessSchool, canWriteSchool, classBelongsToSchool, hasPrismaErrorCode, sectionBelongsToSchool, sessionRole } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
+import { getApplicableSubjects } from "@/lib/master-subjects";
 
 export async function GET(req: Request, { params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
@@ -17,9 +18,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ schoolId
   const classId = searchParams.get("classId");
   const sectionId = searchParams.get("sectionId");
   const raw = searchParams.get("raw") === "1";
+  const applicable = searchParams.get("applicable") === "1";
   if (!classId) return NextResponse.json({ error: "classId is required" }, { status: 400 });
   if (!(await classBelongsToSchool(classId, schoolId))) {
     return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  }
+
+  // applicable=1 (used by Smart Timetable's Weekly Period Requirements) returns
+  // the full union of class-wide + section-specific Master Subjects for this
+  // section, deduplicated by name — the complete set of subjects an admin may
+  // pick from for this class/section, as opposed to the exclusive fallback
+  // used by other integration consumers below.
+  if (applicable) {
+    if (!sectionId) return NextResponse.json({ error: "sectionId is required" }, { status: 400 });
+    if (!(await sectionBelongsToSchool(sectionId, schoolId))) {
+      return NextResponse.json({ error: "Section not found in this school" }, { status: 404 });
+    }
+    const subjects = await getApplicableSubjects(schoolId, classId, sectionId);
+    return NextResponse.json(subjects);
   }
 
   // raw=1 (used by the Subject Master admin UI) returns exactly the rows stored

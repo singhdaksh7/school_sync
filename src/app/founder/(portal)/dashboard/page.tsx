@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SCHOOL_STATUS_LABEL, SCHOOL_STATUS_BADGE_VARIANT } from "@/lib/school-status";
+import FounderModuleGrid from "@/components/founder/FounderModuleGrid";
 
 export default async function FounderDashboardPage() {
   const session = await requireFounderSession();
@@ -96,6 +97,12 @@ export default async function FounderDashboardPage() {
           <p className="mt-1 text-sm text-muted-foreground">Here&apos;s how SchoolSync is performing across every school.</p>
         </div>
         <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-indigo-500/10 blur-2xl" />
+      </div>
+
+      {/* Modules — grid of every founder platform module */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground/70">Platform Modules</h3>
+        <FounderModuleGrid />
       </div>
 
       {/* Stat cards */}

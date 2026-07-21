@@ -14,7 +14,7 @@ import { prisma } from "@/lib/prisma";
 
 export const PERMISSION_CATALOG = {
   STUDENTS: ["VIEW", "CREATE", "UPDATE", "DELETE", "EXPORT"],
-  ATTENDANCE: ["VIEW", "MARK", "EDIT", "REPORTS", "EXPORT"],
+  ATTENDANCE: ["VIEW", "MARK", "EDIT", "REPORTS", "EXPORT", "SUBMIT", "APPROVE_CORRECTION"],
   HOMEWORK: ["VIEW", "CREATE", "EDIT", "REVIEW", "MANAGE_ALL"],
   NOTEBOOK: ["VIEW", "MARK", "MANAGE_ALL"],
   MARKS: ["VIEW", "ENTER", "EDIT", "REPORTS", "PUBLISH"],
@@ -24,6 +24,22 @@ export const PERMISSION_CATALOG = {
   ANNOUNCEMENTS: ["VIEW", "CREATE", "EDIT", "DELETE", "MANAGE"],
   LEAVE: ["VIEW", "APPROVE", "MANAGE"],
   SETTINGS: ["VIEW"],
+  // Library Management v1: granular delegated capabilities. Leadership roles
+  // (SCHOOL_OWNER/SCHOOL_ADMIN/VICE_PRINCIPAL) get all of these automatically
+  // via src/lib/library/authorization.ts; ordinary teachers only get what is
+  // explicitly granted here (otherwise they keep self-service only).
+  LIBRARY: [
+    "VIEW",
+    "CATALOGUE_MANAGE",
+    "COPY_MANAGE",
+    "ISSUE",
+    "RETURN",
+    "RENEW",
+    "RESERVATION_MANAGE",
+    "FINE_WAIVE",
+    "POLICY_MANAGE",
+    "REPORT_VIEW",
+  ],
 } as const;
 
 /**

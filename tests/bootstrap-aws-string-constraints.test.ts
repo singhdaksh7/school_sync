@@ -32,6 +32,13 @@ const IAM_DESCRIPTION_PATTERN = /^[\t\n\r\x20-\x7E¡-ÿ]*$/;
 /** IAM role/policy *names* accept a narrower set per the IAM API reference. */
 const IAM_NAME_PATTERN = /^[\w+=,.@-]+$/;
 
+/** Resolve the two validated Terraform variables used in IAM names. */
+function resolveExampleIamName(value: string): string {
+  return value
+    .replaceAll("${var.project_name}", "schoolsync")
+    .replaceAll("${var.deployment_environment}", "production");
+}
+
 /**
  * Extracts a brace-balanced HCL block starting at the first "{" at or after
  * `startMarker`, counting braces (the same technique as
@@ -90,19 +97,19 @@ describe("AWS-bound string audit: infra/bootstrap/github-oidc", () => {
     it("both role names satisfy IAM's role-name character set and are unchanged", () => {
       const build = extractStringArg(extractBlock(tf("iam-build-role.tf"), 'resource "aws_iam_role" "github_staging_build"'), "name");
       const deploy = extractStringArg(extractBlock(tf("iam-deploy-role.tf"), 'resource "aws_iam_role" "github_staging_deploy"'), "name");
-      expect(build).toMatch(IAM_NAME_PATTERN);
-      expect(deploy).toMatch(IAM_NAME_PATTERN);
-      expect(build).toBe("schoolsync-github-staging-build");
-      expect(deploy).toBe("schoolsync-github-staging-deploy");
+      expect(resolveExampleIamName(build)).toMatch(IAM_NAME_PATTERN);
+      expect(resolveExampleIamName(deploy)).toMatch(IAM_NAME_PATTERN);
+      expect(build).toBe("${var.project_name}-github-${var.deployment_environment}-build");
+      expect(deploy).toBe("${var.project_name}-github-${var.deployment_environment}-deploy");
     });
 
     it("both inline role-policy names satisfy IAM's policy-name character set and are unchanged", () => {
       const buildPolicy = extractStringArg(extractBlock(tf("iam-build-role.tf"), 'resource "aws_iam_role_policy" "github_staging_build"'), "name");
       const deployPolicy = extractStringArg(extractBlock(tf("iam-deploy-role.tf"), 'resource "aws_iam_role_policy" "github_staging_deploy"'), "name");
-      expect(buildPolicy).toMatch(IAM_NAME_PATTERN);
-      expect(deployPolicy).toMatch(IAM_NAME_PATTERN);
-      expect(buildPolicy).toBe("schoolsync-github-staging-build-ecr-push");
-      expect(deployPolicy).toBe("schoolsync-github-staging-deploy-ecs-and-tf-readonly");
+      expect(resolveExampleIamName(buildPolicy)).toMatch(IAM_NAME_PATTERN);
+      expect(resolveExampleIamName(deployPolicy)).toMatch(IAM_NAME_PATTERN);
+      expect(buildPolicy).toBe("${var.project_name}-github-${var.deployment_environment}-build-ecr-push");
+      expect(deployPolicy).toBe("${var.project_name}-github-${var.deployment_environment}-deploy-ecs-and-tf-readonly");
     });
   });
 

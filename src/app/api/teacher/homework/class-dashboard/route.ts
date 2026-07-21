@@ -11,6 +11,7 @@ import {
   teacherCanTeachSubjectSection,
   type HomeworkStatsAccumulator,
 } from "@/lib/homework";
+import { compareStudentsByRollNumber } from "@/lib/student-ordering";
 
 type AcademicStatus = "PENDING" | "SUBMITTED" | "LATE_SUBMITTED" | "NOT_SUBMITTED" | "CHECKED" | "REJECTED";
 
@@ -45,9 +46,9 @@ export async function GET(req: Request) {
     },
     include: {
       student: { select: { id: true, name: true, rollNo: true } },
-      homework: { select: { id: true, title: true, subject: true, dueDate: true, deadlineAt: true } },
+      homework: { select: { id: true, title: true, subject: true, deadlineAt: true } },
     },
-    orderBy: [{ student: { rollNo: "asc" } }, { homework: { dueDate: "desc" } }],
+    orderBy: [{ student: { rollNo: "asc" } }, { homework: { deadlineAt: "desc" } }],
   });
 
   const studentAccumulators = new Map<string, { name: string; rollNo: string; acc: HomeworkStatsAccumulator }>();
@@ -59,7 +60,7 @@ export async function GET(req: Request) {
     rollNo: string;
     subject: string;
     title: string;
-    dueDate: Date;
+    deadlineAt: Date;
     completed: boolean;
   }[] = [];
 
@@ -80,7 +81,7 @@ export async function GET(req: Request) {
       rollNo: record.student.rollNo,
       subject: record.homework.subject,
       title: record.homework.title,
-      dueDate: record.homework.dueDate,
+      deadlineAt: record.homework.deadlineAt,
       completed: isCompleted(record.submissionStatus),
     });
   }
@@ -97,6 +98,9 @@ export async function GET(req: Request) {
     }
   }
 
+  // Universal roll-number ordering (canonical comparator — see /lib/student-ordering)
+  // replaces the previous one-off `localeCompare(..., { numeric: true })`, which didn't
+  // implement the full rule set (stable leading-zero tiebreak, null/empty-last, etc).
   const students = Array.from(studentAccumulators.entries())
     .map(([studentId, entry]) => ({
       studentId,
@@ -104,7 +108,7 @@ export async function GET(req: Request) {
       rollNo: entry.rollNo,
       ...homeworkStatsToResponse(entry.acc),
     }))
-    .sort((a, b) => a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true }));
+    .sort((a, b) => compareStudentsByRollNumber({ ...a, id: a.studentId }, { ...b, id: b.studentId }));
 
   const withPercentage = students.filter((s) => s.completionPercentage !== null);
   const averagePercentage = withPercentage.length > 0

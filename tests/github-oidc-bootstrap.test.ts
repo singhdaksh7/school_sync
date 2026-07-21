@@ -270,10 +270,10 @@ describe("No credentials, secret values, backend files, or local state are commi
   });
 });
 
-describe("Production is not enabled anywhere in this bootstrap stack", () => {
+describe("Environment selection is variable-driven, never hardcoded to production", () => {
   const files = ["variables.tf", "oidc-provider.tf", "iam-build-role.tf", "iam-deploy-role.tf", "outputs.tf"];
 
-  it("no variable, role name, or trust subject references a production environment", () => {
+  it("no role name or trust subject hardcodes the production environment", () => {
     for (const file of files) {
       const content = tf(file);
       expect(content).not.toMatch(/schoolsync-github-production/);

@@ -2,17 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  GraduationCap, LayoutDashboard, Users, BookOpen,
-  ClipboardCheck, Settings, UserPlus, ChevronRight,
-  CalendarDays, FileText, BarChart2, Award,
-  Megaphone, CalendarOff, IndianRupee,
-  ClipboardList, PieChart, Activity, BarChart, X, Wand2, BookOpenCheck, Replace, Palette, ShieldCheck, LayoutTemplate,
-  CreditCard, BookCheck, ListTree, UserMinus,
-} from "lucide-react";
+import { GraduationCap, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FeatureFlagKeyValue } from "@/lib/feature-flag-constants";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { getAdminNavGroups } from "@/lib/nav/admin-nav";
 
 interface SidebarProps {
   school: { slug: string; name: string; logoUrl?: string | null };
@@ -39,79 +33,12 @@ export default function Sidebar({ school, userRole, featureFlags, onClose }: Sid
   const pathname = usePathname();
   const { t } = useTranslation();
   const base = `/dashboard/${school.slug}`;
-  const isOwnerOrAdmin = userRole === "SCHOOL_OWNER" || userRole === "SCHOOL_ADMIN";
 
   // Absence of featureFlags (e.g. not yet wired in a caller) means everything
   // stays visible — flags are opt-out, not opt-in.
   const flagEnabled = (key: FeatureFlagKeyValue) => featureFlags?.[key] ?? true;
 
-  const groups = [
-    {
-      id: "overview",
-      title: null,
-      items: [
-        { href: base, label: t("nav.overview"), icon: LayoutDashboard, show: true },
-      ]
-    },
-    {
-      id: "people",
-      title: t("nav.groupPeople"),
-      items: [
-        { href: `${base}/students`, label: t("nav.students"), icon: GraduationCap, show: true },
-        { href: `${base}/teachers`, label: t("nav.teachers"), icon: Users, show: true },
-        { href: `${base}/teachers/deleted`, label: t("nav.deletedTeachers"), icon: UserMinus, show: isOwnerOrAdmin },
-        { href: `${base}/teacher-roles`, label: t("nav.teacherRoles"), icon: ShieldCheck, show: isOwnerOrAdmin && flagEnabled("TEACHER_PERMISSIONS") },
-      ]
-    },
-    {
-      id: "academics",
-      title: t("nav.groupAcademics"),
-      items: [
-        { href: `${base}/classes`, label: t("nav.classesAndSections"), icon: BookOpen, show: true },
-        { href: `${base}/subjects`, label: t("nav.subjectMaster"), icon: ListTree, show: isOwnerOrAdmin },
-        { href: `${base}/timetable`, label: t("nav.timetable"), icon: CalendarDays, show: true },
-        { href: `${base}/custom-timetable`, label: t("nav.customTimetable"), icon: Wand2, show: isOwnerOrAdmin },
-        { href: `${base}/homework`, label: t("nav.homework"), icon: BookOpenCheck, show: flagEnabled("HOMEWORK") },
-        { href: `${base}/attendance`, label: t("nav.attendance"), icon: ClipboardCheck, show: flagEnabled("ATTENDANCE") },
-        { href: `${base}/reports`, label: t("nav.attendanceReports"), icon: BarChart2, show: flagEnabled("ATTENDANCE") },
-        { href: `${base}/exam-milestones`, label: t("nav.examMilestones"), icon: BookCheck, show: flagEnabled("NOTEBOOK_CHECKING") },
-      ]
-    },
-    {
-      id: "exams",
-      title: t("nav.groupExams"),
-      items: [
-        { href: `${base}/exam-schemes`, label: t("nav.examSchemes"), icon: FileText, show: true },
-        { href: `${base}/results`, label: t("nav.results"), icon: Award, show: true },
-        { href: `${base}/report-cards`, label: t("nav.reportCards"), icon: ClipboardList, show: flagEnabled("REPORT_CARDS") },
-        { href: `${base}/report-card-builder`, label: t("nav.reportCardBuilder"), icon: LayoutTemplate, show: isOwnerOrAdmin && flagEnabled("REPORT_CARD_BUILDER") },
-      ]
-    },
-    {
-      id: "finance",
-      title: t("nav.groupFinance"),
-      items: [
-        { href: `${base}/fees`, label: t("nav.feeManagement"), icon: IndianRupee, show: flagEnabled("FEES") },
-        { href: `${base}/leaves`, label: t("nav.leaveManagement"), icon: ClipboardList, show: true },
-        { href: `${base}/substitutions`, label: t("nav.substitutions"), icon: Replace, show: true },
-        { href: `${base}/announcements`, label: t("nav.announcements"), icon: Megaphone, show: true },
-        { href: `${base}/holidays`, label: t("nav.holidayCalendar"), icon: CalendarOff, show: true },
-      ]
-    },
-    {
-      id: "system",
-      title: t("nav.groupSystem"),
-      items: [
-        { href: `${base}/analytics`, label: t("nav.analytics"), icon: PieChart, show: flagEnabled("ANALYTICS") },
-        { href: `${base}/teachers/workload`, label: t("nav.teacherWorkload"), icon: BarChart, show: true },
-        { href: `${base}/audit-logs`, label: t("nav.auditLogs"), icon: Activity, show: isOwnerOrAdmin },
-        { href: `${base}/invite`, label: t("nav.inviteStaff"), icon: UserPlus, show: isOwnerOrAdmin },
-        { href: `${base}/branding`, label: t("nav.branding"), icon: Palette, show: isOwnerOrAdmin && flagEnabled("WHITE_LABEL") },
-        { href: `${base}/billing`, label: t("nav.billing"), icon: CreditCard, show: isOwnerOrAdmin },
-        { href: `${base}/settings`, label: t("nav.settings"), icon: Settings, show: isOwnerOrAdmin },
-      ]
-    }
-  ];
+  const groups = getAdminNavGroups(t, base, userRole, flagEnabled);
 
   return (
     <aside className="flex h-full w-64 flex-col bg-sidebar text-sidebar-foreground md:m-2.5 md:h-[calc(100%-1.25rem)] md:rounded-2xl md:border md:border-sidebar-border md:shadow-sm">

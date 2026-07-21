@@ -38,15 +38,15 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = false # always off, every environment — not exposed as a variable, so this can never be accidentally enabled.
 
-  multi_az = false # staging/cost-conscious — rule 17 (no Multi-AZ unless required)
+  multi_az = var.db_multi_az
 
   backup_retention_period   = var.db_backup_retention_days
   skip_final_snapshot       = var.db_skip_final_snapshot
   final_snapshot_identifier = var.db_skip_final_snapshot ? null : "${local.name_prefix}-pg-final"
   deletion_protection       = var.db_deletion_protection
 
-  performance_insights_enabled = false # cost-conscious staging
-  monitoring_interval          = 0     # avoid enhanced-monitoring IAM role + cost
+  performance_insights_enabled = var.db_performance_insights_enabled
+  monitoring_interval          = 0 # avoid enhanced-monitoring IAM role + cost
 
   apply_immediately = true
 
@@ -57,8 +57,7 @@ resource "aws_db_instance" "main" {
   # Staging keeps its disposable, cost-conscious defaults (db_skip_final_
   # snapshot=true, db_deletion_protection=false, 3-day backups — see
   # variables.tf). This config does not create or apply a production
-  # environment (out of scope for this change — see the deployment audit),
-  # but if `environment = "production"` is ever set, these preconditions
+  # environment. If `environment = "production"` is set, these preconditions
   # make `terraform plan`/`apply` refuse to proceed unless the
   # production-appropriate values are explicitly set too — a production
   # deploy can never accidentally inherit the staging defaults by omission.
@@ -74,6 +73,10 @@ resource "aws_db_instance" "main" {
     precondition {
       condition     = var.environment != "production" || var.db_backup_retention_days >= local.production_min_backup_retention_days
       error_message = "environment=production requires db_backup_retention_days >= ${local.production_min_backup_retention_days} (staging default is 3)."
+    }
+    precondition {
+      condition     = var.environment != "production" || var.db_multi_az
+      error_message = "environment=production requires db_multi_az=true."
     }
     # postcondition, not precondition: `self` (the resource's own resulting
     # attributes) is only available after the resource is planned/applied.

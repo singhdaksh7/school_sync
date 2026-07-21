@@ -78,11 +78,61 @@ export const fileRetentionCleanupPayloadSchema = z.object({
 });
 export type FileRetentionCleanupPayload = z.infer<typeof fileRetentionCleanupPayloadSchema>;
 
+// Founder School Danger Zone: asynchronous, idempotent tenant-data purge —
+// see src/lib/school-purge.ts (the destructive body) and
+// src/lib/school-deletion.ts (schedule/cancel + the maintenance trigger that
+// creates this job once a school's retention window elapses).
+export const schoolDataPurgePayloadSchema = z.object({
+  schoolId: z.string().min(1),
+});
+export type SchoolDataPurgePayload = z.infer<typeof schoolDataPurgePayloadSchema>;
+
+// Founder "Add School" admin invite delivery outbox — see
+// src/lib/school-onboarding.ts (creates this job in the same transaction as
+// the invite) and src/lib/job-handlers.ts (the handler that actually sends
+// the email). Payload deliberately carries only the invite's id — never the
+// raw token or email content — so it is safe to persist, log identifiers
+// from, and inspect.
+export const inviteEmailDeliveryPayloadSchema = z.object({
+  inviteId: z.string().min(1),
+});
+export type InviteEmailDeliveryPayload = z.infer<typeof inviteEmailDeliveryPayloadSchema>;
+
+// Unified Notification Center v1 — durable outbox for potentially unbounded
+// in-app notification fan-out (a whole section/school of students, guardians
+// and/or teachers). See src/lib/notifications.ts (enqueueNotificationFanout,
+// created in the SAME transaction as the triggering business write — e.g.
+// attendance submission, homework publish, announcement publish/correction)
+// and the handler in src/lib/job-handlers.ts. Only stable identifiers/enum
+// values are ever carried in the payload — never free-form translated copy,
+// raw request bodies, or unnecessary student PII (display copy is rendered
+// client-side from eventType + metadata through locale keys).
+export const notificationRecipientRefSchema = z.object({
+  recipientType: z.enum(["STUDENT", "GUARDIAN", "TEACHER", "ADMIN_STAFF"]),
+  recipientId: z.string().min(1),
+});
+export const notificationFanoutPayloadSchema = z.object({
+  schoolId: z.string().min(1),
+  eventType: z.string().min(1),
+  entityType: z.string().min(1),
+  entityId: z.string().min(1),
+  recipients: z.array(notificationRecipientRefSchema).min(1),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  // Stable "what changed" signal used to build each recipient's idempotency
+  // key (e.g. an AttendanceSession id, an Announcement's correctionCount) —
+  // see buildNotificationIdempotencyKey in src/lib/notifications.ts.
+  versionKey: z.string().default(""),
+});
+export type NotificationFanoutPayload = z.infer<typeof notificationFanoutPayloadSchema>;
+
 export const JOB_PAYLOAD_SCHEMAS = {
   REPORT_CARD_BATCH_GENERATION: reportCardBatchPayloadSchema,
   STUDENT_BULK_IMPORT: studentBulkImportPayloadSchema,
   SMART_TIMETABLE_GENERATION: smartTimetableGenerationPayloadSchema,
   FILE_RETENTION_CLEANUP: fileRetentionCleanupPayloadSchema,
+  SCHOOL_DATA_PURGE: schoolDataPurgePayloadSchema,
+  INVITE_EMAIL_DELIVERY: inviteEmailDeliveryPayloadSchema,
+  NOTIFICATION_FANOUT: notificationFanoutPayloadSchema,
 } satisfies Record<JobType, z.ZodTypeAny>;
 
 /** Feature entitlement required to CREATE each job type (null = no catalog gate). */
@@ -91,6 +141,9 @@ export const JOB_TYPE_FEATURE: Record<JobType, FeatureFlagKeyValue | null> = {
   STUDENT_BULK_IMPORT: null, // student management has no catalog feature key
   SMART_TIMETABLE_GENERATION: null, // timetable module has no catalog feature key (see feature-routes.ts)
   FILE_RETENTION_CLEANUP: null, // internal maintenance job, no catalog feature key
+  SCHOOL_DATA_PURGE: null, // Founder platform-admin job, no catalog feature key
+  INVITE_EMAIL_DELIVERY: null, // Founder platform-admin job, no catalog feature key
+  NOTIFICATION_FANOUT: "NOTIFICATIONS",
 };
 
 // ── Creation ─────────────────────────────────────────────────────────────────
@@ -214,6 +267,49 @@ export async function claimNextJob(now: Date = new Date()): Promise<BackgroundJo
     // Lost the race — try the next candidate.
   }
   return null;
+}
+
+/**
+ * Claims one SPECIFIC job by id (not "whatever's next") — same atomic
+ * compare-and-swap as {@link claimNextJob}, just filtered by id instead of by
+ * due-date ordering. Used by callers that just created a job and want to try
+ * processing it immediately, inline, in the same request (e.g. the Add
+ * School route delivering the admin invite email without waiting for the
+ * next worker poll). Returns null if the job is missing, already
+ * claimed/completed, or not yet due — the standalone worker will pick it up
+ * later via {@link claimNextJob} in every one of those cases.
+ */
+export async function claimSpecificJob(jobId: string, now: Date = new Date()): Promise<BackgroundJob | null> {
+  const candidate = await prisma.backgroundJob.findFirst({
+    where: {
+      id: jobId,
+      OR: [
+        { status: "PENDING" },
+        { status: "RUNNING", leaseExpiresAt: { lt: now } },
+      ],
+    },
+    select: { id: true, status: true },
+  });
+  if (!candidate) return null;
+
+  const token = randomUUID();
+  const claim = await prisma.backgroundJob.updateMany({
+    where: {
+      id: candidate.id,
+      status: candidate.status,
+      ...(candidate.status === "RUNNING" ? { leaseExpiresAt: { lt: now } } : {}),
+    },
+    data: {
+      status: "RUNNING",
+      claimToken: token,
+      claimedAt: now,
+      startedAt: now,
+      leaseExpiresAt: new Date(now.getTime() + JOB_LEASE_MS),
+      attempts: { increment: 1 },
+    },
+  });
+  if (claim.count !== 1) return null; // lost the race to another claimant (poller or a concurrent inline attempt)
+  return prisma.backgroundJob.findFirst({ where: { id: candidate.id, claimToken: token } });
 }
 
 /** Extends a claimed job's lease (worker heartbeat). No-op if the token is stale. */

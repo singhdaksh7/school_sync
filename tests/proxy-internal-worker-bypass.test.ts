@@ -11,7 +11,14 @@ import { isPublicRoute, isFounderRoute, isStudentRoute } from "@/proxy";
 // which a JSON-expecting caller then fails to parse. Same bypass pattern
 // already used for /api/teacher/ and /api/student/ in proxy.ts.
 describe("proxy isPublicRoute — /api/internal/ bypasses the cookie gate", () => {
-  const internalRoutes = ["/api/internal/worker", "/api/internal/maintenance/file-retention"];
+  const internalRoutes = [
+    "/api/internal/worker",
+    "/api/internal/maintenance/file-retention",
+    "/api/internal/maintenance/school-purge",
+    "/api/internal/cron/worker",
+    "/api/internal/cron/school-purge",
+    "/api/internal/cron/file-retention",
+  ];
 
   it.each(internalRoutes)("%s bypasses the cookie gate", (pathname) => {
     expect(isPublicRoute(pathname)).toBe(true);

@@ -5,6 +5,7 @@ import { requireTeacherPermission } from "@/lib/teacher-authorization";
 import { requireSchoolFeature } from "@/lib/feature-flags";
 import { getHomeworkForTeacherAccess, getTeacherByUserId, withResolvedAttachments } from "@/lib/homework";
 import { resolveManagedOrLegacyUrl } from "@/lib/file-service";
+import { compareStudentsByRollNumber } from "@/lib/student-ordering";
 
 export async function GET(
   req: Request,
@@ -41,13 +42,18 @@ export async function GET(
       student: { select: { id: true, name: true, rollNo: true, sectionId: true } },
       guardian: { select: { id: true, name: true, phone: true } },
     },
-    orderBy: [{ student: { rollNo: "asc" } }, { submittedAt: "desc" }],
+    orderBy: [{ submittedAt: "desc" }],
   });
+
+  // Universal roll-number ordering (canonical comparator — see /lib/student-ordering)
+  // groups by student; Array.sort is stable, so each student's own submissions
+  // keep the submittedAt-desc order from the query above within their group.
+  const orderedSubmissions = [...submissions].sort((a, b) => compareStudentsByRollNumber(a.student, b.student));
 
   // Managed file takes precedence over a legacy attachmentUrl on every
   // submission returned here (see resolveManagedOrLegacyUrl).
   const resolvedSubmissions = await Promise.all(
-    submissions.map(async (submission) => ({ ...submission, attachmentUrl: await resolveManagedOrLegacyUrl(submission) }))
+    orderedSubmissions.map(async (submission) => ({ ...submission, attachmentUrl: await resolveManagedOrLegacyUrl(submission) }))
   );
 
   return NextResponse.json({ homework: await withResolvedAttachments(homework), submissions: resolvedSubmissions });

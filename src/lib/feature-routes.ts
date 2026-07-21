@@ -29,6 +29,9 @@ export const MODULE_FEATURE_KEYS = [
   "AI_FEATURES",
   "NOTEBOOK_CHECKING",
   "WHITE_LABEL",
+  "ADMISSIONS",
+  "LIBRARY",
+  "TRANSPORT",
 ] as const satisfies readonly FeatureFlagKeyValue[];
 
 /**
@@ -121,6 +124,23 @@ export const FEATURE_ROUTE_RULES: RouteRule[] = [
   //    resolver is intentionally NOT gated) ────────────────────────────────────
   { pattern: /^schools\/\[schoolId\]\/branding(\/|$)/, feature: "WHITE_LABEL" },
   { pattern: /^schools\/\[schoolId\]\/custom-domain(\/|$)/, feature: "WHITE_LABEL" },
+
+  // ── ADMISSIONS (staff admissions workflow — cycles/offerings/applications/
+  //    documents/review-events/dashboard, all nested under this one prefix) ────
+  { pattern: /^schools\/\[schoolId\]\/admissions(\/|$)/, feature: "ADMISSIONS" },
+
+  // ── LIBRARY (staff catalogue/copies/circulation/reservations/fines/policy/
+  //    reports/history, plus role-scoped self-service reads for teacher/student/
+  //    parent — all gated by the same LIBRARY module flag) ────────────────────
+  { pattern: /^schools\/\[schoolId\]\/library(\/|$)/, feature: "LIBRARY" },
+  { pattern: /^teacher\/library(\/|$)/, feature: "LIBRARY" },
+  { pattern: /^student\/library(\/|$)/, feature: "LIBRARY" },
+  { pattern: /^parent\/library(\/|$)/, feature: "LIBRARY" },
+
+  // ── TRANSPORT (routes/stops/vehicles/drivers/assignment admin CRUD — Phase A;
+  //    driver auth and location ingest are Phases B/C and will get their own
+  //    rules under mobile/driver and parent/teacher prefixes when they land) ──
+  { pattern: /^schools\/\[schoolId\]\/transport(\/|$)/, feature: "TRANSPORT" },
 ];
 
 /**

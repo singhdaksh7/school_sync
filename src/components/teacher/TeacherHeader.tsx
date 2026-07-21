@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { Menu, PanelLeft, Bell, User, LogOut, ChevronDown } from "lucide-react";
+import { Menu, PanelLeft, User, LogOut, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import NotificationBell from "@/components/notifications/NotificationBell";
 import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 interface TeacherHeaderProps {
@@ -85,13 +86,7 @@ export default function TeacherHeader({ schoolName, teacherName, onMenuClick, on
 
       {/* Right: bell + profile */}
       <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">
-        <button
-          className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={t("common.notifications")}
-        >
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
-        </button>
+        <NotificationBell role="teacher" basePath="/api/teacher/notifications" rolePrefix="/teacher" viewAllHref="/teacher/notifications" />
 
         <div className="relative" ref={menuRef}>
           <button

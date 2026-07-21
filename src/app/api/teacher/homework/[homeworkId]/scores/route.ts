@@ -9,6 +9,7 @@ import {
   HomeworkStudentStatusInput,
   parseOptionalNumber,
   validateScore,
+  validateStudentMarks,
 } from "@/lib/homework";
 
 const ALLOWED_SCORE_STATUSES = ["SUBMITTED", "NOT_SUBMITTED", "LATE", "CHECKED", "REJECTED"] as const;
@@ -93,6 +94,17 @@ export async function POST(
     const scoreError = validateScore(score, maxScore);
     if (scoreError) return NextResponse.json({ error: scoreError }, { status: 400 });
 
+    // Homework 2.0 assessment-mode boundary: CHECKING_ONLY homework must
+    // NEVER accept a score, regardless of status — this is enforced here
+    // server-side and never trusts the client to only send scores for
+    // GRADED homework.
+    const marksError = validateStudentMarks({
+      assessmentMode: homework.assessmentMode,
+      homeworkMaxMarks: homework.maxMarks,
+      score,
+    });
+    if (marksError) return NextResponse.json({ error: marksError }, { status: 400 });
+
     const submittedAt = item.submittedAt ? new Date(item.submittedAt) : null;
     if (item.submittedAt && Number.isNaN(submittedAt?.getTime())) {
       return NextResponse.json({ error: "Invalid submittedAt date" }, { status: 400 });
@@ -121,7 +133,12 @@ export async function POST(
       return NextResponse.json({ error: "Scores can be saved only when checking homework" }, { status: 400 });
     }
 
-    if (isEvaluationStatus(requestedStatus) && (score === null || maxScore === null)) {
+    // GRADED homework: a score is required when marking CHECKED (matches
+    // pre-2.0 behavior exactly). CHECKING_ONLY homework never requires (or
+    // accepts — see validateStudentMarks above) a score at all, so marking
+    // a student CHECKED with no score is the normal, expected path for
+    // ordinary notebook/completion checking.
+    if (isEvaluationStatus(requestedStatus) && homework.assessmentMode === "GRADED" && (score === null || maxScore === null)) {
       return NextResponse.json({ error: "Score and max score are required when checking homework" }, { status: 400 });
     }
   }
@@ -136,6 +153,10 @@ export async function POST(
         typeof item.teacherRemark === "string" && item.teacherRemark.trim()
           ? item.teacherRemark.trim()
           : null;
+      const studentFeedback =
+        typeof item.studentFeedback === "string" && item.studentFeedback.trim()
+          ? item.studentFeedback.trim()
+          : null;
 
       if (requestedStatus === "NOT_SUBMITTED") {
         await tx.homeworkStudentStatus.update({
@@ -148,6 +169,7 @@ export async function POST(
             score: null,
             maxScore: null,
             teacherRemark,
+            studentFeedback,
             parentVisible: item.parentVisible ?? true,
             checkedAt: null,
           },
@@ -181,6 +203,7 @@ export async function POST(
           score,
           maxScore,
           teacherRemark,
+          studentFeedback,
           parentVisible: item.parentVisible ?? true,
           checkedAt,
         },
@@ -205,6 +228,7 @@ export async function POST(
           score,
           maxScore,
           teacherRemark,
+          studentFeedback,
           reviewedAt: checkedAt,
           checkedAt,
         },
@@ -221,6 +245,7 @@ export async function POST(
           score,
           maxScore,
           teacherRemark,
+          studentFeedback,
           reviewedAt: checkedAt,
           checkedAt,
         },

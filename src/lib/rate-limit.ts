@@ -189,6 +189,8 @@ export const RATE_LIMIT_POLICIES = {
   forgotPassword: { limit: 5, windowMs: 15 * 60 * 1000 }, // strict — avoids reset spam / enumeration
   inviteLookup: { limit: 20, windowMs: 15 * 60 * 1000 },  // invite token validation/acceptance
   payment: { limit: 15, windowMs: 5 * 60 * 1000 },        // create-order / verify-payment
+  schoolDeletionSchedule: { limit: 5, windowMs: 15 * 60 * 1000 },  // Founder Danger Zone: schedule deletion (re-auth already gates this, this is the second layer)
+  schoolDeletionCancel: { limit: 10, windowMs: 15 * 60 * 1000 },   // Founder Danger Zone: cancel/restore
   authIp: AUTH_IP_POLICY,                                 // secondary network-abuse ceiling for auth endpoints (PART 6)
   ...API_COST_POLICIES,
   uploadGlobal: UPLOAD_GLOBAL_POLICY,

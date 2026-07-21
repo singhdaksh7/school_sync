@@ -211,7 +211,15 @@ export async function generateDraft(args: GenerateDraftArgs): Promise<GenerateDr
     await prisma.timetableDraftSlot.deleteMany({ where: { draftId, locked: false } });
   }
 
-  const requirements = await prisma.timetableSubjectRequirement.findMany({ where: { sectionId } });
+  const allRequirements = await prisma.timetableSubjectRequirement.findMany({ where: { sectionId } });
+  // Only requirements canonically linked to a Master Subject (subjectId set)
+  // are eligible for auto-placement — a legacy/unmapped free-text requirement
+  // (subjectId: null, predating Master Subject enforcement) stays visible and
+  // preserved for viewing, but the generator must never invent a new slot for
+  // a subject outside the applicable Master Subject catalogue, so it is
+  // skipped here rather than placed.
+  const requirements = allRequirements.filter((r) => r.subjectId);
+  const legacyUnmapped = allRequirements.filter((r) => !r.subjectId);
   const existingSlots = await prisma.timetableDraftSlot.findMany({ where: { draftId } });
 
   const assignedPerSubject = new Map<string, number>();
@@ -255,6 +263,15 @@ export async function generateDraft(args: GenerateDraftArgs): Promise<GenerateDr
 
   const allPlacements: PendingSlot[] = [];
   const diagnostics: GenerationDiagnostic[] = [];
+
+  for (const legacy of legacyUnmapped) {
+    diagnostics.push({
+      code: "LEGACY_SUBJECT_UNMAPPED",
+      subjectName: legacy.subjectName,
+      message: `"${legacy.subjectName}" is a legacy requirement not linked to a Master Subject and was skipped during generation. Map it to a Master Subject in Weekly Period Requirements to include it.`,
+      metadata: { requirementId: legacy.id, requiredPeriodsPerWeek: legacy.requiredPeriodsPerWeek },
+    });
+  }
 
   for (const item of withDifficulty) {
     if (item.remaining <= 0) continue;

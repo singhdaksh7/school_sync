@@ -1,13 +1,13 @@
-# ── schoolsync-github-staging-deploy ────────────────────────────────────
+# ── Environment-scoped GitHub deploy role ───────────────────────────────
 #
-# Assumed only via the GitHub Environment OIDC subject (`environment:staging`),
+# Assumed only via the exact configured GitHub Environment OIDC subject,
 # not a branch ref — this is what makes required-reviewer/protected-branch
 # GitHub Environment rules the actual gate on who can trigger a deployment,
-# not just who can push to `staging`. Permissions are limited to the existing
-# staging deployment: task-definition registration, web/worker service
+# not just who can push to a branch. Permissions are limited to the selected
+# deployment: task-definition registration, web/worker service
 # updates + stability reads, one-off migration run + result reads, the exact
 # three existing ECS execution/task roles via scoped iam:PassRole, and
-# read/lock-only access to the staging Terraform backend for the
+# read/lock-only access to the selected Terraform backend for the
 # pre-mutation no-change gate. It cannot create/delete RDS, Redis, VPC, ALB,
 # security groups, IAM roles, or secrets, and it cannot read a secret VALUE
 # anywhere in this policy.
@@ -31,7 +31,7 @@ data "aws_iam_policy_document" "deploy_trust" {
 
     # Exact GitHub Environment subject — not a branch ref, not
     # `repo:OWNER/REPO:*`, not a wildcard anywhere in owner/repo/environment.
-    # This ties the role to whatever protection rules the `staging`
+    # This ties the role to whatever protection rules the configured
     # Environment has configured (required reviewer, branch restriction —
     # see the repo-root runbook), independent of the build role's branch-ref
     # trust.
@@ -44,7 +44,7 @@ data "aws_iam_policy_document" "deploy_trust" {
 }
 
 resource "aws_iam_role" "github_staging_deploy" {
-  name                 = "schoolsync-github-staging-deploy"
+  name                 = "${var.project_name}-github-${var.deployment_environment}-deploy"
   description          = "Assumed via GitHub OIDC only from the '${var.github_environment}' GitHub Environment. ECS deploy + Terraform no-change read/lock only - no infrastructure mutation, no secret-value reads."
   assume_role_policy   = data.aws_iam_policy_document.deploy_trust.json
   max_session_duration = 3600
@@ -56,7 +56,11 @@ resource "aws_iam_role" "github_staging_deploy" {
         !strcontains(var.github_repository_name, "*"),
         !strcontains(var.github_environment, "*"),
       ])
-      error_message = "Wildcard repository/environment trust is not permitted for schoolsync-github-staging-deploy — every one of github_repository_owner/github_repository_name/github_environment must be an exact value."
+      error_message = "Wildcard repository/environment trust is not permitted for the GitHub deploy role."
+    }
+    precondition {
+      condition     = var.github_environment == var.deployment_environment
+      error_message = "github_environment must exactly match deployment_environment."
     }
   }
 }
@@ -65,36 +69,44 @@ locals {
   ecs_cluster_arn        = "arn:aws:ecs:${var.aws_region}:${var.aws_account_id}:cluster/${var.ecs_cluster_name}"
   ecs_web_service_arn    = "arn:aws:ecs:${var.aws_region}:${var.aws_account_id}:service/${var.ecs_cluster_name}/${var.ecs_web_service_name}"
   ecs_worker_service_arn = "arn:aws:ecs:${var.aws_region}:${var.aws_account_id}:service/${var.ecs_cluster_name}/${var.ecs_worker_service_name}"
-  # Covers the web/worker/migrate task-definition families
-  # (schoolsync-staging-web / -worker / -migrate), all of any revision.
-  ecs_task_definition_arn_pattern = "arn:aws:ecs:${var.aws_region}:${var.aws_account_id}:task-definition/schoolsync-staging-*"
-  log_group_arn_pattern           = "arn:aws:logs:${var.aws_region}:${var.aws_account_id}:log-group:/ecs/schoolsync-staging/*"
+  # Covers web/worker/migrate task-definition families for this exact
+  # environment, all revisions.
+  application_name_prefix         = "${var.project_name}-${var.deployment_environment}"
+  ecs_task_definition_arn_pattern = "arn:aws:ecs:${var.aws_region}:${var.aws_account_id}:task-definition/${local.application_name_prefix}-*"
+  log_group_arn_pattern           = "arn:aws:logs:${var.aws_region}:${var.aws_account_id}:log-group:/ecs/${local.application_name_prefix}/*"
 
-  ecs_execution_role_arn    = "arn:aws:iam::${var.aws_account_id}:role/${var.ecs_execution_role_name}"
-  ecs_task_web_role_arn     = "arn:aws:iam::${var.aws_account_id}:role/${var.ecs_task_web_role_name}"
-  ecs_task_minimal_role_arn = "arn:aws:iam::${var.aws_account_id}:role/${var.ecs_task_minimal_role_name}"
+  ecs_execution_role_arn           = "arn:aws:iam::${var.aws_account_id}:role/${var.ecs_execution_role_name}"
+  ecs_task_web_role_arn            = "arn:aws:iam::${var.aws_account_id}:role/${var.ecs_task_web_role_name}"
+  ecs_task_minimal_role_arn        = "arn:aws:iam::${var.aws_account_id}:role/${var.ecs_task_minimal_role_name}"
+  eventbridge_maintenance_role_arn = "arn:aws:iam::${var.aws_account_id}:role/${var.eventbridge_maintenance_role_name}"
 
   # Bucket name is auto-generated by the app stack when s3_bucket_name is
   # left blank — "project-environment-account_id" (see
   # infra/terraform/variables.tf / s3.tf). This prefix pattern matches that
   # default without hardcoding the account-id suffix here.
-  app_s3_bucket_arn_pattern = "arn:aws:s3:::schoolsync-staging-*"
+  app_s3_bucket_arn_pattern = "arn:aws:s3:::${local.application_name_prefix}-*"
 
-  secrets_manager_secret_arn_pattern = "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:schoolsync-staging/app-*"
+  secrets_manager_secret_arn_pattern = "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:${local.application_name_prefix}/app-*"
 
   # Exact ARNs for every CloudWatch alarm the app stack's terraform plan
   # refreshes (confirmed against the deployed alarms) — enumerated, not a
   # wildcard, per this role's exact-scoping requirement.
   cloudwatch_alarm_arns = [
-    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-alb-unhealthy-targets",
-    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-alb-5xx",
-    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-rds-cpu",
-    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-rds-low-storage",
-    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:schoolsync-staging-rds-connections",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-alb-unhealthy-targets",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-alb-5xx",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-ecs-web-cpu",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-ecs-web-memory",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-ecs-worker-cpu",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-ecs-worker-running-tasks-low",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-rds-cpu",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-rds-low-storage",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-rds-connections",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-redis-cpu",
+    "arn:aws:cloudwatch:${var.aws_region}:${var.aws_account_id}:alarm:${local.application_name_prefix}-redis-memory",
   ]
 
   # Exact ElastiCache subnet group ARN for this stack.
-  elasticache_subnet_group_arn = "arn:aws:elasticache:${var.aws_region}:${var.aws_account_id}:subnetgroup:schoolsync-staging-redis"
+  elasticache_subnet_group_arn = "arn:aws:elasticache:${var.aws_region}:${var.aws_account_id}:subnetgroup:${local.application_name_prefix}-redis"
 }
 
 data "aws_iam_policy_document" "deploy_permissions" {
@@ -236,7 +248,7 @@ data "aws_iam_policy_document" "deploy_permissions" {
   }
 
   # ── Read-only "terraform plan" state-refresh reads ───────────────────────
-  # A real `terraform plan` against the staging stack's ~20 .tf files must
+  # A real `terraform plan` against the application stack's .tf files must
   # refresh EVERY resource it manages (VPC/subnets/SGs, ALB, RDS,
   # ElastiCache, S3, Route53/ACM, SES, CloudWatch alarms/log groups, Cloud
   # Map, IAM roles) to detect drift — this is what "read-only infrastructure
@@ -278,6 +290,11 @@ data "aws_iam_policy_document" "deploy_permissions" {
       "servicediscovery:ListServices",
       "ecs:DescribeClusters",
       "ecr:DescribeRepositories",
+      "events:DescribeApiDestination",
+      "events:DescribeConnection",
+      "events:DescribeRule",
+      "events:ListTargetsByRule",
+      "events:ListTagsForResource",
     ]
     resources = ["*"]
   }
@@ -297,6 +314,7 @@ data "aws_iam_policy_document" "deploy_permissions" {
       local.ecs_execution_role_arn,
       local.ecs_task_web_role_arn,
       local.ecs_task_minimal_role_arn,
+      local.eventbridge_maintenance_role_arn,
       "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
     ]
   }
@@ -402,14 +420,14 @@ data "aws_iam_policy_document" "deploy_permissions" {
   # RotateSecret/DeleteSecret, no route53:Change*, no s3:PutBucket*/
   # DeleteBucket* — this role is structurally incapable of infrastructure
   # mutation or secret-value retrieval. An actual `terraform apply` against
-  # the staging stack (which would additionally need broad WRITE
+  # the application stack (which would additionally need broad WRITE
   # permissions across every one of those services) stays a manual,
   # schoolsync-admin-profile operation — see infra/terraform/README.md and
   # the repo-root CI/CD runbook.
 }
 
 resource "aws_iam_role_policy" "github_staging_deploy" {
-  name   = "schoolsync-github-staging-deploy-ecs-and-tf-readonly"
+  name   = "${var.project_name}-github-${var.deployment_environment}-deploy-ecs-and-tf-readonly"
   role   = aws_iam_role.github_staging_deploy.id
   policy = data.aws_iam_policy_document.deploy_permissions.json
 }

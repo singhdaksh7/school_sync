@@ -133,7 +133,7 @@ describe("Deploy role: application-stack terraform-plan refresh permissions", ()
     expect(stmt).toMatch(/resources\s*=\s*\[local\.app_s3_bucket_arn_pattern\]/);
   });
 
-  it("cloudwatch:ListTagsForResource is scoped to exactly the 5 confirmed alarm ARNs, enumerated (not a wildcard resource)", () => {
+  it("cloudwatch:ListTagsForResource is scoped to exactly all 11 tagged alarm ARNs created by cloudwatch.tf, enumerated (not a wildcard resource)", () => {
     const stmt = findSid("TerraformPlanCloudWatchAlarmTagsReadOnly");
     expect(stmt).toMatch(/actions\s*=\s*\["cloudwatch:ListTagsForResource"\]/);
     expect(stmt).toMatch(/resources\s*=\s*local\.cloudwatch_alarm_arns/);
@@ -145,9 +145,21 @@ describe("Deploy role: application-stack terraform-plan refresh permissions", ()
       .split(",")
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
-    expect(arnLines).toHaveLength(5);
-    for (const name of ["alb-unhealthy-targets", "alb-5xx", "rds-cpu", "rds-low-storage", "rds-connections"]) {
-      expect(arnsMatch![1]).toMatch(new RegExp(`schoolsync-staging-${name}`));
+    expect(arnLines).toHaveLength(11);
+    for (const name of [
+      "alb-unhealthy-targets",
+      "alb-5xx",
+      "ecs-web-cpu",
+      "ecs-web-memory",
+      "ecs-worker-cpu",
+      "ecs-worker-running-tasks-low",
+      "rds-cpu",
+      "rds-low-storage",
+      "rds-connections",
+      "redis-cpu",
+      "redis-memory",
+    ]) {
+      expect(arnsMatch![1]).toMatch(new RegExp(`\\$\\{local\\.application_name_prefix\\}-${name}`));
     }
     // Every entry is a concrete alarm ARN, never a bare wildcard resource.
     expect(arnsMatch![1]).not.toMatch(/:alarm:"\s*,|:alarm:\*/);
@@ -157,7 +169,7 @@ describe("Deploy role: application-stack terraform-plan refresh permissions", ()
     const stmt = findSid("TerraformPlanElastiCacheTagsReadOnly");
     expect(stmt).toMatch(/actions\s*=\s*\["elasticache:ListTagsForResource"\]/);
     expect(stmt).toMatch(/resources\s*=\s*\[local\.elasticache_subnet_group_arn\]/);
-    expect(content).toMatch(/elasticache_subnet_group_arn\s*=\s*"arn:aws:elasticache:\$\{var\.aws_region\}:\$\{var\.aws_account_id\}:subnetgroup:schoolsync-staging-redis"/);
+    expect(content).toMatch(/elasticache_subnet_group_arn\s*=\s*"arn:aws:elasticache:\$\{var\.aws_region\}:\$\{var\.aws_account_id\}:subnetgroup:\$\{local\.application_name_prefix\}-redis"/);
   });
 
   it("servicediscovery:ListTagsForResource is a dedicated Resource: \"*\" statement — the one documented exception, no resource type existing for this action per AWS Cloud Map's IAM reference", () => {

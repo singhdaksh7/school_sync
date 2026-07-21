@@ -38,7 +38,7 @@ interface HistoryRow {
   rollNo: string;
   subject: string;
   title: string;
-  dueDate: string;
+  deadlineAt: string;
   completed: boolean;
 }
 
@@ -112,7 +112,7 @@ export default function HomeworkClassDashboardPage() {
     if (!data) return [];
     const now = new Date();
     return data.history.filter((row) => {
-      const due = new Date(row.dueDate);
+      const due = new Date(row.deadlineAt);
       if (historyFilter === "LAST_7_DAYS") {
         const cutoff = new Date(now);
         cutoff.setDate(cutoff.getDate() - 7);
@@ -255,7 +255,7 @@ export default function HomeworkClassDashboardPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                        <th className="py-2 pr-3 font-medium">{t("teacherHomeworkDashboard.date")}</th>
+                        <th className="py-2 pr-3 font-medium">{t("teacherHomeworkDashboard.deadline")}</th>
                         <th className="py-2 pr-3 font-medium">{t("teacherHomeworkDashboard.student")}</th>
                         <th className="py-2 pr-3 font-medium">{t("teacherHomeworkDashboard.subject")}</th>
                         <th className="py-2 pr-3 font-medium">{t("teacherHomeworkDashboard.homework")}</th>
@@ -265,7 +265,7 @@ export default function HomeworkClassDashboardPage() {
                     <tbody>
                       {pagedHistory.map((row) => (
                         <tr key={row.id} className="border-b border-border last:border-0">
-                          <td className="py-2 pr-3 text-muted-foreground">{new Date(row.dueDate).toLocaleDateString()}</td>
+                          <td className="py-2 pr-3 text-muted-foreground">{new Date(row.deadlineAt).toLocaleDateString()}</td>
                           <td className="py-2 pr-3 font-medium text-foreground">{row.studentName}</td>
                           <td className="py-2 pr-3">{row.subject}</td>
                           <td className="py-2 pr-3">{row.title}</td>
